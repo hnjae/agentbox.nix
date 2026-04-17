@@ -1,0 +1,12 @@
+#:schema https://json.schemastore.org/taplo.json
+
+[formatting]
+reorder_keys = false
+array_auto_collapse = false
+
+[[rule]]
+include = ["**/Cargo.toml"]
+keys = ["dependencies"]
+
+[rule.formatting]
+reorder_keys = true

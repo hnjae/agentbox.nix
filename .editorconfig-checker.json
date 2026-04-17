@@ -1,0 +1,6 @@
+{
+  "exclude": ["devenv\\.lock"],
+  "Disable": {
+    "MaxLineLength": false
+  }
+}

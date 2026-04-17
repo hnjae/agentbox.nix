@@ -1,0 +1,15 @@
+#:schema https://json.schemastore.org/cargo.json
+
+[package]
+name = "agentbox"
+description = "Orchestrate agentbox using Podman and Quadlet"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+
+[lints.clippy]
+cargo = "warn"

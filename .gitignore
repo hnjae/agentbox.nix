@@ -1,0 +1,12 @@
+/.direnv
+
+# Build results:
+/target
+result*
+
+# Managed by git-hooks.nix
+/.pre-commit-config.yaml
+
+# Environments
+.env
+.env.*

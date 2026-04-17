@@ -1,0 +1,4 @@
+#:schema https://cdn.jsdelivr.net/gh/crate-ci/typos@master/config.schema.json
+
+[default]
+locale = "en-us"
