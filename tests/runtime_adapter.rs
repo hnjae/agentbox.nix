@@ -21,7 +21,6 @@ use agentbox::session::{
 use agentbox::workspace::resolve_workspace_identity;
 use camino::Utf8Path;
 use std::fs;
-use std::process::Command;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -208,25 +207,12 @@ fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
 }
 
 fn init_git_repo(path: &std::path::Path) {
-    let output = Command::new("git").arg("init").arg(path).output().unwrap();
-    assert!(output.status.success(), "git init failed: {output:?}");
-
+    fs::create_dir_all(path.join(".git/refs/heads")).unwrap();
+    fs::write(path.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    fs::write(
+        path.join(".git/config"),
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = true\n",
+    )
+    .unwrap();
     fs::write(path.join(".gitignore"), "\n").unwrap();
-    let output = Command::new("git")
-        .current_dir(path)
-        .args(["add", ".gitignore"])
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git add failed: {output:?}");
-
-    let output = Command::new("git")
-        .current_dir(path)
-        .args(["commit", "-m", "init"])
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git commit failed: {output:?}");
 }

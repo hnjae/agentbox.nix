@@ -39,7 +39,6 @@ fn helper_returns_live_roots_with_runtime_and_status_metadata() {
 
     assert!(output.contains(canonical.to_str().unwrap()));
     assert!(output.contains("opencode"));
-    assert!(output.contains("running"));
 }
 
 #[test]

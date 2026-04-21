@@ -244,6 +244,7 @@ fn build_session_record(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn derive_status(
     managed: &Option<String>,
     schema: &Option<String>,
@@ -355,6 +356,11 @@ fn git_root_is_orphaned(git_root: &Utf8Path, git: &Git) -> bool {
 
     if !canonical_git_root.as_std_path().is_dir() {
         return true;
+    }
+
+    let git_marker = canonical_git_root.join(".git");
+    if git_marker.is_dir() || git_marker.is_file() {
+        return false;
     }
 
     match git.rev_parse_show_toplevel(&canonical_git_root) {

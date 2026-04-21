@@ -172,6 +172,7 @@ impl Harness {
         let original_path = std::env::var("PATH").unwrap();
 
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
+        write_executable(fake_bin.path().join("git"), &fake_git_script());
         write_executable(fake_bin.path().join("podman"), &fake_podman_script());
 
         Self {
@@ -394,6 +395,30 @@ case "$1" in
     exit 97
     ;;
 esac
+"#
+    .to_string()
+}
+
+fn fake_git_script() -> String {
+    r#"#!/bin/sh
+set -eu
+
+if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--show-toplevel" ]; then
+    dir=$2
+    while [ "$dir" != "/" ]; do
+        if [ -d "$dir/.git" ]; then
+            printf '%s\n' "$dir"
+            exit 0
+        fi
+        dir=$(dirname "$dir")
+    done
+
+    printf 'fatal: not a git repository (or any of the parent directories): .git\n' >&2
+    exit 128
+fi
+
+printf 'unsupported git invocation: %s\n' "$*" >&2
+exit 1
 "#
     .to_string()
 }

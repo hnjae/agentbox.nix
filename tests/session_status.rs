@@ -8,7 +8,6 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::process::Command;
 
 use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
@@ -294,10 +293,12 @@ fn status_for(
 }
 
 fn init_git_repo(path: &std::path::Path) {
-    let output = Command::new("git").arg("init").arg(path).output().unwrap();
-    assert!(
-        output.status.success(),
-        "git init failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    fs::create_dir_all(path.join(".git/refs/heads")).unwrap();
+    fs::write(path.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    fs::write(
+        path.join(".git/config"),
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = true\n",
+    )
+    .unwrap();
+    fs::write(path.join(".gitignore"), "\n").unwrap();
 }

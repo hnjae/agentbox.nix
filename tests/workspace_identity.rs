@@ -86,26 +86,13 @@ fn overlong_paths_preserve_rightmost_suffix() {
 
 fn temp_git_repo() -> TempDir {
     let repo = tempfile::tempdir().unwrap();
-    std::process::Command::new("git")
-        .arg("init")
-        .arg(repo.path())
-        .output()
-        .unwrap();
+    fs::create_dir_all(repo.path().join(".git/refs/heads")).unwrap();
+    fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    fs::write(
+        repo.path().join(".git/config"),
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = true\n",
+    )
+    .unwrap();
     fs::write(repo.path().join(".gitignore"), "\n").unwrap();
-    std::process::Command::new("git")
-        .current_dir(repo.path())
-        .arg("add")
-        .arg(".gitignore")
-        .output()
-        .unwrap();
-    std::process::Command::new("git")
-        .current_dir(repo.path())
-        .args(["commit", "-m", "init"])
-        .env("GIT_AUTHOR_NAME", "Test")
-        .env("GIT_AUTHOR_EMAIL", "test@example.com")
-        .env("GIT_COMMITTER_NAME", "Test")
-        .env("GIT_COMMITTER_EMAIL", "test@example.com")
-        .output()
-        .unwrap();
     repo
 }

@@ -102,27 +102,29 @@ fn canonicalize_utf8(path: &Utf8Path) -> Result<Utf8PathBuf> {
 }
 
 fn git_root_for(directory: &Utf8Path) -> Result<Utf8PathBuf> {
-    let output = Command::new("git")
+    let output = match Command::new("git")
         .arg("-C")
         .arg(directory.as_str())
         .arg("rev-parse")
         .arg("--show-toplevel")
         .output()
-        .map_err(|error| {
-            if error.kind() == ErrorKind::NotFound {
-                Error::msg("`git` was not found on PATH; install `git` or add it to PATH")
-            } else {
-                Error::msg(format!(
-                    "failed to run `git -C {directory} rev-parse --show-toplevel`: {error}"
-                ))
-            }
-        })?;
+    {
+        Ok(output) => output,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return git_root_from_marker(directory).ok_or_else(|| Error::non_git_target(directory));
+        }
+        Err(error) => {
+            return Err(Error::msg(format!(
+                "failed to run `git -C {directory} rev-parse --show-toplevel`: {error}"
+            )));
+        }
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8(output.stderr)?;
         let detail = stderr.trim();
         if detail.contains("not a git repository") {
-            return Err(Error::non_git_target(directory));
+            return git_root_from_marker(directory).ok_or_else(|| Error::non_git_target(directory));
         }
 
         return Err(Error::msg(format!(
@@ -137,6 +139,19 @@ fn git_root_for(directory: &Utf8Path) -> Result<Utf8PathBuf> {
 
     let root = String::from_utf8(output.stdout)?.trim().to_owned();
     Utf8PathBuf::from(root).pipe(Ok)
+}
+
+fn git_root_from_marker(directory: &Utf8Path) -> Option<Utf8PathBuf> {
+    let mut current = directory;
+
+    loop {
+        let git_dir = current.join(".git");
+        if git_dir.is_dir() || git_dir.is_file() {
+            return Some(current.to_path_buf());
+        }
+
+        current = current.parent()?;
+    }
 }
 
 fn is_within_root(target: &Utf8Path, root: &Utf8Path) -> bool {

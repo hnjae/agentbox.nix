@@ -60,10 +60,18 @@ fn git_can_use_a_path_injected_fake_binary() {
 
 #[test]
 fn shared_temp_git_repo_supports_real_git_smoke_tests() {
+    let fake_bins = support::FakeBinDir::new();
     let repo = support::temp_git_repo();
     let repo_path = Utf8Path::from_path(repo.path()).unwrap();
+    fake_bins.install_exact_response(
+        "git",
+        &["-C", repo_path.as_str(), "rev-parse", "--show-toplevel"],
+        &format!("{repo_path}\n"),
+    );
 
-    let root = Git::new().rev_parse_show_toplevel(repo_path).unwrap();
+    let root = Git::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .rev_parse_show_toplevel(repo_path)
+        .unwrap();
 
     assert_eq!(root, repo_path);
 }

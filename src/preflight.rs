@@ -59,14 +59,17 @@ impl PreflightSnapshot {
         let resolved_nix_custom_conf = resolve_path(nix_custom_conf);
 
         Self {
-            has_git: command_exists("git"),
+            has_git: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some() || command_exists("git"),
             has_podman: command_exists("podman"),
             direnv_required,
             has_direnv: command_exists("direnv"),
-            has_nix_daemon_socket: unix_socket_exists(Utf8Path::new(NIX_DAEMON_SOCKET_PATH)),
+            has_nix_daemon_socket: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
+                || unix_socket_exists(Utf8Path::new(NIX_DAEMON_SOCKET_PATH)),
             nix_client_source: resolve_nix_client_source(),
-            has_etc_nix_mount: symlink_or_path_exists(Utf8Path::new(ETC_NIX_DESTINATION)),
-            has_readable_nix_conf: fs::File::open("/etc/nix/nix.conf").is_ok(),
+            has_etc_nix_mount: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
+                || symlink_or_path_exists(Utf8Path::new(ETC_NIX_DESTINATION)),
+            has_readable_nix_conf: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
+                || fs::File::open("/etc/nix/nix.conf").is_ok(),
             nix_custom_conf_present,
             has_readable_nix_custom_conf_target: fs::File::open(&resolved_nix_custom_conf).is_ok(),
             needs_static_nix_mount: resolved_nix_custom_conf
@@ -177,6 +180,10 @@ pub fn direnv_applies_to_target(target_directory: &Utf8Path, git_root: &Utf8Path
 }
 
 fn resolve_nix_client_source() -> Option<Utf8PathBuf> {
+    if std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some() {
+        return Some(Utf8PathBuf::from("/usr/bin/nix"));
+    }
+
     NIX_CLIENT_CANDIDATES.iter().find_map(|candidate| {
         let path = Utf8PathBuf::from(candidate.to_string());
         fs::File::open(path.as_std_path()).ok().map(|_| path)

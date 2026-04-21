@@ -116,6 +116,7 @@ fn open_lock_file(path: &Path) -> Result<File> {
 
     Ok(OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(path)?)

@@ -32,6 +32,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     command
         .env("PATH", harness.path_env())
         .env("XDG_STATE_HOME", harness.state_home.path())
+        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
@@ -89,6 +90,7 @@ fn run_wraps_server_start_with_direnv_when_envrc_applies() {
     command
         .env("PATH", harness.path_env_with_direnv())
         .env("XDG_STATE_HOME", harness.state_home.path())
+        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
@@ -123,6 +125,7 @@ fn run_persists_the_first_create_image_override_exactly() {
     command
         .env("PATH", harness.path_env())
         .env("XDG_STATE_HOME", harness.state_home.path())
+        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
@@ -140,6 +143,7 @@ fn run_persists_the_first_create_image_override_exactly() {
 
 struct Harness {
     fake_bin: tempfile::TempDir,
+    fixtures: tempfile::TempDir,
     state_home: tempfile::TempDir,
     log_path: PathBuf,
     lock_probe_path: PathBuf,
@@ -148,16 +152,19 @@ struct Harness {
 
 fn install_harness(repo_root: &Path) -> Harness {
     let fake_bin = tempfile::tempdir().unwrap();
+    let fixtures = tempfile::tempdir().unwrap();
     let state_home = tempfile::tempdir().unwrap();
     let log_path = repo_root.join("agentbox-run.log");
     let lock_probe_path = cargo_bin("agentbox-lock-probe");
     let original_path = std::env::var("PATH").unwrap();
 
     write_executable(fake_bin.path().join("podman"), &fake_podman_script());
+    write_executable(fake_bin.path().join("git"), &fake_git_script());
     write_executable(fake_bin.path().join("direnv"), "#!/bin/sh\nexit 0\n");
 
     Harness {
         fake_bin,
+        fixtures,
         state_home,
         log_path,
         lock_probe_path,
@@ -259,6 +266,30 @@ case "$1" in
     exit 97
     ;;
 esac
+"#
+    .to_string()
+}
+
+fn fake_git_script() -> String {
+    r#"#!/bin/sh
+set -eu
+
+if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--show-toplevel" ]; then
+    dir=$2
+    while [ "$dir" != "/" ]; do
+        if [ -d "$dir/.git" ]; then
+            printf '%s\n' "$dir"
+            exit 0
+        fi
+        dir=$(dirname "$dir")
+    done
+
+    printf 'fatal: not a git repository (or any of the parent directories): .git\n' >&2
+    exit 128
+fi
+
+printf 'unsupported git invocation: %s\n' "$*" >&2
+exit 1
 "#
     .to_string()
 }
