@@ -6,7 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use agentbox::cli::{Cli, Command, DirectoryArgs};
+use agentbox::cli::{Cli, Command, DirectoryArgs, RunArgs};
 use assert_cmd::Command as AssertCommand;
 use clap::Parser;
 use predicates::prelude::*;
@@ -49,7 +49,8 @@ fn core_commands_parse_into_expected_variants() {
 
     assert_eq!(
         run.command,
-        Command::Run(DirectoryArgs {
+        Command::Run(RunArgs {
+            image: None,
             directory: "/tmp/workspace".into(),
         })
     );
@@ -83,5 +84,25 @@ fn directory_commands_require_a_path_argument() {
             .to_string()
             .contains("Usage: agentbox run <DIRECTORY>"),
         "expected clap to show the command usage"
+    );
+}
+
+#[test]
+fn run_accepts_create_time_image_override() {
+    let cli = Cli::try_parse_from([
+        "agentbox",
+        "run",
+        "--image",
+        "registry.example/agentbox:test",
+        "/tmp/workspace",
+    ])
+    .unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Run(RunArgs {
+            image: Some("registry.example/agentbox:test".to_string()),
+            directory: "/tmp/workspace".into(),
+        })
     );
 }
