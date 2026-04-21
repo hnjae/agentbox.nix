@@ -6,7 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use agentbox::cli::{Cli, Command, DirectoryArgs, RunArgs};
+use agentbox::cli::{Cli, Command, DirectoryArgs, RmArgs, RunArgs};
 use assert_cmd::Command as AssertCommand;
 use clap::Parser;
 use predicates::prelude::*;
@@ -63,11 +63,25 @@ fn core_commands_parse_into_expected_variants() {
     assert_eq!(ls.command, Command::Ls);
     assert_eq!(
         rm.command,
-        Command::Rm(DirectoryArgs {
+        Command::Rm(RmArgs {
+            force: false,
             directory: "/tmp/workspace".into(),
         })
     );
     assert_eq!(completion.command, Command::Completion);
+}
+
+#[test]
+fn rm_accepts_force_cleanup_flag() {
+    let cli = Cli::try_parse_from(["agentbox", "rm", "--force", "/tmp/workspace"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Rm(RmArgs {
+            force: true,
+            directory: "/tmp/workspace".into(),
+        })
+    );
 }
 
 #[test]

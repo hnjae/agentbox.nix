@@ -28,7 +28,7 @@ pub enum Command {
     /// List managed sessions.
     Ls,
     /// Remove a managed session.
-    Rm(DirectoryArgs),
+    Rm(RmArgs),
     /// Shell completion helpers.
     Completion,
 }
@@ -45,6 +45,16 @@ pub struct RunArgs {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct DirectoryArgs {
+    /// Workspace directory inside a git repository.
+    pub directory: PathBuf,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RmArgs {
+    /// Best-effort cleanup when some artifacts are already missing.
+    #[arg(long)]
+    pub force: bool,
+
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
 }
