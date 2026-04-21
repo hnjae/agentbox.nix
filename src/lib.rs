@@ -14,6 +14,7 @@ use clap::Parser;
 pub mod cli;
 pub mod commands;
 pub mod error;
+pub mod workspace;
 
 use cli::Cli;
 pub use error::{Error, Result};

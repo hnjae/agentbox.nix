@@ -12,6 +12,12 @@ pub enum Error {
     Cli(#[from] clap::Error),
     #[error("`{command}` is not implemented yet")]
     NotYetImplemented { command: &'static str },
+    #[error("{0}")]
+    Message(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Utf8(#[from] std::string::FromUtf8Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -19,5 +25,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl Error {
     pub fn not_yet_implemented(command: &'static str) -> Self {
         Self::NotYetImplemented { command }
+    }
+
+    pub fn msg(message: impl Into<String>) -> Self {
+        Self::Message(message.into())
     }
 }
