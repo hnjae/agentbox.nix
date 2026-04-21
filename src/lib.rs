@@ -14,10 +14,12 @@ use clap::Parser;
 pub mod cli;
 pub mod commands;
 pub mod error;
+pub mod lock;
 pub mod workspace;
 
 use cli::Cli;
 pub use error::{Error, Result};
+pub use lock::{WorkspaceLock, WorkspaceLockGuard, lock_path_for_digest, lock_workspace};
 
 pub fn main() -> ExitCode {
     match try_main() {
