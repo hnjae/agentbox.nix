@@ -34,10 +34,7 @@ impl WorkspaceLock {
 
     pub fn guard(&mut self) -> Result<WorkspaceLockGuard<'_>> {
         Ok(WorkspaceLockGuard {
-            guard: self
-                .lock
-                .try_write()
-                .map_err(|_| Error::msg("failed to acquire workspace lock"))?,
+            guard: self.lock.write()?,
         })
     }
 }

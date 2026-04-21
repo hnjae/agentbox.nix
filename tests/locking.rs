@@ -10,6 +10,8 @@ use agentbox::lock::{lock_path_in_state_dir, lock_workspace_in_state_dir};
 use agentbox::workspace::WorkspaceIdentity;
 use camino::Utf8PathBuf;
 use std::fs;
+use std::sync::{Arc, Barrier, mpsc};
+use std::thread;
 use tempfile::TempDir;
 
 #[test]
@@ -60,6 +62,38 @@ fn guard_releases_lock_when_dropped() {
     }
 
     assert!(lock.guard().is_ok());
+}
+
+#[test]
+fn same_root_acquisitions_serialize() {
+    let repo = temp_git_repo();
+    let identity = identity_with_digest(&repo, "e".repeat(64));
+    let state_dir = repo.path().join("state");
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = mpsc::channel();
+
+    let first_identity = identity.clone();
+    let first_barrier = Arc::clone(&barrier);
+    let first_state_dir = state_dir.clone();
+    let first_handle = thread::spawn(move || {
+        let mut lock = lock_workspace_in_state_dir(first_state_dir, &first_identity).unwrap();
+        let _guard = lock.guard().unwrap();
+        first_barrier.wait();
+        tx.send(()).unwrap();
+    });
+
+    barrier.wait();
+
+    let second_state_dir = state_dir;
+    let second_identity = identity;
+    let second_handle = thread::spawn(move || {
+        let mut lock = lock_workspace_in_state_dir(second_state_dir, &second_identity).unwrap();
+        lock.guard().is_ok()
+    });
+
+    assert!(rx.recv_timeout(std::time::Duration::from_secs(1)).is_ok());
+    assert!(second_handle.join().unwrap());
+    first_handle.join().unwrap();
 }
 
 fn identity_with_digest(repo: &TempDir, digest64: String) -> WorkspaceIdentity {
