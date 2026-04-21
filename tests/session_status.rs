@@ -7,6 +7,8 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::process::Command;
 
 use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
@@ -21,9 +23,12 @@ use agentbox::session::{
 use agentbox::workspace::hash12;
 use camino::Utf8Path;
 
+#[path = "support/git_repo.rs"]
+mod git_repo;
+
 #[test]
 fn duplicate_root_group_marks_each_row_duplicate() {
-    let repo = tempfile::tempdir().unwrap();
+    let repo = git_repo::temp_git_repo();
     let root = Utf8Path::from_path(repo.path()).unwrap();
     let first = managed_container("dup-a", root, true, true);
     let second = managed_container("dup-b", root, true, true);
@@ -48,7 +53,7 @@ fn duplicate_root_group_marks_each_row_duplicate() {
 
 #[test]
 fn missing_required_labels_marks_failed() {
-    let repo = tempfile::tempdir().unwrap();
+    let repo = git_repo::temp_git_repo();
     let root = Utf8Path::from_path(repo.path()).unwrap();
     let (ps, mut inspect) = managed_container("missing-runtime", root, true, true);
     inspect.config.labels.remove(LABEL_RUNTIME);
@@ -61,7 +66,7 @@ fn missing_required_labels_marks_failed() {
 
 #[test]
 fn missing_cache_mount_marks_failed() {
-    let repo = tempfile::tempdir().unwrap();
+    let repo = git_repo::temp_git_repo();
     let root = Utf8Path::from_path(repo.path()).unwrap();
     let (ps, mut inspect) = managed_container("missing-cache", root, true, true);
     inspect.mounts.clear();
@@ -74,8 +79,8 @@ fn missing_cache_mount_marks_failed() {
 
 #[test]
 fn stopped_and_running_statuses_are_derived_from_inspect_state() {
-    let running_repo = tempfile::tempdir().unwrap();
-    let stopped_repo = tempfile::tempdir().unwrap();
+    let running_repo = git_repo::temp_git_repo();
+    let stopped_repo = git_repo::temp_git_repo();
     let running_root = Utf8Path::from_path(running_repo.path()).unwrap();
     let stopped_root = Utf8Path::from_path(stopped_repo.path()).unwrap();
     let running = managed_container("running", running_root, true, true);
@@ -93,7 +98,7 @@ fn stopped_and_running_statuses_are_derived_from_inspect_state() {
 
 #[test]
 fn missing_git_root_path_marks_orphaned() {
-    let missing_repo = tempfile::tempdir().unwrap();
+    let missing_repo = git_repo::temp_git_repo();
     let root = Utf8Path::from_path(missing_repo.path()).unwrap().to_owned();
     let (ps, inspect) = managed_container("orphaned", &root, true, true);
     drop(missing_repo);
@@ -105,9 +110,30 @@ fn missing_git_root_path_marks_orphaned() {
 }
 
 #[test]
+fn existing_git_root_path_that_resolves_to_different_repo_marks_orphaned() {
+    let workspace = tempfile::tempdir().unwrap();
+    let stored_repo = workspace.path().join("stored-repo");
+    fs::create_dir(&stored_repo).unwrap();
+    init_git_repo(&stored_repo);
+
+    let stored_root = Utf8Path::from_path(stored_repo.canonicalize().unwrap().as_path())
+        .unwrap()
+        .to_owned();
+    let (ps, inspect) = managed_container("replaced-repo", &stored_root, true, true);
+
+    fs::remove_dir_all(stored_repo.join(".git")).unwrap();
+    init_git_repo(workspace.path());
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert_eq!(sessions[0].status, SessionStatus::Orphaned);
+}
+
+#[test]
 fn hash_collision_between_different_roots_fails_clearly() {
-    let target_repo = tempfile::tempdir().unwrap();
-    let other_repo = tempfile::tempdir().unwrap();
+    let target_repo = git_repo::temp_git_repo();
+    let other_repo = git_repo::temp_git_repo();
     let target_root = Utf8Path::from_path(target_repo.path()).unwrap();
     let other_root = Utf8Path::from_path(other_repo.path()).unwrap();
     let forced_hash = hash12(target_root.as_str().as_bytes());
@@ -265,4 +291,13 @@ fn status_for(
         .find(|session| session.container_name == container_name)
         .map(|session| session.status)
         .unwrap()
+}
+
+fn init_git_repo(path: &std::path::Path) {
+    let output = Command::new("git").arg("init").arg(path).output().unwrap();
+    assert!(
+        output.status.success(),
+        "git init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

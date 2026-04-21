@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use crate::git::Git;
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
 use crate::workspace::hash12;
 use crate::{Error, Result};
@@ -66,18 +67,36 @@ pub struct SessionGroup {
 }
 
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
-    discover_managed_sessions_from_ps(podman.ps()?, |container| podman.inspect_one(container))
+    let git = Git::new();
+    discover_managed_sessions_from_ps_with_git(
+        podman.ps()?,
+        |container| podman.inspect_one(container),
+        &git,
+    )
 }
 
 pub fn discover_managed_sessions_from_ps(
     containers: Vec<PodmanPsContainer>,
     mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
 ) -> Result<Vec<SessionRecord>> {
+    let git = Git::new();
+    discover_managed_sessions_from_ps_with_git(
+        containers,
+        |container| inspect_container(container),
+        &git,
+    )
+}
+
+fn discover_managed_sessions_from_ps_with_git(
+    containers: Vec<PodmanPsContainer>,
+    mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+    git: &Git,
+) -> Result<Vec<SessionRecord>> {
     let mut sessions = Vec::new();
 
     for container in containers.into_iter().filter(ps_candidate_is_managed) {
         let inspect = inspect_container(&container.id)?;
-        sessions.push(build_session_record(container, inspect));
+        sessions.push(build_session_record(container, inspect, git));
     }
 
     Ok(mark_duplicate_sessions(sessions))
@@ -87,15 +106,34 @@ pub fn discover_sessions_for_git_root(
     podman: &Podman,
     git_root: &Utf8Path,
 ) -> Result<Vec<SessionRecord>> {
-    discover_sessions_for_git_root_from_ps(podman.ps()?, git_root, |container| {
-        podman.inspect_one(container)
-    })
+    let git = Git::new();
+    discover_sessions_for_git_root_from_ps_with_git(
+        podman.ps()?,
+        git_root,
+        |container| podman.inspect_one(container),
+        &git,
+    )
 }
 
 pub fn discover_sessions_for_git_root_from_ps(
     containers: Vec<PodmanPsContainer>,
     git_root: &Utf8Path,
     mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+) -> Result<Vec<SessionRecord>> {
+    let git = Git::new();
+    discover_sessions_for_git_root_from_ps_with_git(
+        containers,
+        git_root,
+        |container| inspect_container(container),
+        &git,
+    )
+}
+
+fn discover_sessions_for_git_root_from_ps_with_git(
+    containers: Vec<PodmanPsContainer>,
+    git_root: &Utf8Path,
+    mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+    git: &Git,
 ) -> Result<Vec<SessionRecord>> {
     let target_hash = hash12(git_root.as_str().as_bytes());
     let mut matches = Vec::new();
@@ -107,7 +145,7 @@ pub fn discover_sessions_for_git_root_from_ps(
         .filter(|container| container.labels.get(LABEL_GIT_ROOT_HASH) == Some(&target_hash))
     {
         let inspect = inspect_container(&container.id)?;
-        let record = build_session_record(container, inspect);
+        let record = build_session_record(container, inspect, git);
 
         match record.canonical_git_root.as_deref() {
             Some(root) if root == git_root => matches.push(record),
@@ -152,6 +190,7 @@ pub fn group_sessions_by_git_root(sessions: &[SessionRecord]) -> Vec<SessionGrou
 fn build_session_record(
     container: PodmanPsContainer,
     inspect: PodmanContainerInspect,
+    git: &Git,
 ) -> SessionRecord {
     let labels = &inspect.config.labels;
     let container_name = container
@@ -177,6 +216,7 @@ fn build_session_record(
         image.as_deref(),
         logical_name.as_deref(),
         &inspect,
+        git,
     );
 
     SessionRecord {
@@ -202,6 +242,7 @@ fn derive_status(
     image: Option<&str>,
     logical_name: Option<&str>,
     inspect: &PodmanContainerInspect,
+    git: &Git,
 ) -> SessionStatus {
     let labels_are_valid = managed.as_deref() == Some(LABEL_MANAGED_VALUE)
         && schema.as_deref() == Some(LABEL_SCHEMA_VALUE)
@@ -223,7 +264,7 @@ fn derive_status(
     }
 
     let canonical_git_root = canonical_git_root.expect("validated above");
-    if git_root_is_orphaned(canonical_git_root) {
+    if git_root_is_orphaned(canonical_git_root, git) {
         return SessionStatus::Orphaned;
     }
 
@@ -280,16 +321,23 @@ fn has_required_mount(mounts: &[PodmanContainerMount], destination: &str) -> boo
     mounts.iter().any(|mount| mount.destination == destination)
 }
 
-fn git_root_is_orphaned(git_root: &Utf8Path) -> bool {
-    let path = git_root.as_std_path();
-    if !path.is_dir() {
+fn git_root_is_orphaned(git_root: &Utf8Path, git: &Git) -> bool {
+    let canonical_git_root = match canonicalize_utf8(git_root) {
+        Some(canonical_git_root) if canonical_git_root == git_root => canonical_git_root,
+        _ => return true,
+    };
+
+    if !canonical_git_root.as_std_path().is_dir() {
         return true;
     }
 
-    match std::fs::canonicalize(path) {
-        Ok(canonical) => {
-            Utf8PathBuf::from_path_buf(canonical).map_or(true, |canonical| canonical != git_root)
-        }
+    match git.rev_parse_show_toplevel(&canonical_git_root) {
+        Ok(resolved_git_root) => canonicalize_utf8(&resolved_git_root)
+            .is_none_or(|resolved_git_root| resolved_git_root != canonical_git_root),
         Err(_) => true,
     }
+}
+
+fn canonicalize_utf8(path: &Utf8Path) -> Option<Utf8PathBuf> {
+    Utf8PathBuf::from_path_buf(std::fs::canonicalize(path.as_std_path()).ok()?).ok()
 }
