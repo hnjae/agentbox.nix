@@ -60,7 +60,9 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[1].contains(DEFAULT_IMAGE));
     assert!(!log[1].contains("--publish"));
 
+    assert!(log[3].contains(&format!("--workdir {}", workspace.canonical_target)));
     assert!(log[3].contains("/entrypoint opencode serve --hostname 127.0.0.1 --port 4096"));
+    assert!(!log[3].contains("direnv exec ."));
     assert!(
         log[4].contains("/entrypoint curl --max-time 2 -sf http://127.0.0.1:4096/global/health")
     );

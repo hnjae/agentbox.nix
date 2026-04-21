@@ -107,17 +107,16 @@ fn server_start_spec(
     git_root: &Utf8Path,
 ) -> ServerStartSpec {
     let base = runtime.detached_server_start();
+    let workdir = Some(target.to_string());
+
     if direnv_applies_to_target(target, git_root) {
         let mut argv = vec!["direnv".to_string(), "exec".to_string(), ".".to_string()];
         argv.extend(base.argv);
-        ServerStartSpec {
-            argv,
-            workdir: Some(target.to_string()),
-        }
+        ServerStartSpec { argv, workdir }
     } else {
         ServerStartSpec {
             argv: base.argv,
-            workdir: None,
+            workdir,
         }
     }
 }
