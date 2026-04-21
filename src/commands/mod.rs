@@ -11,6 +11,7 @@ use crate::error::{Error, Result};
 
 pub mod attach;
 pub mod ls;
+pub mod rm;
 pub mod run;
 
 pub fn dispatch(command: Command) -> Result<()> {
@@ -20,7 +21,7 @@ pub fn dispatch(command: Command) -> Result<()> {
         Command::Run(args) => run::run(args),
         Command::Attach(args) => attach::run(args),
         Command::Ls => ls::run(),
-        Command::Rm(_) => Err(Error::not_yet_implemented("rm")),
+        Command::Rm(args) => rm::run(args),
         Command::Completion => Err(Error::not_yet_implemented("completion")),
     }
 }

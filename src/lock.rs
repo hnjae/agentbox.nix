@@ -9,11 +9,12 @@
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
+use camino::Utf8Path;
 use directories::BaseDirs;
 use fd_lock::{RwLock, RwLockWriteGuard};
 
 use crate::error::{Error, Result};
-use crate::workspace::WorkspaceIdentity;
+use crate::workspace::{WorkspaceIdentity, hex_digest, sha256_bytes};
 
 const STATE_DIR: &str = "agentbox";
 const LOCKS_DIR: &str = "locks";
@@ -60,6 +61,22 @@ pub fn lock_workspace(identity: &WorkspaceIdentity) -> Result<WorkspaceLock> {
         .state_dir()
         .ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
     lock_workspace_in_state_dir(state_dir, identity)
+}
+
+pub fn lock_git_root(canonical_git_root: &Utf8Path) -> Result<WorkspaceLock> {
+    let base_dirs =
+        BaseDirs::new().ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
+    let state_dir = base_dirs
+        .state_dir()
+        .ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
+    let digest64 = hex_digest(&sha256_bytes(canonical_git_root.as_str().as_bytes()));
+    let path = lock_path_in_state_dir(state_dir, &digest64);
+    let file = open_lock_file(&path)?;
+
+    Ok(WorkspaceLock {
+        path,
+        lock: RwLock::new(file),
+    })
 }
 
 pub fn lock_workspace_in_state_dir(
