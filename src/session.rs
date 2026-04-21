@@ -46,6 +46,13 @@ pub enum SessionStatus {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionFailure {
+    MissingRequiredLabels,
+    DriftedGitRootHash,
+    MissingCacheMount,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionRecord {
     pub container_id: String,
@@ -57,6 +64,7 @@ pub struct SessionRecord {
     pub runtime: Option<String>,
     pub image: Option<String>,
     pub logical_name: Option<String>,
+    pub failure: Option<SessionFailure>,
     pub status: SessionStatus,
 }
 
@@ -208,7 +216,7 @@ fn build_session_record(
     let image = required_label_value(labels, LABEL_IMAGE);
     let logical_name = required_label_value(labels, LABEL_LOGICAL_NAME);
 
-    let status = derive_status(
+    let (status, failure) = derive_status(
         &managed,
         &schema,
         canonical_git_root.as_deref(),
@@ -216,7 +224,8 @@ fn build_session_record(
         runtime.as_deref(),
         image.as_deref(),
         logical_name.as_deref(),
-        &inspect,
+        inspect.state.running,
+        &inspect.mounts,
         git,
     );
 
@@ -230,6 +239,7 @@ fn build_session_record(
         runtime,
         image,
         logical_name,
+        failure,
         status,
     }
 }
@@ -242,9 +252,10 @@ fn derive_status(
     runtime: Option<&str>,
     image: Option<&str>,
     logical_name: Option<&str>,
-    inspect: &PodmanContainerInspect,
+    running: bool,
+    mounts: &[PodmanContainerMount],
     git: &Git,
-) -> SessionStatus {
+) -> (SessionStatus, Option<SessionFailure>) {
     let labels_are_valid = managed.as_deref() == Some(LABEL_MANAGED_VALUE)
         && schema.as_deref() == Some(LABEL_SCHEMA_VALUE)
         && canonical_git_root.is_some()
@@ -257,22 +268,36 @@ fn derive_status(
         .zip(git_root_hash)
         .is_some_and(|(git_root, stored_hash)| stored_hash == hash12(git_root.as_str().as_bytes()));
 
-    if !labels_are_valid
-        || !hash_matches_root
-        || !has_required_mount(&inspect.mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION)
-    {
-        return SessionStatus::Failed;
+    if !labels_are_valid {
+        return (
+            SessionStatus::Failed,
+            Some(SessionFailure::MissingRequiredLabels),
+        );
+    }
+
+    if !hash_matches_root {
+        return (
+            SessionStatus::Failed,
+            Some(SessionFailure::DriftedGitRootHash),
+        );
+    }
+
+    if !has_required_mount(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
+        return (
+            SessionStatus::Failed,
+            Some(SessionFailure::MissingCacheMount),
+        );
     }
 
     let canonical_git_root = canonical_git_root.expect("validated above");
     if git_root_is_orphaned(canonical_git_root, git) {
-        return SessionStatus::Orphaned;
+        return (SessionStatus::Orphaned, None);
     }
 
-    if inspect.state.running {
-        SessionStatus::Running
+    if running {
+        (SessionStatus::Running, None)
     } else {
-        SessionStatus::Stopped
+        (SessionStatus::Stopped, None)
     }
 }
 
