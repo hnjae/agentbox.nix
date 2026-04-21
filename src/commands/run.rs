@@ -83,6 +83,7 @@ pub fn run(args: RunArgs) -> Result<()> {
 
     wait_for_readiness(&process_runner, &workspace.container_name, &runtime)?;
 
+    std::hint::black_box(&workspace_guard);
     drop(workspace_guard);
     drop(workspace_lock);
 

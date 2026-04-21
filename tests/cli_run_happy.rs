@@ -13,6 +13,7 @@ use agentbox::lock::lock_path_in_state_dir;
 use agentbox::runtime::opencode::DEFAULT_IMAGE;
 use agentbox::workspace::resolve_workspace_identity;
 use assert_cmd::Command as AssertCommand;
+use assert_cmd::cargo::cargo_bin;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -33,6 +34,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
         .arg("run")
         .arg(&target);
 
@@ -89,6 +91,7 @@ fn run_wraps_server_start_with_direnv_when_envrc_applies() {
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
         .arg("run")
         .arg(&target);
 
@@ -122,6 +125,7 @@ fn run_persists_the_first_create_image_override_exactly() {
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
         .args(["run", "--image", image])
         .arg(&target);
 
@@ -138,6 +142,7 @@ struct Harness {
     fake_bin: tempfile::TempDir,
     state_home: tempfile::TempDir,
     log_path: PathBuf,
+    lock_probe_path: PathBuf,
     original_path: String,
 }
 
@@ -145,6 +150,7 @@ fn install_harness(repo_root: &Path) -> Harness {
     let fake_bin = tempfile::tempdir().unwrap();
     let state_home = tempfile::tempdir().unwrap();
     let log_path = repo_root.join("agentbox-run.log");
+    let lock_probe_path = cargo_bin("agentbox-lock-probe");
     let original_path = std::env::var("PATH").unwrap();
 
     write_executable(fake_bin.path().join("podman"), &fake_podman_script());
@@ -154,6 +160,7 @@ fn install_harness(repo_root: &Path) -> Harness {
         fake_bin,
         state_home,
         log_path,
+        lock_probe_path,
         original_path,
     }
 }
@@ -173,6 +180,10 @@ impl Harness {
             .lines()
             .map(|line| line.to_string())
             .collect()
+    }
+
+    fn lock_probe(&self) -> &Path {
+        &self.lock_probe_path
     }
 }
 
@@ -202,24 +213,10 @@ set -eu
 
 log_path=${AGENTBOX_TEST_LOG:?missing AGENTBOX_TEST_LOG}
 lock_path=${AGENTBOX_TEST_LOCK_PATH:?missing AGENTBOX_TEST_LOCK_PATH}
+lock_probe=${AGENTBOX_TEST_LOCK_PROBE:?missing AGENTBOX_TEST_LOCK_PROBE}
 
 lock_state() {
-  python3 - "$lock_path" <<'PY'
-import fcntl
-import os
-import sys
-
-fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o666)
-try:
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        print("held")
-    else:
-        print("released")
-finally:
-    os.close(fd)
-PY
+  "$lock_probe" "$lock_path"
 }
 
 record() {
