@@ -23,3 +23,4 @@
 - 2026-04-21: The Nix flake test env here lacked a real `git`, so fixture repos needed on-disk `.git` markers and tiny fake `git` shims; `resolve_workspace_identity` and session orphan checks now accept marker repos before treating them as missing.
 - 2026-04-21: The workspace identity suite should pin the plan/spec worked example verbatim when it exists; for `/aaa/bbb`, the authoritative expectation is `agentbox-_aaa_bbb-2f83c6a14d91`, and downstream assertions should follow that exact contract.
 - 2026-04-21: For the final `/aaa/bbb` naming contract, keep the example self-consistent across digest, `hash12`, and container name assertions instead of validating the name against a different hash path.
+- 2026-04-21: The final naming contradiction was resolved by choosing the algorithm over the worked example; `sha256_bytes` now stays literal for every input, including `/aaa/bbb`, and the test suite should mirror that rule.
