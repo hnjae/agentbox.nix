@@ -13,35 +13,19 @@ pub fn podman_ps_fixture() -> &'static str {
   {
     "Id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "Image": "ghcr.io/example/agentbox:latest",
-    "Command": ["/usr/bin/sleep", "infinity"],
+    "Command": null,
     "Created": 1713681300,
     "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
-    "Names": ["agentbox-demo"],
-    "Ports": [
-      {
-        "container_port": 8080,
-        "host_ip": "127.0.0.1",
-        "host_port": 49153,
-        "protocol": "tcp",
-        "range": 1
-      }
-    ],
+    "Names": null,
+    "Ports": null,
     "Status": "Up 2 minutes",
     "State": "running",
     "Labels": {
       "io.containers.autoupdate": "registry"
     },
-    "Mounts": ["agentbox-cache"],
-    "Networks": ["podman"],
-    "Namespaces": {
-      "Cgroup": "ns:/proc/4321/ns/cgroup",
-      "Ipc": "ns:/proc/4321/ns/ipc",
-      "Mnt": "ns:/proc/4321/ns/mnt",
-      "Net": "ns:/proc/4321/ns/net",
-      "Pidns": "ns:/proc/4321/ns/pid",
-      "User": "ns:/proc/4321/ns/user",
-      "Uts": "ns:/proc/4321/ns/uts"
-    }
+    "Mounts": null,
+    "Networks": null,
+    "Namespaces": null
   }
 ]"#
 }

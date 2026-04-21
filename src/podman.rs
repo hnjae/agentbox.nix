@@ -24,24 +24,24 @@ pub struct Podman {
 pub struct PodmanPsContainer {
     pub id: String,
     pub image: String,
-    #[serde(default, deserialize_with = "deserialize_vec_or_string")]
-    pub command: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_option_vec_or_string")]
+    pub command: Option<Vec<String>>,
     // `podman ps --format json` keeps the stable numeric timestamp in `Created`
     // and also returns a derived human-readable `CreatedAt` string.
     pub created: i64,
     pub created_at: String,
     #[serde(default)]
-    pub names: Vec<String>,
+    pub names: Option<Vec<String>>,
     #[serde(default)]
-    pub ports: Vec<PodmanPsPort>,
+    pub ports: Option<Vec<PodmanPsPort>>,
     pub status: String,
     pub state: String,
     #[serde(default)]
     pub labels: BTreeMap<String, String>,
     #[serde(default)]
-    pub mounts: Vec<String>,
+    pub mounts: Option<Vec<String>>,
     #[serde(default)]
-    pub networks: Vec<String>,
+    pub networks: Option<Vec<String>>,
     #[serde(default)]
     pub namespaces: Option<PodmanNamespaces>,
 }
@@ -225,24 +225,6 @@ fn parse_json<T: DeserializeOwned>(context: &str, input: &str) -> Result<T> {
         .map_err(|error| Error::msg(format!("failed to parse {context}: {error}")))
 }
 
-fn deserialize_vec_or_string<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StringOrVec {
-        String(String),
-        Vec(Vec<String>),
-    }
-
-    Ok(match Option::<StringOrVec>::deserialize(deserializer)? {
-        Some(StringOrVec::String(value)) => vec![value],
-        Some(StringOrVec::Vec(values)) => values,
-        None => Vec::new(),
-    })
-}
-
 fn deserialize_option_vec_or_string<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Option<Vec<String>>, D::Error>
@@ -261,4 +243,15 @@ where
         Some(StringOrVec::Vec(values)) => Some(values),
         None => None,
     })
+}
+
+#[allow(dead_code)]
+fn deserialize_option_vec<'de, D, T>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<Vec<T>>::deserialize(deserializer)
 }

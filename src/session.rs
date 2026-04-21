@@ -195,7 +195,8 @@ fn build_session_record(
     let labels = &inspect.config.labels;
     let container_name = container
         .names
-        .first()
+        .as_ref()
+        .and_then(|names| names.first())
         .cloned()
         .unwrap_or_else(|| container.id.clone());
 

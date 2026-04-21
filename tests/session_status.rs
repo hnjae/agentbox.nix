@@ -206,11 +206,11 @@ fn managed_container_with_hash(
         PodmanPsContainer {
             id: format!("{name}-id"),
             image: "localhost/agentbox-opencode:local".to_string(),
-            command: vec!["sleep".to_string(), "infinity".to_string()],
+            command: Some(vec!["sleep".to_string(), "infinity".to_string()]),
             created: 0,
             created_at: "2026-04-21 00:00:00 +0000 UTC".to_string(),
-            names: vec![name.to_string()],
-            ports: Vec::new(),
+            names: Some(vec![name.to_string()]),
+            ports: Some(Vec::new()),
             status: if running {
                 "Up 1 minute".to_string()
             } else {
@@ -222,8 +222,8 @@ fn managed_container_with_hash(
                 "exited".to_string()
             },
             labels: ps_labels,
-            mounts: Vec::new(),
-            networks: vec!["podman".to_string()],
+            mounts: Some(Vec::new()),
+            networks: Some(vec!["podman".to_string()]),
             namespaces: None,
         },
         PodmanContainerInspect {

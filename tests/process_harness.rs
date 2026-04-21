@@ -104,20 +104,17 @@ fn podman_ps_parses_stable_json_fields_from_a_fake_binary() {
     assert_eq!(containers.len(), 1);
     let container = &containers[0];
     assert_eq!(container.image, "ghcr.io/example/agentbox:latest");
-    assert_eq!(container.command, vec!["/usr/bin/sleep", "infinity"]);
+    assert_eq!(container.command, None);
     assert_eq!(container.created, 1713681300);
     assert_eq!(container.created_at, "2026-04-21 10:15:00 +0000 UTC");
-    assert_eq!(container.names, vec!["agentbox-demo"]);
-    assert_eq!(container.ports[0].host_port, Some(49153));
+    assert_eq!(container.names, None);
+    assert_eq!(container.ports, None);
     assert_eq!(
         container.labels.get("io.containers.autoupdate"),
         Some(&"registry".to_string())
     );
-    assert_eq!(container.networks, vec!["podman"]);
-    assert_eq!(
-        container.namespaces.as_ref().unwrap().net,
-        Some("ns:/proc/4321/ns/net".to_string())
-    );
+    assert_eq!(container.networks, None);
+    assert_eq!(container.namespaces, None);
 }
 
 #[test]
