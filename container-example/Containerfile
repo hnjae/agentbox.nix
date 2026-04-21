@@ -1,0 +1,74 @@
+# Development container for a host-attached Nix wrapper on NixOS and Linux with multi-user Nix.
+#
+# The image expects the host /nix tree, a host nix client and a host /etc/nix
+# to be mounted at runtime.
+# Bootstrap checks prerequisites; the startup-path exercise is `nix profile add`.
+
+FROM docker.io/library/debian:stable
+
+# hadolint ignore=DL3008,DL3009
+RUN set -eux; \
+	apt-get update; \
+	apt-get install -y --no-install-recommends \
+	bind9-dnsutils \
+	build-essential \
+	ca-certificates \
+	curl \
+	file \
+	fish \
+	gpg \
+	iproute2 \
+	iputils-arping \
+	iputils-ping \
+	iputils-tracepath \
+	jq \
+	less \
+	libssl-dev \
+	locales \
+	lsof \
+	man-db \
+	pkg-config \
+	procps \
+	psmisc \
+	python3 \
+	python3-json5 \
+	tzdata \
+	unzip \
+	vim \
+	zsh
+
+# hadolint ignore=DL3008
+RUN set -eu; \
+	mkdir -p /etc/apt/keyrings; \
+	curl -fsSL -o /tmp/nushell.gpg.key https://apt.fury.io/nushell/gpg.key; \
+	gpg --dearmor --batch --yes -o /etc/apt/keyrings/fury-nushell.gpg /tmp/nushell.gpg.key; \
+	rm -f /tmp/nushell.gpg.key; \
+	printf '%s\n' \
+	'deb [signed-by=/etc/apt/keyrings/fury-nushell.gpg] https://apt.fury.io/nushell/ /' \
+	> "/etc/apt/sources.list.d/fury-nushell.list"; \
+	apt-get update; \
+	apt-get install -y --no-install-recommends nushell; \
+	rm -rf /var/lib/apt/lists/*
+
+RUN set -eu; \
+	useradd --create-home --home-dir /home/user --shell /bin/zsh user
+
+WORKDIR /workspace
+
+ENV NIX_REMOTE=daemon \
+	NIX_DAEMON_SOCKET_PATH=/nix/var/nix/daemon-socket/socket \
+	HOME=/home/user
+
+RUN mkdir -p /workspace 
+
+COPY bootstrap /usr/local/share/libexec/agentbox/bootstrap
+COPY entrypoint /usr/local/share/libexec/agentbox/entrypoint
+COPY lib/runtime-contract.sh /usr/local/share/libexec/agentbox/lib/runtime-contract.sh
+COPY runtime-packages.nix /usr/local/share/libexec/agentbox/runtime-packages.nix
+
+RUN ln -s /usr/local/share/libexec/agentbox/entrypoint /entrypoint && chmod +x /usr/local/share/libexec/agentbox/bootstrap /usr/local/share/libexec/agentbox/entrypoint /usr/local/share/libexec/agentbox/lib/runtime-contract.sh
+
+USER user
+
+ENTRYPOINT ["/usr/local/share/libexec/agentbox/bootstrap"]
+CMD ["bash"]

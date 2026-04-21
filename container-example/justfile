@@ -1,0 +1,21 @@
+#!/usr/bin/env -S just --justfile
+
+set unstable := true
+set fallback := false
+set lazy := true
+
+_:
+    @just --list
+
+build:
+    podman build -t localhost/agentbox-opencode:local -f Containerfile .
+
+test:
+    ./tests/podman-entrypoint-contract.sh
+    ./tests/podman-runtime-trust-source.sh --mode image-local
+    ./tests/podman-runtime-failures.sh --mode missing-etc-nix
+    ./tests/podman-runtime-failures.sh --mode broken-static-nix
+    ./tests/podman-runtime-failures.sh --mode no-ca-bundle
+    ./tests/podman-runtime-failures.sh --mode unusable-state-path
+    ./tests/podman-runtime-compat.sh --mode xdg-state-fallback
+    ./tests/podman-runtime-compat.sh --mode fixed-home-fallback
