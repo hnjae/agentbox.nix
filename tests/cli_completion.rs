@@ -43,18 +43,32 @@ fn helper_returns_live_roots_with_runtime_and_status_metadata() {
 }
 
 #[test]
-fn zsh_completion_script_wires_the_dynamic_callback() {
+fn zsh_completion_script_wires_the_dynamic_callback_and_descriptions() {
     let script = capture_completion_script();
 
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("compdef _agentbox_completion_roots agentbox"));
+    assert!(script.contains("compadd -d descriptions -- \"${candidates[@]}\""));
+    assert!(script.contains("runtime status"));
+}
+
+#[test]
+fn fish_completion_script_keeps_helper_metadata_available() {
+    let script = capture_completion_script_shell("fish");
+
+    assert!(script.contains("agentbox __completion-roots 2>/dev/null"));
+    assert!(script.contains("complete -c agentbox -f -a \"(__agentbox_completion_roots)\""));
 }
 
 fn capture_completion_script() -> String {
+    capture_completion_script_shell("zsh")
+}
+
+fn capture_completion_script_shell(shell: &str) -> String {
     let output = AssertCommand::cargo_bin("agentbox")
         .unwrap()
         .arg("completion")
-        .arg("zsh")
+        .arg(shell)
         .output()
         .unwrap();
     assert!(output.status.success());

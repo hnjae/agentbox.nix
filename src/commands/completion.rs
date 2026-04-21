@@ -49,9 +49,14 @@ fn zsh_script() -> String {
     r#"#compdef agentbox
 
 _agentbox_completion_roots() {
-  local -a candidates
-  candidates=(${(f)"$({ agentbox __completion-roots 2>/dev/null; } || true)"})
-  compadd -- ${(f)"$(printf '%s\n' $candidates | cut -f1)"}
+  local line root runtime status container
+  local -a candidates descriptions
+  for line in ${(f)"$({ agentbox __completion-roots 2>/dev/null; } || true)"}; do
+    IFS=$'\t' read -r root runtime status container <<< "$line"
+    candidates+=("$root")
+    descriptions+=("${runtime} ${status}")
+  done
+  compadd -d descriptions -- "${candidates[@]}"
 }
 
 compdef _agentbox_completion_roots agentbox
@@ -61,7 +66,7 @@ compdef _agentbox_completion_roots agentbox
 
 fn fish_script() -> String {
     r#"function __agentbox_completion_roots
-    agentbox __completion-roots 2>/dev/null | cut -f1
+    agentbox __completion-roots 2>/dev/null
 end
 complete -c agentbox -f -a "(__agentbox_completion_roots)"
 "#
