@@ -6,6 +6,8 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use camino::Utf8Path;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -29,5 +31,55 @@ impl Error {
 
     pub fn msg(message: impl Into<String>) -> Self {
         Self::Message(message.into())
+    }
+
+    pub fn non_git_target(target: &Utf8Path) -> Self {
+        Self::msg(format!(
+            "`{target}` is not inside a git repository; choose a directory within a git worktree or initialize one with `git init`"
+        ))
+    }
+
+    pub fn escaped_git_target(target: &Utf8Path, git_root: &Utf8Path) -> Self {
+        Self::msg(format!(
+            "requested directory `{target}` resolves outside the git root `{git_root}`; choose a path within `{git_root}`"
+        ))
+    }
+
+    pub fn managed_session_requires_action(
+        git_root: &Utf8Path,
+        container_name: &str,
+        detail: &str,
+        next_step: &str,
+    ) -> Self {
+        Self::msg(format!(
+            "managed session `{container_name}` for `{git_root}` {detail}; {next_step}"
+        ))
+    }
+
+    pub fn session_start_failed(git_root: &Utf8Path, container_name: &str, detail: &str) -> Self {
+        Self::msg(format!(
+            "failed to start managed session `{container_name}` for `{git_root}`: {detail}. Check `podman logs {container_name}` or recreate the session before retrying."
+        ))
+    }
+
+    pub fn runtime_command_failed(
+        git_root: &Utf8Path,
+        container_name: &str,
+        action: &str,
+        detail: &str,
+    ) -> Self {
+        Self::msg(format!(
+            "failed to {action} for managed session `{container_name}` in `{git_root}`: {detail}. Verify the runtime image still provides `/entrypoint` and the expected runtime tools, then retry or recreate the session."
+        ))
+    }
+
+    pub fn runtime_readiness_timeout(
+        git_root: &Utf8Path,
+        container_name: &str,
+        detail: &str,
+    ) -> Self {
+        Self::msg(format!(
+            "managed session `{container_name}` for `{git_root}` did not become ready after 30 attempts: {detail}. Check `podman logs {container_name}` or recreate the session before retrying."
+        ))
     }
 }

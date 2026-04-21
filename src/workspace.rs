@@ -6,6 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Command;
 
@@ -35,7 +36,10 @@ pub fn resolve_workspace_identity(directory: impl AsRef<Path>) -> Result<Workspa
     let canonical_target = canonicalize_utf8(&requested_target)?;
 
     if !is_within_root(&canonical_target, &canonical_git_root) {
-        return Err(Error::msg("workspace target resolves outside the git root"));
+        return Err(Error::escaped_git_target(
+            requested_target.as_ref(),
+            canonical_git_root.as_ref(),
+        ));
     }
 
     let digest = sha256_bytes(canonical_git_root.as_str().as_bytes());
@@ -103,10 +107,32 @@ fn git_root_for(directory: &Utf8Path) -> Result<Utf8PathBuf> {
         .arg(directory.as_str())
         .arg("rev-parse")
         .arg("--show-toplevel")
-        .output()?;
+        .output()
+        .map_err(|error| {
+            if error.kind() == ErrorKind::NotFound {
+                Error::msg("`git` was not found on PATH; install `git` or add it to PATH")
+            } else {
+                Error::msg(format!(
+                    "failed to run `git -C {directory} rev-parse --show-toplevel`: {error}"
+                ))
+            }
+        })?;
 
     if !output.status.success() {
-        return Err(Error::msg("failed to resolve git root"));
+        let stderr = String::from_utf8(output.stderr)?;
+        let detail = stderr.trim();
+        if detail.contains("not a git repository") {
+            return Err(Error::non_git_target(directory));
+        }
+
+        return Err(Error::msg(format!(
+            "failed to resolve git root for `{directory}` via `git -C {directory} rev-parse --show-toplevel`: {}. Choose a directory inside a readable git worktree.",
+            if detail.is_empty() {
+                "no output"
+            } else {
+                detail
+            }
+        )));
     }
 
     let root = String::from_utf8(output.stdout)?.trim().to_owned();
