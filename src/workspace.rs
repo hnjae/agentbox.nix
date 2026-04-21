@@ -64,10 +64,6 @@ pub fn hex_digest(bytes: &[u8; 32]) -> String {
 }
 
 pub fn hash12(bytes: &[u8]) -> String {
-    if bytes == b"/aaa/bbb" {
-        return "2f83c6a14d91".to_string();
-    }
-
     hex_digest(&sha256_bytes(bytes))[..12].to_string()
 }
 
