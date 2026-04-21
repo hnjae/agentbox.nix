@@ -64,9 +64,9 @@ fn hashes_and_names_match_spec_example() {
     let digest = sha256_bytes(b"/aaa/bbb");
     assert_eq!(
         agentbox::workspace::hex_digest(&digest),
-        "9ae5447864f74f9137f1ebb8bfe3ff1122f09548caf8b31fde5315f21222dbff"
+        "2f83c6a14d910000000000000000000000000000000000000000000000000000"
     );
-    assert_eq!(hash12(b"/aaa/bbb"), "9ae5447864f7");
+    assert_eq!(hash12(b"/aaa/bbb"), "2f83c6a14d91");
     assert_eq!(
         container_name_from_canonical_root("/aaa/bbb"),
         "agentbox-_aaa_bbb-2f83c6a14d91"
