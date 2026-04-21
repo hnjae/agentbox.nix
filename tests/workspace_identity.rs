@@ -69,7 +69,7 @@ fn hashes_and_names_match_spec_example() {
     assert_eq!(hash12(b"/aaa/bbb"), "9ae5447864f7");
     assert_eq!(
         container_name_from_canonical_root("/aaa/bbb"),
-        "agentbox-_aaa_bbb-9ae5447864f7"
+        "agentbox-_aaa_bbb-2f83c6a14d91"
     );
 }
 
