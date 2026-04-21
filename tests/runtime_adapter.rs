@@ -20,6 +20,8 @@ use agentbox::session::{
 };
 use agentbox::workspace::resolve_workspace_identity;
 use camino::Utf8Path;
+use std::fs;
+use std::process::Command;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -183,4 +185,48 @@ fn preflight_missing_nix_conf_reports_exact_message() {
         error.to_string(),
         "Missing readable host Nix config: /etc/nix/nix.conf. Mount /etc/nix:/etc/nix:ro."
     );
+}
+
+#[test]
+fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
+    let sandbox = tempfile::tempdir().unwrap();
+    let repo = sandbox.path().join("repo");
+    let nested = repo.join("nested");
+
+    fs::create_dir(&repo).unwrap();
+    init_git_repo(&repo);
+    fs::create_dir(&nested).unwrap();
+    fs::write(sandbox.path().join(".envrc"), "use nix\n").unwrap();
+
+    let workspace = resolve_workspace_identity(&nested).unwrap();
+    let snapshot = PreflightSnapshot::detect(
+        Some(workspace.canonical_target.as_ref()),
+        Some(workspace.canonical_git_root.as_ref()),
+    );
+
+    assert!(!snapshot.direnv_required);
+}
+
+fn init_git_repo(path: &std::path::Path) {
+    let output = Command::new("git").arg("init").arg(path).output().unwrap();
+    assert!(output.status.success(), "git init failed: {output:?}");
+
+    fs::write(path.join(".gitignore"), "\n").unwrap();
+    let output = Command::new("git")
+        .current_dir(path)
+        .args(["add", ".gitignore"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git add failed: {output:?}");
+
+    let output = Command::new("git")
+        .current_dir(path)
+        .args(["commit", "-m", "init"])
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git commit failed: {output:?}");
 }

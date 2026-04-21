@@ -46,8 +46,13 @@ pub struct PreflightSnapshot {
 }
 
 impl PreflightSnapshot {
-    pub fn detect(target_directory: Option<&Utf8Path>) -> Self {
-        let direnv_required = target_directory.is_some_and(envrc_applies);
+    pub fn detect(target_directory: Option<&Utf8Path>, git_root: Option<&Utf8Path>) -> Self {
+        let direnv_required =
+            target_directory
+                .zip(git_root)
+                .is_some_and(|(target_directory, git_root)| {
+                    envrc_applies_within_git_root(target_directory, git_root)
+                });
 
         let nix_custom_conf = Utf8Path::new("/etc/nix/nix.custom.conf");
         let nix_custom_conf_present = symlink_or_path_exists(nix_custom_conf);
@@ -71,9 +76,12 @@ impl PreflightSnapshot {
     }
 }
 
-pub fn check_host_prerequisites(target_directory: Option<&Utf8Path>) -> Result<PreflightReport> {
+pub fn check_host_prerequisites(
+    target_directory: Option<&Utf8Path>,
+    git_root: Option<&Utf8Path>,
+) -> Result<PreflightReport> {
     check_host_prerequisites_with_snapshot(
-        &PreflightSnapshot::detect(target_directory),
+        &PreflightSnapshot::detect(target_directory, git_root),
         target_directory,
     )
 }
@@ -175,9 +183,15 @@ fn command_exists(program: &str) -> bool {
     which::which(program).is_ok()
 }
 
-fn envrc_applies(target_directory: &Utf8Path) -> bool {
+fn envrc_applies_within_git_root(target_directory: &Utf8Path, git_root: &Utf8Path) -> bool {
+    if target_directory != git_root && !target_directory.starts_with(git_root) {
+        return false;
+    }
+
     target_directory
         .ancestors()
+        .take_while(|candidate| *candidate != git_root)
+        .chain(std::iter::once(git_root))
         .any(|candidate| candidate.join(".envrc").is_file())
 }
 
