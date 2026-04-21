@@ -9,6 +9,7 @@
 use crate::cli::Command;
 use crate::error::{Error, Result};
 
+pub mod attach;
 pub mod ls;
 pub mod run;
 
@@ -17,7 +18,7 @@ pub fn dispatch(command: Command) -> Result<()> {
 
     match command {
         Command::Run(args) => run::run(args),
-        Command::Attach(_) => Err(Error::not_yet_implemented("attach")),
+        Command::Attach(args) => attach::run(args),
         Command::Ls => ls::run(),
         Command::Rm(_) => Err(Error::not_yet_implemented("rm")),
         Command::Completion => Err(Error::not_yet_implemented("completion")),

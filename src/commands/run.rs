@@ -7,6 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
+use std::io::IsTerminal;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -277,12 +278,12 @@ fn has_required_mount(mounts: &[PodmanContainerMount], destination: &str) -> boo
     mounts.iter().any(|mount| mount.destination == destination)
 }
 
-struct ServerStartSpec {
-    argv: Vec<String>,
-    workdir: Option<String>,
+pub(crate) struct ServerStartSpec {
+    pub(crate) argv: Vec<String>,
+    pub(crate) workdir: Option<String>,
 }
 
-fn server_start_spec(
+pub(crate) fn server_start_spec(
     runtime: &OpencodeRuntime,
     target: &Utf8Path,
     git_root: &Utf8Path,
@@ -302,7 +303,7 @@ fn server_start_spec(
     }
 }
 
-fn wait_for_readiness(
+pub(crate) fn wait_for_readiness(
     process_runner: &ProcessRunner,
     container_name: &str,
     runtime: &OpencodeRuntime,
@@ -367,13 +368,13 @@ fn podman_create(
     run_command(&mut command).map(|_| ())
 }
 
-fn podman_start(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
+pub(crate) fn podman_start(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
     let mut command = process_runner.command("podman")?;
     command.args(["start", container_name]);
     run_command(&mut command).map(|_| ())
 }
 
-fn podman_exec(
+pub(crate) fn podman_exec(
     process_runner: &ProcessRunner,
     container_name: &str,
     argv: &[String],
@@ -393,7 +394,7 @@ fn podman_exec(
     run_command(&mut command).map(|_| ())
 }
 
-fn podman_exec_interactive(
+pub(crate) fn podman_exec_interactive(
     process_runner: &ProcessRunner,
     container_name: &str,
     argv: &[String],
@@ -401,6 +402,10 @@ fn podman_exec_interactive(
 ) -> Result<()> {
     let mut command = process_runner.command("podman")?;
     command.arg("exec");
+    command.arg("--interactive");
+    if should_allocate_tty() {
+        command.arg("--tty");
+    }
     if let Some(workdir) = workdir {
         command.args(["--workdir", workdir]);
     }
@@ -426,6 +431,12 @@ fn podman_exec_interactive(
                 .unwrap_or_else(|| "signal".to_string())
         )))
     }
+}
+
+fn should_allocate_tty() -> bool {
+    std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+        && std::io::stderr().is_terminal()
 }
 
 fn render_mount(mount: &crate::runtime::RuntimeMount) -> String {
