@@ -18,7 +18,9 @@ pub mod error;
 pub mod git;
 pub mod lock;
 pub mod podman;
+pub mod preflight;
 pub mod process;
+pub mod runtime;
 pub mod session;
 pub mod workspace;
 
