@@ -7,9 +7,10 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::cli::Command;
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 pub mod attach;
+pub mod completion;
 pub mod ls;
 pub mod rm;
 pub mod run;
@@ -22,6 +23,10 @@ pub fn dispatch(command: Command) -> Result<()> {
         Command::Attach(args) => attach::run(args),
         Command::Ls => ls::run(),
         Command::Rm(args) => rm::run(args),
-        Command::Completion => Err(Error::not_yet_implemented("completion")),
+        Command::Completion(args) => completion::run(args.shell),
+        Command::CompletionRoots => {
+            print!("{}", completion::live_roots_output()?);
+            Ok(())
+        }
     }
 }

@@ -6,7 +6,9 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use agentbox::cli::{Cli, Command, DirectoryArgs, RmArgs, RunArgs};
+use agentbox::cli::{
+    Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, RmArgs, RunArgs,
+};
 use assert_cmd::Command as AssertCommand;
 use clap::Parser;
 use predicates::prelude::*;
@@ -45,7 +47,7 @@ fn core_commands_parse_into_expected_variants() {
     let attach = Cli::try_parse_from(["agentbox", "attach", "/tmp/workspace"]).unwrap();
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
     let rm = Cli::try_parse_from(["agentbox", "rm", "/tmp/workspace"]).unwrap();
-    let completion = Cli::try_parse_from(["agentbox", "completion"]).unwrap();
+    let completion = Cli::try_parse_from(["agentbox", "completion", "bash"]).unwrap();
 
     assert_eq!(
         run.command,
@@ -68,7 +70,12 @@ fn core_commands_parse_into_expected_variants() {
             directory: "/tmp/workspace".into(),
         })
     );
-    assert_eq!(completion.command, Command::Completion);
+    assert_eq!(
+        completion.command,
+        Command::Completion(CompletionArgs {
+            shell: CompletionShell::Bash,
+        })
+    );
 }
 
 #[test]

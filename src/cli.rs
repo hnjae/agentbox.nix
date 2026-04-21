@@ -10,6 +10,26 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+}
+
+impl std::str::FromStr for CompletionShell {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "bash" => Ok(Self::Bash),
+            "zsh" => Ok(Self::Zsh),
+            "fish" => Ok(Self::Fish),
+            other => Err(format!("unsupported shell `{other}`")),
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "agentbox")]
 #[command(version)]
@@ -30,7 +50,15 @@ pub enum Command {
     /// Remove a managed session.
     Rm(RmArgs),
     /// Shell completion helpers.
-    Completion,
+    Completion(CompletionArgs),
+
+    #[command(name = "__completion-roots", hide = true)]
+    CompletionRoots,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct CompletionArgs {
+    pub shell: CompletionShell,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
