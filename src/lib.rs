@@ -13,8 +13,12 @@ use clap::Parser;
 
 pub mod cli;
 pub mod commands;
+pub mod direnv;
 pub mod error;
+pub mod git;
 pub mod lock;
+pub mod podman;
+pub mod process;
 pub mod workspace;
 
 use cli::Cli;
