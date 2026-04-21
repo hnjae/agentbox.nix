@@ -10,12 +10,13 @@ use crate::cli::Command;
 use crate::error::{Error, Result};
 
 pub mod ls;
+pub mod run;
 
 pub fn dispatch(command: Command) -> Result<()> {
     tracing::debug!(?command, "dispatching CLI command");
 
     match command {
-        Command::Run(_) => Err(Error::not_yet_implemented("run")),
+        Command::Run(args) => run::run(args),
         Command::Attach(_) => Err(Error::not_yet_implemented("attach")),
         Command::Ls => ls::run(),
         Command::Rm(_) => Err(Error::not_yet_implemented("rm")),

@@ -22,7 +22,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     /// Create and attach to a managed session.
-    Run(DirectoryArgs),
+    Run(RunArgs),
     /// Attach to an existing managed session.
     Attach(DirectoryArgs),
     /// List managed sessions.
@@ -31,6 +31,16 @@ pub enum Command {
     Rm(DirectoryArgs),
     /// Shell completion helpers.
     Completion,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RunArgs {
+    /// Runtime image to persist on first session creation.
+    #[arg(long)]
+    pub image: Option<String>,
+
+    /// Workspace directory inside a git repository.
+    pub directory: PathBuf,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]

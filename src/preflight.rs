@@ -172,6 +172,10 @@ pub fn check_host_prerequisites_with_snapshot(
     Ok(PreflightReport { host_nix_mounts })
 }
 
+pub fn direnv_applies_to_target(target_directory: &Utf8Path, git_root: &Utf8Path) -> bool {
+    envrc_applies_within_git_root(target_directory, git_root)
+}
+
 fn resolve_nix_client_source() -> Option<Utf8PathBuf> {
     NIX_CLIENT_CANDIDATES.iter().find_map(|candidate| {
         let path = Utf8PathBuf::from(candidate.to_string());
