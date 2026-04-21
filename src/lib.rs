@@ -19,6 +19,7 @@ pub mod git;
 pub mod lock;
 pub mod podman;
 pub mod process;
+pub mod session;
 pub mod workspace;
 
 use cli::Cli;

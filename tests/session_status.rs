@@ -1,0 +1,268 @@
+// Copyright 2026 KIM Hyunjae
+//
+// This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+use std::collections::BTreeMap;
+
+use agentbox::podman::{
+    PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
+    PodmanHostConfig, PodmanNetworkSettings, PodmanPsContainer,
+};
+use agentbox::session::{
+    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionStatus, discover_managed_sessions_from_ps,
+    discover_sessions_for_git_root_from_ps, group_sessions_by_git_root,
+};
+use agentbox::workspace::hash12;
+use camino::Utf8Path;
+
+#[test]
+fn duplicate_root_group_marks_each_row_duplicate() {
+    let repo = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let first = managed_container("dup-a", root, true, true);
+    let second = managed_container("dup-b", root, true, true);
+
+    let sessions = discover_managed_sessions_from_ps(
+        vec![first.0, second.0],
+        inspect_by_id(vec![first.1, second.1]),
+    )
+    .unwrap();
+
+    assert_eq!(sessions.len(), 2);
+    assert!(
+        sessions
+            .iter()
+            .all(|session| session.status == SessionStatus::Duplicate)
+    );
+
+    let groups = group_sessions_by_git_root(&sessions);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].sessions.len(), 2);
+}
+
+#[test]
+fn missing_required_labels_marks_failed() {
+    let repo = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let (ps, mut inspect) = managed_container("missing-runtime", root, true, true);
+    inspect.config.labels.remove(LABEL_RUNTIME);
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert_eq!(sessions[0].status, SessionStatus::Failed);
+}
+
+#[test]
+fn missing_cache_mount_marks_failed() {
+    let repo = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let (ps, mut inspect) = managed_container("missing-cache", root, true, true);
+    inspect.mounts.clear();
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert_eq!(sessions[0].status, SessionStatus::Failed);
+}
+
+#[test]
+fn stopped_and_running_statuses_are_derived_from_inspect_state() {
+    let running_repo = tempfile::tempdir().unwrap();
+    let stopped_repo = tempfile::tempdir().unwrap();
+    let running_root = Utf8Path::from_path(running_repo.path()).unwrap();
+    let stopped_root = Utf8Path::from_path(stopped_repo.path()).unwrap();
+    let running = managed_container("running", running_root, true, true);
+    let stopped = managed_container("stopped", stopped_root, false, true);
+
+    let sessions = discover_managed_sessions_from_ps(
+        vec![running.0, stopped.0],
+        inspect_by_id(vec![running.1, stopped.1]),
+    )
+    .unwrap();
+
+    assert_eq!(status_for(&sessions, "running"), SessionStatus::Running);
+    assert_eq!(status_for(&sessions, "stopped"), SessionStatus::Stopped);
+}
+
+#[test]
+fn missing_git_root_path_marks_orphaned() {
+    let missing_repo = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(missing_repo.path()).unwrap().to_owned();
+    let (ps, inspect) = managed_container("orphaned", &root, true, true);
+    drop(missing_repo);
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert_eq!(sessions[0].status, SessionStatus::Orphaned);
+}
+
+#[test]
+fn hash_collision_between_different_roots_fails_clearly() {
+    let target_repo = tempfile::tempdir().unwrap();
+    let other_repo = tempfile::tempdir().unwrap();
+    let target_root = Utf8Path::from_path(target_repo.path()).unwrap();
+    let other_root = Utf8Path::from_path(other_repo.path()).unwrap();
+    let forced_hash = hash12(target_root.as_str().as_bytes());
+    let target =
+        managed_container_with_hash("target", target_root, forced_hash.as_str(), true, true);
+    let other = managed_container_with_hash("other", other_root, forced_hash.as_str(), true, true);
+
+    let error = discover_sessions_for_git_root_from_ps(
+        vec![target.0, other.0],
+        target_root,
+        inspect_by_id(vec![target.1, other.1]),
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("hash12 prefilter"));
+    assert!(error.to_string().contains(target_root.as_str()));
+    assert!(error.to_string().contains(other_root.as_str()));
+}
+
+fn managed_container(
+    name: &str,
+    root: &Utf8Path,
+    running: bool,
+    include_cache_mount: bool,
+) -> (PodmanPsContainer, PodmanContainerInspect) {
+    managed_container_with_hash(
+        name,
+        root,
+        hash12(root.as_str().as_bytes()).as_str(),
+        running,
+        include_cache_mount,
+    )
+}
+
+fn managed_container_with_hash(
+    name: &str,
+    root: &Utf8Path,
+    git_root_hash: &str,
+    running: bool,
+    include_cache_mount: bool,
+) -> (PodmanPsContainer, PodmanContainerInspect) {
+    let mut ps_labels = BTreeMap::new();
+    ps_labels.insert(LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string());
+    ps_labels.insert(LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string());
+
+    let mut inspect_labels = BTreeMap::new();
+    inspect_labels.insert(LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string());
+    inspect_labels.insert(LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string());
+    inspect_labels.insert(LABEL_GIT_ROOT.to_string(), root.as_str().to_string());
+    inspect_labels.insert(LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string());
+    inspect_labels.insert(LABEL_RUNTIME.to_string(), "opencode".to_string());
+    inspect_labels.insert(
+        LABEL_IMAGE.to_string(),
+        "localhost/agentbox-opencode:local".to_string(),
+    );
+    inspect_labels.insert(LABEL_LOGICAL_NAME.to_string(), name.to_string());
+
+    let mounts = if include_cache_mount {
+        vec![PodmanContainerMount {
+            kind: "volume".to_string(),
+            source: "agentbox-cache".to_string(),
+            destination: REQUIRED_NIX_CACHE_MOUNT_DESTINATION.to_string(),
+            rw: true,
+        }]
+    } else {
+        Vec::new()
+    };
+
+    (
+        PodmanPsContainer {
+            id: format!("{name}-id"),
+            image: "localhost/agentbox-opencode:local".to_string(),
+            command: vec!["sleep".to_string(), "infinity".to_string()],
+            created: 0,
+            created_at: "2026-04-21 00:00:00 +0000 UTC".to_string(),
+            names: vec![name.to_string()],
+            ports: Vec::new(),
+            status: if running {
+                "Up 1 minute".to_string()
+            } else {
+                "Exited (0) 1 minute ago".to_string()
+            },
+            state: if running {
+                "running".to_string()
+            } else {
+                "exited".to_string()
+            },
+            labels: ps_labels,
+            mounts: Vec::new(),
+            networks: vec!["podman".to_string()],
+            namespaces: None,
+        },
+        PodmanContainerInspect {
+            id: format!("{name}-id"),
+            created: "2026-04-21T00:00:00.000000000Z".to_string(),
+            path: "/usr/bin/sleep".to_string(),
+            args: vec!["infinity".to_string()],
+            state: PodmanContainerState {
+                status: if running {
+                    "running".to_string()
+                } else {
+                    "exited".to_string()
+                },
+                running,
+                exit_code: 0,
+                pid: if running { 4321 } else { 0 },
+                started_at: Some("2026-04-21T00:00:01.000000000Z".to_string()),
+                finished_at: None,
+                health: None,
+            },
+            image_name: "localhost/agentbox-opencode:local".to_string(),
+            config: PodmanContainerConfig {
+                user: Some("user".to_string()),
+                env: Vec::new(),
+                cmd: vec!["infinity".to_string()],
+                working_dir: Some("/workspace".to_string()),
+                labels: inspect_labels,
+                entrypoint: Some(vec!["/entrypoint".to_string()]),
+                stop_signal: Some("SIGTERM".to_string()),
+            },
+            host_config: PodmanHostConfig {
+                auto_remove: false,
+                network_mode: Some("bridge".to_string()),
+                privileged: false,
+            },
+            mounts,
+            network_settings: PodmanNetworkSettings {
+                networks: BTreeMap::new(),
+            },
+        },
+    )
+}
+
+fn inspect_by_id(
+    inspects: Vec<PodmanContainerInspect>,
+) -> impl FnMut(&str) -> agentbox::Result<PodmanContainerInspect> {
+    let mut inspects = inspects
+        .into_iter()
+        .map(|inspect| (inspect.id.clone(), inspect))
+        .collect::<BTreeMap<_, _>>();
+
+    move |container_id| {
+        inspects.remove(container_id).ok_or_else(|| {
+            agentbox::Error::msg(format!("missing inspect fixture for `{container_id}`"))
+        })
+    }
+}
+
+fn status_for(
+    sessions: &[agentbox::session::SessionRecord],
+    container_name: &str,
+) -> SessionStatus {
+    sessions
+        .iter()
+        .find(|session| session.container_name == container_name)
+        .map(|session| session.status)
+        .unwrap()
+}
