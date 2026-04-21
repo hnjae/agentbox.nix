@@ -1,0 +1,8 @@
+# Decisions
+
+- Added `sha2` for SHA-256 digest support and `fd-lock` for file-backed advisory locking required by the dependency step.
+- Task 2 keeps `src/main.rs` as a thin tracing/bootstrap shell and moves CLI parsing, error handling, and command dispatch into `src/lib.rs`, `src/cli.rs`, `src/error.rs`, and `src/commands/mod.rs` so later behavior can grow behind a stable library-backed surface.
+- Added `WorkspaceIdentity` in `src/workspace.rs` with `requested_target`, `absolute_target`, `canonical_target`, `canonical_git_root`, `digest64`, `hash12`, and `container_name` so later command steps can consume identity data without re-running discovery.
+- Kept resolution pure and repository-local: the module shells out only to `git rev-parse --show-toplevel`, canonicalizes paths, and rejects targets that escape the canonical git root before any runtime/session logic.
+- ASSUMPTION: the normative naming implementation follows the stated SHA-256 algorithm literally; the `/aaa/bbb` prose example is treated as a worked illustration, so tests assert the algorithmic `hash12`/container name output rather than the mismatched example digest.
+2026-04-21: Added `src/lock.rs` with per-root advisory locking keyed by the full `digest64` and stored at `$XDG_STATE_HOME/agentbox/locks/<digest64>.lock`. The API keeps the lock file reusable if it already exists and unlocked, while the RAII guard is exposed via `WorkspaceLock::guard()` for later command flows.
