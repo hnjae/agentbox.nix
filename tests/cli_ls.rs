@@ -60,6 +60,7 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
         runtime: Some("opencode".to_string()),
         image: Some("image".to_string()),
         logical_name: Some(name.to_string()),
+        failure: None,
         status,
     }
 }

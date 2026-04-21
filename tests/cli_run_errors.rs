@@ -293,7 +293,7 @@ fn failed_session_with_missing_labels_requires_repair_or_recreation() {
         ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "inspect"]);
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
 }
 
 #[test]
@@ -349,7 +349,7 @@ fn failed_session_with_missing_cache_mount_requires_recreation() {
         ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "inspect"]);
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
 }
 
 struct Harness {
