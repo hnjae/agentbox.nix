@@ -125,8 +125,8 @@ Example:
 
 - canonical git root: `/aaa/bbb`
 - escaped readable suffix: `_aaa_bbb`
-- container name: `agentbox-_aaa_bbb-2f83c6a14d91`
-- runtime cache volume name: `agentbox-_aaa_bbb-2f83c6a14d91`
+- container name: `agentbox-_aaa_bbb-9ae5447864f7`
+- runtime cache volume name: `agentbox-_aaa_bbb-9ae5447864f7`
 
 The concrete naming algorithm must be deterministic from the canonical git root alone. Runtime is not part of identity because only one session per repository is allowed.
 
