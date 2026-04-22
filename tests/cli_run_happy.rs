@@ -14,6 +14,7 @@ use agentbox::runtime::opencode::DEFAULT_IMAGE;
 use agentbox::workspace::resolve_workspace_identity;
 use assert_cmd::Command as AssertCommand;
 use assert_cmd::cargo::cargo_bin;
+use predicates::prelude::*;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -44,7 +45,16 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        ["ps", "create", "start", "serve", "ready", "attach"]
+        [
+            "ps",
+            "image-exists",
+            "build",
+            "create",
+            "start",
+            "serve",
+            "ready",
+            "attach",
+        ]
     );
 
     assert!(log[0].contains("lock=held"));
@@ -52,24 +62,30 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[2].contains("lock=held"));
     assert!(log[3].contains("lock=held"));
     assert!(log[4].contains("lock=held"));
-    assert!(log[5].contains("lock=released"));
+    assert!(log[5].contains("lock=held"));
+    assert!(log[6].contains("lock=held"));
+    assert!(log[7].contains("lock=released"));
 
-    assert!(log[1].contains("--label io.agentbox.image=localhost/agentbox-opencode:local"));
-    assert!(log[1].contains(&format!(
+    assert!(log[2].contains(&format!("-t {DEFAULT_IMAGE} -f")));
+    assert!(log[2].contains("container-example/Containerfile"));
+    assert!(log[2].contains("container-example"));
+
+    assert!(log[3].contains("--label io.agentbox.image=localhost/agentbox-opencode:local"));
+    assert!(log[3].contains(&format!(
         "--label io.agentbox.git_root={}",
         workspace.canonical_git_root
     )));
-    assert!(log[1].contains(&format!("--name {}", workspace.container_name)));
-    assert!(log[1].contains(DEFAULT_IMAGE));
-    assert!(!log[1].contains("--publish"));
+    assert!(log[3].contains(&format!("--name {}", workspace.container_name)));
+    assert!(log[3].contains(DEFAULT_IMAGE));
+    assert!(!log[3].contains("--publish"));
 
-    assert!(log[3].contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(log[3].contains("/entrypoint opencode serve --hostname 127.0.0.1 --port 4096"));
-    assert!(!log[3].contains("direnv exec ."));
+    assert!(log[5].contains(&format!("--workdir {}", workspace.canonical_target)));
+    assert!(log[5].contains("/entrypoint opencode serve --hostname 127.0.0.1 --port 4096"));
+    assert!(!log[5].contains("direnv exec ."));
     assert!(
-        log[4].contains("/entrypoint curl --max-time 2 -sf http://127.0.0.1:4096/global/health")
+        log[6].contains("/entrypoint curl --max-time 2 -sf http://127.0.0.1:4096/global/health")
     );
-    assert!(log[5].contains(&format!(
+    assert!(log[7].contains(&format!(
         "/entrypoint opencode attach http://127.0.0.1:4096 --dir {}",
         workspace.canonical_target
     )));
@@ -137,8 +153,74 @@ fn run_persists_the_first_create_image_override_exactly() {
     let log = harness.read_log();
     let create = log.iter().find(|line| line.starts_with("create ")).unwrap();
 
+    assert!(!log.iter().any(|line| line.starts_with("image-exists ")));
+    assert!(!log.iter().any(|line| line.starts_with("build ")));
     assert!(create.contains(&format!("--label io.agentbox.image={image}")));
     assert!(create.contains(&format!(" {image} sleep infinity")));
+}
+
+#[test]
+fn run_skips_build_when_default_image_already_exists_locally() {
+    let repo = support::temp_git_repo();
+    let target = repo.path().join("nested");
+    fs::create_dir(&target).unwrap();
+
+    let harness = install_harness(repo.path());
+    harness.mark_default_image_present();
+    let workspace = resolve_workspace_identity(&target).unwrap();
+    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
+
+    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+    command
+        .env("PATH", harness.path_env())
+        .env("XDG_STATE_HOME", harness.state_home.path())
+        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
+        .env("AGENTBOX_TEST_LOG", &harness.log_path)
+        .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
+        .arg("run")
+        .arg(&target);
+
+    command.assert().success();
+
+    let log = harness.read_log();
+    let operations = operation_names(&log);
+    assert_eq!(&operations[..3], ["ps", "image-exists", "create"]);
+    assert!(!log.iter().any(|line| line.starts_with("build ")));
+}
+
+#[test]
+fn run_reports_default_image_build_failures_clearly() {
+    let repo = support::temp_git_repo();
+    let target = repo.path().join("nested");
+    fs::create_dir(&target).unwrap();
+
+    let harness = install_harness(repo.path());
+    harness.fail_build("podman build exploded", 125);
+    let workspace = resolve_workspace_identity(&target).unwrap();
+    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
+
+    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+    command
+        .env("PATH", harness.path_env())
+        .env("XDG_STATE_HOME", harness.state_home.path())
+        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
+        .env("AGENTBOX_TEST_LOG", &harness.log_path)
+        .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
+        .arg("run")
+        .arg(&target);
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "failed to build default runtime image `{DEFAULT_IMAGE}`"
+        )))
+        .stderr(predicate::str::contains("podman build exploded"));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image-exists", "build"]);
 }
 
 struct Harness {
@@ -192,6 +274,19 @@ impl Harness {
     fn lock_probe(&self) -> &Path {
         &self.lock_probe_path
     }
+
+    fn fail_build(&self, stderr: &str, exit_code: i32) {
+        fs::write(self.fixtures.path().join("build.stderr"), stderr).unwrap();
+        fs::write(
+            self.fixtures.path().join("build.exit"),
+            format!("{exit_code}\n"),
+        )
+        .unwrap();
+    }
+
+    fn mark_default_image_present(&self) {
+        fs::write(self.fixtures.path().join("image.exists"), "present\n").unwrap();
+    }
 }
 
 fn operation_names(lines: &[String]) -> Vec<&str> {
@@ -237,6 +332,33 @@ case "$1" in
     shift
     record ps "$@"
     printf '[]\n'
+    ;;
+  image)
+    shift
+    subcommand=${1:-}
+    shift || true
+    case "$subcommand" in
+      exists)
+        record image-exists "$@"
+        if [ -f "$AGENTBOX_TEST_FIXTURES/image.exists" ]; then
+          exit 0
+        fi
+        exit 1
+        ;;
+      *)
+        printf 'unexpected podman image invocation: %s %s\n' "$subcommand" "$*" >&2
+        exit 97
+        ;;
+    esac
+    ;;
+  build)
+    shift
+    record build "$@"
+    if [ -f "$AGENTBOX_TEST_FIXTURES/build.exit" ]; then
+      cat "$AGENTBOX_TEST_FIXTURES/build.stderr" >&2
+      exit "$(tr -d '\n' < "$AGENTBOX_TEST_FIXTURES/build.exit")"
+    fi
+    printf 'built\n'
     ;;
   create)
     shift

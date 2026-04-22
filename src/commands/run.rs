@@ -20,7 +20,7 @@ use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount};
 use crate::preflight::{check_host_prerequisites, direnv_applies_to_target};
 use crate::process::{ProcessRunner, run_command};
 use crate::runtime::RuntimeCreateSpec;
-use crate::runtime::opencode::{OpencodeRuntime, RUNTIME_NAME};
+use crate::runtime::opencode::{DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME};
 use crate::session::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
     LABEL_RUNTIME, REQUIRED_LABEL_NAMES, REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure,
@@ -56,6 +56,7 @@ pub fn run(args: RunArgs) -> Result<()> {
 
     let runtime = OpencodeRuntime::new();
     let process_runner = ProcessRunner::new();
+    ensure_default_runtime_image(&process_runner, &runtime, &workspace, args.image.as_deref())?;
     let create_spec = runtime.create_spec(&workspace, args.image.as_deref(), &preflight);
     podman_create(&process_runner, &workspace.container_name, &create_spec)
         .map_err(|error| classify_create_error(&podman, &workspace, &create_spec, error))?;
@@ -116,6 +117,33 @@ pub fn run(args: RunArgs) -> Result<()> {
             &error.to_string(),
         )
     })
+}
+
+fn ensure_default_runtime_image(
+    process_runner: &ProcessRunner,
+    runtime: &OpencodeRuntime,
+    workspace: &WorkspaceIdentity,
+    image_override: Option<&str>,
+) -> Result<()> {
+    if image_override.is_some() {
+        return Ok(());
+    }
+
+    let podman = Podman::with_runner(process_runner.clone());
+    if podman.image_exists(DEFAULT_IMAGE)? {
+        return Ok(());
+    }
+
+    let context_dir = runtime.default_image_context_dir()?;
+    let containerfile = context_dir.join("Containerfile");
+    podman
+        .build_image(DEFAULT_IMAGE, containerfile.as_ref(), context_dir.as_ref())
+        .map_err(|error| {
+            Error::msg(format!(
+                "failed to build default runtime image `{DEFAULT_IMAGE}` for `{}` from `{}`: {error}",
+                workspace.canonical_git_root, context_dir,
+            ))
+        })
 }
 
 fn existing_session_error(

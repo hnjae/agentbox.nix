@@ -65,6 +65,8 @@ fn existing_managed_session_suggests_attach_and_ignores_image_override() {
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "inspect"]);
     assert!(!log.iter().any(|line| line.starts_with("create ")));
+    assert!(!log.iter().any(|line| line.starts_with("image ")));
+    assert!(!log.iter().any(|line| line.starts_with("build ")));
 }
 
 #[test]
@@ -235,7 +237,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
         ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "create", "inspect"]);
+    assert_eq!(operation_names(&log), ["ps", "image", "create", "inspect"]);
 }
 
 #[test]
@@ -367,6 +369,7 @@ fn install_harness() -> Harness {
     let log_path = fixtures.path().join("podman.log");
     let original_path = std::env::var("PATH").unwrap();
 
+    fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
     fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
     write_executable(fake_bin.path().join("git"), &fake_git_script());
     write_executable(fake_bin.path().join("podman"), &fake_podman_script());
@@ -566,6 +569,25 @@ printf '%s args=%s\n' "$cmd" "$*" >> "$log_path"
 case "$cmd" in
   ps)
     cat "$fixtures/ps.json"
+    ;;
+  image)
+    subcommand=${1:-}
+    shift || true
+    case "$subcommand" in
+      exists)
+        if [ -f "$fixtures/image.exists" ]; then
+          exit 0
+        fi
+        exit 1
+        ;;
+      *)
+        printf 'unexpected podman image invocation: %s %s\n' "$subcommand" "$*" >&2
+        exit 97
+        ;;
+    esac
+    ;;
+  build)
+    printf 'built\n'
     ;;
   inspect)
     target=${1:?missing inspect target}
