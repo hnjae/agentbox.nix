@@ -87,7 +87,7 @@ fn install_harness(repo_root: &std::path::Path) -> Harness {
   {{
     "Id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "Image": "ghcr.io/example/agentbox:latest",
-    "Command": ["sleep", "infinity"],
+    "Command": ["opencode"],
     "Created": 1713681300,
     "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
     "Names": ["agentbox-demo"],
@@ -109,8 +109,8 @@ fn install_harness(repo_root: &std::path::Path) -> Harness {
   {{
     "Id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "Created": "2026-04-21T10:15:00.000000000Z",
-    "Path": "/usr/bin/sleep",
-    "Args": ["infinity"],
+    "Path": "/usr/bin/opencode",
+    "Args": [],
     "State": {{
       "Status": "running",
       "Running": true,
@@ -123,7 +123,7 @@ fn install_harness(repo_root: &std::path::Path) -> Harness {
     "Config": {{
       "User": "agent",
       "Env": [],
-      "Cmd": ["infinity"],
+      "Cmd": ["opencode"],
       "WorkingDir": "/workspace",
       "Labels": {{
         "{LABEL_MANAGED}": "{LABEL_MANAGED_VALUE}",
@@ -134,7 +134,7 @@ fn install_harness(repo_root: &std::path::Path) -> Harness {
         "{LABEL_IMAGE}": "ghcr.io/example/agentbox:latest",
         "{LABEL_LOGICAL_NAME}": "agentbox-demo"
       }},
-      "Entrypoint": ["/usr/bin/sleep"],
+      "Entrypoint": ["/entrypoint"],
       "StopSignal": "SIGTERM"
     }},
     "HostConfig": {{

@@ -38,8 +38,8 @@ pub fn podman_inspect_fixture() -> &'static str {
   {
     "Id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "Created": "2026-04-21T10:15:00.000000000Z",
-    "Path": "/usr/bin/sleep",
-    "Args": ["infinity"],
+    "Path": "/usr/bin/opencode",
+    "Args": [],
     "State": {
       "Status": "running",
       "Running": true,
@@ -56,12 +56,12 @@ pub fn podman_inspect_fixture() -> &'static str {
     "Config": {
       "User": "agent",
       "Env": ["A=1", "B=2"],
-      "Cmd": ["infinity"],
+      "Cmd": ["opencode"],
       "WorkingDir": "/workspace",
       "Labels": {
         "com.example.role": "agentbox"
       },
-      "Entrypoint": ["/usr/bin/sleep"],
+      "Entrypoint": ["/entrypoint"],
       "StopSignal": "SIGTERM"
     },
     "HostConfig": {
