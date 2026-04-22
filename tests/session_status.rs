@@ -205,7 +205,7 @@ fn managed_container_with_hash(
         PodmanPsContainer {
             id: format!("{name}-id"),
             image: "localhost/agentbox-opencode:local".to_string(),
-            command: Some(vec!["sleep".to_string(), "infinity".to_string()]),
+            command: Some(vec!["opencode".to_string()]),
             created: 0,
             created_at: "2026-04-21 00:00:00 +0000 UTC".to_string(),
             names: Some(vec![name.to_string()]),
@@ -228,8 +228,8 @@ fn managed_container_with_hash(
         PodmanContainerInspect {
             id: format!("{name}-id"),
             created: "2026-04-21T00:00:00.000000000Z".to_string(),
-            path: "/usr/bin/sleep".to_string(),
-            args: vec!["infinity".to_string()],
+            path: "/usr/bin/opencode".to_string(),
+            args: Vec::new(),
             state: PodmanContainerState {
                 status: if running {
                     "running".to_string()
@@ -247,7 +247,7 @@ fn managed_container_with_hash(
             config: PodmanContainerConfig {
                 user: Some("user".to_string()),
                 env: Vec::new(),
-                cmd: vec!["infinity".to_string()],
+                cmd: vec!["opencode".to_string()],
                 working_dir: Some("/workspace".to_string()),
                 labels: inspect_labels,
                 entrypoint: Some(vec!["/entrypoint".to_string()]),

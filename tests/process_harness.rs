@@ -103,7 +103,7 @@ fn podman_ps_parses_stable_json_fields_from_a_fake_binary() {
     let fake_bins = support::FakeBinDir::new();
     fake_bins.install_exact_response(
         "podman",
-        &["ps", "--format", "json"],
+        &["ps", "--all", "--format", "json"],
         support::podman_ps_fixture(),
     );
 
@@ -141,14 +141,14 @@ fn podman_inspect_parses_stable_json_fields_from_a_fake_binary() {
         .unwrap();
 
     assert_eq!(container.id.len(), 64);
-    assert_eq!(container.path, "/usr/bin/sleep");
-    assert_eq!(container.args, vec!["infinity"]);
+    assert_eq!(container.path, "/usr/bin/opencode");
+    assert!(container.args.is_empty());
     assert_eq!(container.state.status, "running");
     assert_eq!(container.state.health.as_ref().unwrap().status, "healthy");
     assert_eq!(container.image_name, "ghcr.io/example/agentbox:latest");
     assert_eq!(
         container.config.entrypoint,
-        Some(vec!["/usr/bin/sleep".to_string()])
+        Some(vec!["/entrypoint".to_string()])
     );
     assert_eq!(container.config.stop_signal.as_deref(), Some("SIGTERM"));
     assert_eq!(container.mounts[0].destination, "/workspace");

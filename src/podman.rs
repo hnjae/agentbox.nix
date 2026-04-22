@@ -27,7 +27,7 @@ pub struct PodmanPsContainer {
     pub image: String,
     #[serde(default, deserialize_with = "deserialize_option_vec_or_string")]
     pub command: Option<Vec<String>>,
-    // `podman ps --format json` keeps the stable numeric timestamp in `Created`
+    // `podman ps --all --format json` keeps the stable numeric timestamp in `Created`
     // and also returns a derived human-readable `CreatedAt` string.
     pub created: i64,
     pub created_at: String,
@@ -195,10 +195,10 @@ impl Podman {
 
     pub fn ps(&self) -> Result<Vec<PodmanPsContainer>> {
         let output = self.runner.capture("podman", |command| {
-            command.args(["ps", "--format", "json"]);
+            command.args(["ps", "--all", "--format", "json"]);
         })?;
 
-        parse_json("`podman ps --format json`", &output.stdout)
+        parse_json("`podman ps --all --format json`", &output.stdout)
     }
 
     pub fn inspect(&self, name: &str) -> Result<Vec<PodmanContainerInspect>> {
