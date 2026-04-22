@@ -9,9 +9,9 @@ The MVP is workspace-centric rather than name-centric:
 - `agentbox run <directory>`
 - `agentbox attach <directory>`
 - `agentbox ls`
-- `agentbox rm <directory>`
+- `agentbox stop <directory>`
 
-`agentbox run <directory>` resolves `<directory>` to its canonical git root, creates a new managed workspace session for that repository, starts the container, and attaches through the runtime's native client flow. If a managed session already exists for that repository, `run` fails clearly and directs the user to `agentbox attach <directory>`.
+`agentbox run <directory>` resolves `<directory>` to its canonical git root and launches a new managed workspace session for that repository as a foreground `podman run --rm`, with the runtime's actual agent command as the container main process and interactive stdio inherited directly. If a matching managed session is already running for that repository, `run` fails clearly and directs the user to `agentbox attach <directory>` or `agentbox stop <directory>`.
 
 MVP runtime support is OpenCode only. Codex remains future-facing and informative, not normative MVP scope.
 
@@ -22,7 +22,7 @@ The MVP runtime contract uses host-attached Nix at runtime. The container consum
 - Run code agents in isolated, reproducible Linux environments.
 - Make the primary user model "attach to this repo" rather than "remember this agent name".
 - Keep durable state minimal: the workspace bind mount, one Podman-managed runtime cache volume, and flat container labels. Host-side coordination is limited to a per-root lock.
-- Use the runtime's native server/client attach UX instead of reimplementing an interactive protocol.
+- Run the runtime's actual foreground agent command directly instead of maintaining a synthetic keepalive container layer.
 - Manage lifecycle directly through the Podman CLI.
 
 ## Non-Goals
@@ -43,7 +43,7 @@ The MVP runtime contract uses host-attached Nix at runtime. The container consum
 - Podman is available on the host.
 - Git is available on the host.
 - The target directory is expected to live inside a git repository.
-- Each runtime can run a long-lived server inside the container and provide a native attach path.
+- The runtime can be launched as the container main process in the target working directory.
 - Host-attached Nix prerequisites are available when the OpenCode container starts.
 
 ## Core Model
@@ -56,26 +56,26 @@ It has:
 
 - one canonical git root absolute path
 - one runtime type, `opencode` in MVP
-- one long-lived Podman container
+- at most one managed Podman container at a time for that git root
 - one bind mount of the git root at the same absolute path inside the container
 - one Podman-managed named runtime cache volume mounted at `/home/user/.cache/nix`, with the same name as the container
 - host-attached Nix inputs and runtime state as described below
 - one per-git-root host lock used only for operation coordination
 
+Normal MVP `run` launches that managed container in the foreground with `podman run --rm`. `agentbox` must not create an idle keepalive container whose only job is to stay alive for later `exec` or attach flows.
+
 The canonical git root is the primary identity. There is exactly one managed container total per canonical git root.
 
-The requested target directory is not part of identity. Different `run` or `attach` invocations target different subdirectories under the same git root while still using the same container.
+The requested target directory is not part of identity. Different `run` or `attach` invocations may target different subdirectories under the same git root while still referring to the same running managed container.
 
 ### Runtime Adapter
 
 Each runtime is described by an internal adapter with:
 
 - container image reference
-- server start command
-- attach command template
-- readiness check
+- foreground command template
 - default environment variables
-- whether attach needs a published TCP port, a runtime-specific Unix socket, or an in-container client invocation
+- whether `agentbox attach` can rely on generic `podman attach` for the running foreground process
 
 Runtime differences stay inside the adapter layer. The generic CLI flow must not branch on runtime-specific details beyond the adapter contract.
 
@@ -134,18 +134,18 @@ The concrete naming algorithm must be deterministic from the canonical git root 
 
 ### `agentbox run <directory>`
 
-`run` creates a new workspace session and attaches to it.
+`run` launches a new workspace session in the foreground.
 
 Expected behavior:
 
 1. Resolve `<directory>` to a canonical git root and canonical target directory.
-2. Acquire a per-git-root lock so concurrent `run` and `rm` operations cannot create duplicate containers.
+2. Acquire a per-git-root lock so concurrent `run` and `stop` operations cannot create duplicate containers or race teardown.
 3. Discover existing managed containers for that canonical git root by label.
 4. If more than one matching container exists, fail as `duplicate` and do not guess.
-5. If exactly one matching container exists, fail clearly and suggest `agentbox attach <directory>`.
-6. If none exists, create the OpenCode container and start it.
-7. Wait for runtime readiness.
-8. Attach through the runtime-native client flow with stdio inherited.
+5. If exactly one matching container exists, fail clearly and suggest `agentbox attach <directory>` or `agentbox stop <directory>`.
+6. If none exists, execute direct foreground `podman run --rm` with the required labels, mounts, image selection, and target-directory working directory.
+7. The container main command must be the runtime's actual foreground agent command. For the OpenCode MVP this is `opencode` in the target working directory, optionally with an explicit project argument, rather than `sleep infinity`.
+8. Interactive stdio is inherited directly by the foreground container process. `run` must not perform a separate detached-server start, readiness probe, or later attach step.
 
 Optional flag:
 
@@ -153,31 +153,30 @@ Optional flag:
 
 Image rules:
 
-- `--image <reference>` is a create-time override for the sole MVP runtime image.
-- `agentbox` persists the exact create-time image reference as the required container label `io.agentbox.image`.
-- On first creation, if `--image` is supplied, use that image reference.
-- On first creation without `--image`, persist the runtime adapter's default image reference in `io.agentbox.image`.
-- `run` interprets `--image` only while creating a new session.
+- `--image <reference>` selects the image reference for this foreground run of the sole MVP runtime.
+- `agentbox` labels the running managed container with the exact image reference as `io.agentbox.image` so live discovery can report it while the container exists.
+- If `--image` is supplied, use that exact image reference.
+- If `--image` is omitted, use the runtime adapter's default image reference.
 - If a managed session already exists for the resolved git root, `run` fails before reusing or comparing any stored image reference.
 - `attach` does not accept or interpret `--image`.
 - `--image` does not change session identity.
 
 ### `agentbox attach <directory>`
 
-`attach` attaches to an existing workspace session.
+`attach` attaches to an already-running managed workspace session.
 
 Expected behavior:
 
 1. Resolve `<directory>` to a canonical git root and canonical target directory.
 2. Acquire the same per-git-root lock used by `run`.
 3. Discover the managed container by label.
-4. Start it if it exists but is stopped.
-5. Wait for runtime readiness.
-6. Attach through the runtime-native client flow.
+4. Fail if the matching container is not running.
+5. Attach to the running container's foreground process with stdio inherited.
 
 Rules:
 
 - `attach` must never create a new session.
+- `attach` must never start or restart a stopped session.
 - `attach` must never prompt for runtime selection.
 - If no managed session exists for the resolved git root, fail clearly and suggest `agentbox run <directory>`.
 
@@ -205,9 +204,9 @@ Status rules:
 - `duplicate`: more than one managed container claims the same canonical git root.
 - `failed`: container exists but required labels, inspectable mounts, or other inspectable session invariants are inconsistent.
 
-### `agentbox rm <directory>`
+### `agentbox stop <directory>`
 
-`rm` removes the workspace session for the resolved repository.
+`stop` stops the workspace session for the resolved repository and removes the managed container if it still exists.
 
 Expected behavior:
 
@@ -215,8 +214,8 @@ Expected behavior:
 2. If `<directory>` does not exist, allow an exact absolute git-root path string to match an orphaned session directly.
 3. Acquire the per-git-root lock.
 4. Stop the container if it is running.
-5. Remove the container.
-6. Leave the runtime cache volume unmanaged by `rm` so it can be reclaimed later by Podman volume garbage collection.
+5. Remove the container if it still exists, including stopped or legacy leftovers.
+6. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed later by Podman volume garbage collection.
 
 Optional flags:
 
@@ -224,11 +223,11 @@ Optional flags:
 
 Safety rule:
 
-- `rm` never deletes the user workspace.
+- `stop` never deletes the user workspace.
 
 ## Completion
 
-Shell completion for `attach` and `rm` is dynamic.
+Shell completion for `attach` and `stop` is dynamic.
 
 Required behavior:
 
@@ -288,7 +287,7 @@ Rules:
 - If `XDG_STATE_HOME` is unset and `HOME` is set, the runtime falls back to `$HOME/.local/state/nix/profile`.
 - If both `XDG_STATE_HOME` and `HOME` are unavailable, the runtime falls back to `/home/user/.local/state/nix/profile`.
 - No other subpath under `/home/user` is required to persist in MVP.
-- `agentbox rm <directory>` does not explicitly delete the runtime cache volume.
+- `agentbox stop <directory>` does not explicitly delete the runtime cache volume.
 - Once no container uses the cache volume, it remains available for later explicit reclamation, for example with `podman volume rm <container-name>` or `podman volume prune --all`.
 
 ### Direnv
@@ -300,12 +299,12 @@ When the target directory uses `direnv`, the runtime command for that invocation
 Rules:
 
 - `direnv` evaluation happens relative to the requested target directory, not forcibly at the git root.
-- `direnv` wraps the runtime server start command, not a later host-side attach client invocation.
-- When `run` creates a session or when `run` or `attach` starts a stopped session, `agentbox` evaluates `direnv exec . <agent>` from the requested target directory before starting the runtime server.
-- A running session keeps the environment from its most recent server start. `attach` to an already-running session does not reevaluate or replace that environment.
+- `direnv` wraps the runtime foreground command for `run`, not a later attach step.
+- When `run` launches a session, `agentbox` evaluates `direnv exec . <agent>` from the requested target directory before starting the foreground runtime command.
+- A running session keeps the environment from its original foreground start. `attach` to an already-running session does not reevaluate or replace that environment.
 - The MVP does not persist host-side direnv state for running-session compatibility checks.
 - `attach` to an already-running session reuses the running session as-is. MVP does not compare the requested target directory against earlier direnv contexts for that running session.
-- If `.envrc` is present but `direnv` is unavailable, blocked, or fails to load, `run` and `attach` fail clearly.
+- If `.envrc` is present but `direnv` is unavailable, blocked, or fails to load, `run` fails clearly.
 - If no `.envrc` applies, the runtime launches normally.
 
 ### Host-Attached Nix Model
@@ -347,7 +346,7 @@ Required container labels:
 
 Normative rule:
 
-- The required labels above are the complete durable session record in MVP.
+- The required labels above are the complete live session record in MVP while the managed container exists.
 - The full canonical git root is authoritative for identity. `io.agentbox.git_root_hash` is an index only and must never be trusted without verifying the exact `io.agentbox.git_root` value.
 
 ### Per-Root Lock
@@ -383,10 +382,10 @@ All lifecycle operations use the Podman CLI through direct process invocation. M
 
 High-level command strategy:
 
-1. `run` creates the workspace session, starts the container, and attaches. If a matching session already exists, it fails clearly and suggests `attach`.
-2. `attach` discovers an existing workspace session, starts it if needed, and attaches.
+1. `run` creates the workspace session as a foreground `podman run --rm`. If a matching session already exists, it fails clearly and suggests `attach` or `stop`.
+2. `attach` discovers an existing running workspace session and attaches to its main process.
 3. `ls` derives session status from live Podman state and host path checks.
-4. `rm` removes the container.
+4. `stop` stops the container and removes it if it still exists.
 
 ### `run` Sequence
 
@@ -397,10 +396,10 @@ Required sequence:
 3. Acquire the per-root lock.
 4. Query Podman for managed containers with the matching git-root hash, then verify the exact `io.agentbox.git_root` label matches the resolved canonical git root before treating a container as a candidate.
 5. If more than one container matches, fail as `duplicate` and do not guess.
-6. If one matching managed session already exists, fail clearly and suggest `agentbox attach <directory>`.
-7. If none matches, `podman create` the container with a Podman-managed named cache volume mounted at `/home/user/.cache/nix`, using the resolved container name as the volume name, then `podman start` so bootstrap can validate prerequisites and materialize the runtime profile.
-8. Poll runtime readiness.
-9. Execute the runtime-native attach command.
+6. If one matching managed session already exists, fail clearly and suggest `agentbox attach <directory>` or `agentbox stop <directory>`.
+7. If none matches, execute `podman run --rm` with the resolved container name, required labels, required mounts, target-directory working directory, and the runtime foreground command as the container main command.
+8. The image bootstrap path validates prerequisites, materializes the runtime profile, hands off to `/entrypoint`, and then execs the requested foreground runtime command.
+9. Inherit interactive stdio directly for the foreground run.
 
 ### `attach` Sequence
 
@@ -411,9 +410,8 @@ Required sequence:
 3. Query Podman for managed containers with the matching git-root hash, then verify the exact `io.agentbox.git_root` label matches the resolved canonical git root before treating a container as a candidate.
 4. Fail if none exists.
 5. Fail if duplicates exist.
-6. Start the container if needed.
-7. Poll runtime readiness.
-8. Execute the runtime-native attach command.
+6. Fail if the matching container is not running.
+7. Execute `podman attach` against the running managed container.
 
 ### `ls` Sequence
 
@@ -425,25 +423,28 @@ Required sequence:
 4. Print a compact table in the default view.
 5. Do not require machine-readable output in MVP.
 
-### `rm` Sequence
+### `stop` Sequence
 
 Required sequence:
 
 1. Resolve the target to a canonical git root or direct orphaned git-root identity.
 2. Acquire the per-root lock.
 3. Stop the container as best effort.
-4. Remove the container.
+4. Remove the container if it still exists.
 5. Leave any now-unused named cache volume available for later explicit reclamation, for example with `podman volume rm <container-name>` or `podman volume prune --all`.
 6. Surface any partial failure with enough detail for manual cleanup.
 
-## Attach Transport
+## Interactive Transport
 
-`agentbox` uses the runtime's own server/client structure.
+`agentbox run` uses the runtime's own foreground process directly.
 
-The supported MVP attach path is host-side execution of `/entrypoint <cmd>` inside the container.
+The supported MVP `run` path is direct foreground `podman run --rm` with inherited stdio.
+
+The supported MVP `attach` path is `podman attach` to an already-running managed container.
 
 Rules:
 
+- The generic CLI must not assume a detached runtime-native server/client attach contract for MVP `run`.
 - The generic CLI must not assume raw `podman exec ... zsh` is a supported contract.
 - `/entrypoint` re-establishes `NIX_SSL_CERT_FILE`, `NIX_PROFILES`, `PATH`, and `XDG_DATA_DIRS` before exec.
 - Host-published ports are avoided unless a runtime requires them.
@@ -463,8 +464,8 @@ Required cases:
 - Git not installed
 - runtime mismatch
 - container failed to start
-- runtime readiness timeout
-- attach command not found
+- foreground runtime command not found
+- attach failed
 - duplicate managed containers for one git root
 - `run` called for a git root that already has a managed session
 - hash collision between different canonical git roots
@@ -490,7 +491,7 @@ Required drift behavior:
 - Missing image-local CA bundle: fail clearly and require an image fix.
 - `/entrypoint` contract failure: fail clearly and preserve the runtime state for inspection.
 - Hash collision between different canonical git roots: fail clearly and do not alias discovery or locking.
-- Partial cleanup failure during `rm`: report exactly which artifacts remain.
+- Partial cleanup failure during `stop`: report exactly which artifacts remain.
 
 ## Security And Isolation
 
@@ -551,7 +552,7 @@ First milestone focus:
 1. Support Linux only.
 2. Support OpenCode end-to-end first.
 3. Implement canonical git root resolution and deterministic naming.
-4. Implement `run <directory>`, `attach <directory>`, `ls`, and `rm <directory>`.
+4. Implement `run <directory>`, `attach <directory>`, `ls`, and `stop <directory>`.
 5. Implement same-path workspace bind mounts and target-directory cwd behavior.
 6. Implement the host-attached Nix runtime contract with `/nix`, `/etc/nix`, `/entrypoint`, and a Podman-managed cache volume at `/home/user/.cache/nix`.
 7. Implement label-first discovery, `podman inspect`-derived session state, and per-root locking.
