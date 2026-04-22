@@ -10,7 +10,7 @@ use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::cli::RmArgs;
+use crate::cli::StopArgs;
 use crate::lock::lock_git_root;
 use crate::podman::Podman;
 use crate::process::{ProcessRunner, run_command};
@@ -18,7 +18,7 @@ use crate::session::{SessionRecord, discover_sessions_for_git_root};
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
-pub fn run(args: RmArgs) -> Result<()> {
+pub fn run(args: StopArgs) -> Result<()> {
     let git_root = resolve_rm_git_root(&args.directory)?;
     let mut workspace_lock = lock_git_root(git_root.as_ref())?;
     let workspace_guard = workspace_lock.guard()?;
@@ -36,7 +36,7 @@ pub fn run(args: RmArgs) -> Result<()> {
 
     if sessions.len() > 1 && !args.force {
         return Err(Error::msg(format!(
-            "duplicate managed sessions exist for `{git_root}`; rerun `agentbox rm --force {}` to remove all exact matches",
+            "duplicate managed sessions exist for `{git_root}`; rerun `agentbox stop --force {}` to remove all exact matches",
             args.directory.display()
         )));
     }

@@ -47,8 +47,8 @@ pub enum Command {
     Attach(DirectoryArgs),
     /// List managed sessions.
     Ls,
-    /// Remove a managed session.
-    Rm(RmArgs),
+    /// Stop a managed session.
+    Stop(StopArgs),
     /// Shell completion helpers.
     Completion(CompletionArgs),
 
@@ -78,7 +78,7 @@ pub struct DirectoryArgs {
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
-pub struct RmArgs {
+pub struct StopArgs {
     /// Best-effort cleanup when some artifacts are already missing.
     #[arg(long)]
     pub force: bool,

@@ -7,7 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::cli::{
-    Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, RmArgs, RunArgs,
+    Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, RunArgs, StopArgs,
 };
 use assert_cmd::Command as AssertCommand;
 use clap::Parser;
@@ -23,7 +23,7 @@ fn help_lists_core_commands() {
         predicate::str::contains("run")
             .and(predicate::str::contains("attach"))
             .and(predicate::str::contains("ls"))
-            .and(predicate::str::contains("rm"))
+            .and(predicate::str::contains("stop"))
             .and(predicate::str::contains("completion")),
     );
 }
@@ -46,7 +46,7 @@ fn core_commands_parse_into_expected_variants() {
     let run = Cli::try_parse_from(["agentbox", "run", "/tmp/workspace"]).unwrap();
     let attach = Cli::try_parse_from(["agentbox", "attach", "/tmp/workspace"]).unwrap();
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
-    let rm = Cli::try_parse_from(["agentbox", "rm", "/tmp/workspace"]).unwrap();
+    let stop = Cli::try_parse_from(["agentbox", "stop", "/tmp/workspace"]).unwrap();
     let completion = Cli::try_parse_from(["agentbox", "completion", "bash"]).unwrap();
 
     assert_eq!(
@@ -64,8 +64,8 @@ fn core_commands_parse_into_expected_variants() {
     );
     assert_eq!(ls.command, Command::Ls);
     assert_eq!(
-        rm.command,
-        Command::Rm(RmArgs {
+        stop.command,
+        Command::Stop(StopArgs {
             force: false,
             directory: "/tmp/workspace".into(),
         })
@@ -79,12 +79,12 @@ fn core_commands_parse_into_expected_variants() {
 }
 
 #[test]
-fn rm_accepts_force_cleanup_flag() {
-    let cli = Cli::try_parse_from(["agentbox", "rm", "--force", "/tmp/workspace"]).unwrap();
+fn stop_accepts_force_cleanup_flag() {
+    let cli = Cli::try_parse_from(["agentbox", "stop", "--force", "/tmp/workspace"]).unwrap();
 
     assert_eq!(
         cli.command,
-        Command::Rm(RmArgs {
+        Command::Stop(StopArgs {
             force: true,
             directory: "/tmp/workspace".into(),
         })

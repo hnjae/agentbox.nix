@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 mod support;
 
 #[test]
-fn rm_removes_the_container_and_leaves_the_volume_and_workspace_untouched() {
+fn stop_removes_the_container_and_leaves_the_volume_and_workspace_untouched() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -54,15 +54,15 @@ fn rm_removes_the_container_and_leaves_the_volume_and_workspace_untouched() {
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "rm"]);
-    assert!(target.exists(), "rm must not delete the user workspace");
+    assert!(target.exists(), "stop must not delete the user workspace");
     assert!(
         !log.iter().any(|line| line.starts_with("volume ")),
-        "rm must not delete the matching cache volume"
+        "stop must not delete the matching cache volume"
     );
 }
 
 #[test]
-fn rm_force_removes_all_exact_duplicate_root_matches() {
+fn stop_force_removes_all_exact_duplicate_root_matches() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -110,7 +110,7 @@ fn rm_force_removes_all_exact_duplicate_root_matches() {
 }
 
 #[test]
-fn rm_duplicate_root_requires_force_before_cleanup() {
+fn stop_duplicate_root_requires_force_before_cleanup() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -153,14 +153,14 @@ fn rm_duplicate_root_requires_force_before_cleanup() {
         .stderr(predicates::str::contains(
             "duplicate managed sessions exist",
         ))
-        .stderr(predicates::str::contains("agentbox rm --force"));
+        .stderr(predicates::str::contains("agentbox stop --force"));
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "inspect", "inspect"]);
 }
 
 #[test]
-fn rm_allows_exact_missing_path_match_for_orphaned_root_identity() {
+fn stop_allows_exact_missing_path_match_for_orphaned_root_identity() {
     let repo = support::temp_git_repo();
     let root = repo.path().canonicalize().unwrap();
     let root_string = root.to_str().unwrap().to_string();
@@ -253,7 +253,7 @@ fn run_command(
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
-        .arg("rm")
+        .arg("stop")
         .args(extra_args)
         .arg(target);
     command.assert()
