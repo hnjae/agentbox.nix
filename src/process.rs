@@ -63,6 +63,16 @@ impl ProcessRunner {
         configure(&mut command);
         run_command(&mut command)
     }
+
+    pub fn status(
+        &self,
+        program: &str,
+        configure: impl FnOnce(&mut Command),
+    ) -> Result<ExitStatus> {
+        let mut command = self.command(program)?;
+        configure(&mut command);
+        run_command_status(&mut command)
+    }
 }
 
 pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {
@@ -94,6 +104,20 @@ pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {
     }
 
     Ok(ProcessOutput { stdout, stderr })
+}
+
+pub fn run_command_status(command: &mut Command) -> Result<ExitStatus> {
+    let description = describe_command(command);
+    let program = command.get_program().to_string_lossy().into_owned();
+    command.status().map_err(|error| {
+        if error.kind() == ErrorKind::NotFound {
+            Error::msg(format!(
+                "`{program}` was not found on PATH; install `{program}` or add it to PATH"
+            ))
+        } else {
+            Error::msg(format!("failed to run `{description}`: {error}"))
+        }
+    })
 }
 
 fn describe_command(command: &Command) -> String {

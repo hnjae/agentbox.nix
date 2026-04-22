@@ -10,7 +10,9 @@ use agentbox::direnv::Direnv;
 use agentbox::git::Git;
 use agentbox::podman::Podman;
 use agentbox::process::ProcessRunner;
+use agentbox::runtime::opencode::DEFAULT_IMAGE;
 use camino::Utf8Path;
+use std::fs;
 
 mod support;
 
@@ -160,4 +162,57 @@ fn podman_inspect_parses_stable_json_fields_from_a_fake_binary() {
             .as_deref(),
         Some("10.88.0.10")
     );
+}
+
+#[test]
+fn podman_image_exists_treats_exit_status_one_as_missing() {
+    let fake_bins = support::FakeBinDir::new();
+    fake_bins.install_exact_failure("podman", &["image", "exists", DEFAULT_IMAGE], "", 1);
+
+    let exists = Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .image_exists(DEFAULT_IMAGE)
+        .unwrap();
+
+    assert!(!exists);
+}
+
+#[test]
+fn podman_image_exists_returns_true_when_podman_reports_local_presence() {
+    let fake_bins = support::FakeBinDir::new();
+    fake_bins.install_exact_response("podman", &["image", "exists", DEFAULT_IMAGE], "");
+
+    let exists = Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .image_exists(DEFAULT_IMAGE)
+        .unwrap();
+
+    assert!(exists);
+}
+
+#[test]
+fn podman_build_image_uses_containerfile_and_context_arguments() {
+    let fake_bins = support::FakeBinDir::new();
+    let sandbox = tempfile::tempdir().unwrap();
+    let context = Utf8Path::from_path(sandbox.path())
+        .unwrap()
+        .join("container-example");
+    fs::create_dir_all(context.as_std_path()).unwrap();
+    let containerfile = context.join("Containerfile");
+    fs::write(containerfile.as_std_path(), "FROM scratch\n").unwrap();
+
+    fake_bins.install_exact_response(
+        "podman",
+        &[
+            "build",
+            "-t",
+            DEFAULT_IMAGE,
+            "-f",
+            containerfile.as_str(),
+            context.as_str(),
+        ],
+        "Successfully built\n",
+    );
+
+    Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .build_image(DEFAULT_IMAGE, containerfile.as_ref(), context.as_ref())
+        .unwrap();
 }

@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use camino::Utf8Path;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -217,6 +218,43 @@ impl Podman {
         }
 
         Ok(containers.remove(0))
+    }
+
+    pub fn image_exists(&self, image: &str) -> Result<bool> {
+        let status = self.runner.status("podman", |command| {
+            command.args(["image", "exists", image]);
+        })?;
+
+        match status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            Some(code) => Err(Error::msg(format!(
+                "`podman image exists {image}` exited with exit status {code}"
+            ))),
+            None => Err(Error::msg(format!(
+                "`podman image exists {image}` exited with signal"
+            ))),
+        }
+    }
+
+    pub fn build_image(
+        &self,
+        image: &str,
+        containerfile: &Utf8Path,
+        context_dir: &Utf8Path,
+    ) -> Result<()> {
+        self.runner
+            .capture("podman", |command| {
+                command.args([
+                    "build",
+                    "-t",
+                    image,
+                    "-f",
+                    containerfile.as_str(),
+                    context_dir.as_str(),
+                ]);
+            })
+            .map(|_| ())
     }
 }
 
