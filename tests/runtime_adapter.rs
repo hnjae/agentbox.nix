@@ -119,45 +119,11 @@ fn opencode_create_spec_matches_mvp_contract() {
         ]
     );
 
-    assert_eq!(runtime.foreground_command().argv, vec!["opencode"]);
+    assert_eq!(
+        runtime.foreground_command().argv,
+        vec!["opencode".to_string()]
+    );
     assert!(!runtime.foreground_command().detached);
-    assert_eq!(
-        runtime.detached_server_start().argv,
-        vec![
-            "/entrypoint",
-            "opencode",
-            "serve",
-            "--hostname",
-            "127.0.0.1",
-            "--port",
-            "4096",
-        ]
-    );
-    assert!(runtime.detached_server_start().detached);
-    assert_eq!(
-        runtime.health_probe().argv,
-        vec![
-            "/entrypoint",
-            "curl",
-            "--max-time",
-            "2",
-            "-sf",
-            "http://127.0.0.1:4096/global/health",
-        ]
-    );
-    assert_eq!(
-        runtime
-            .attach_command(workspace.canonical_target.as_ref())
-            .argv,
-        vec![
-            "/entrypoint",
-            "opencode",
-            "attach",
-            "http://127.0.0.1:4096",
-            "--dir",
-            workspace.canonical_target.as_str(),
-        ]
-    );
 }
 
 #[test]

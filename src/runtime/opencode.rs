@@ -24,8 +24,6 @@ use crate::{Error, Result};
 
 pub const RUNTIME_NAME: &str = "opencode";
 pub const DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
-pub const SERVER_HOST: &str = "127.0.0.1";
-pub const SERVER_PORT: u16 = 4096;
 const PACKAGED_CONTAINER_EXAMPLE_RELATIVE: &str = "share/agentbox/container-example";
 
 #[derive(Debug, Clone, Default)]
@@ -89,55 +87,6 @@ impl OpencodeRuntime {
                 .into_iter()
                 .map(|value| value.to_string())
                 .collect(),
-            detached: false,
-        }
-    }
-
-    pub fn detached_server_start(&self) -> RuntimeExecSpec {
-        RuntimeExecSpec {
-            argv: [
-                "/entrypoint",
-                "opencode",
-                "serve",
-                "--hostname",
-                SERVER_HOST,
-                "--port",
-                "4096",
-            ]
-            .into_iter()
-            .map(|value| value.to_string())
-            .collect(),
-            detached: true,
-        }
-    }
-
-    pub fn health_probe(&self) -> RuntimeExecSpec {
-        RuntimeExecSpec {
-            argv: [
-                "/entrypoint",
-                "curl",
-                "--max-time",
-                "2",
-                "-sf",
-                "http://127.0.0.1:4096/global/health",
-            ]
-            .into_iter()
-            .map(|value| value.to_string())
-            .collect(),
-            detached: false,
-        }
-    }
-
-    pub fn attach_command(&self, target_directory: &Utf8Path) -> RuntimeExecSpec {
-        RuntimeExecSpec {
-            argv: vec![
-                "/entrypoint".to_string(),
-                "opencode".to_string(),
-                "attach".to_string(),
-                format!("http://{SERVER_HOST}:{SERVER_PORT}"),
-                "--dir".to_string(),
-                target_directory.to_string(),
-            ],
             detached: false,
         }
     }

@@ -9,8 +9,6 @@
 use std::collections::BTreeMap;
 use std::io::IsTerminal;
 use std::process::{Command, Stdio};
-use std::thread;
-use std::time::Duration;
 
 use camino::Utf8Path;
 
@@ -18,7 +16,7 @@ use crate::cli::RunArgs;
 use crate::lock::lock_workspace;
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount};
 use crate::preflight::{check_host_prerequisites, direnv_applies_to_target};
-use crate::process::{ProcessRunner, run_command};
+use crate::process::ProcessRunner;
 use crate::runtime::RuntimeCreateSpec;
 use crate::runtime::opencode::{DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME};
 use crate::session::{
@@ -28,9 +26,6 @@ use crate::session::{
 };
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
-
-const READINESS_ATTEMPTS: usize = 30;
-const READINESS_DELAY: Duration = Duration::from_millis(200);
 
 pub fn run(args: RunArgs) -> Result<()> {
     let workspace = resolve_workspace_identity(&args.directory)?;
@@ -332,74 +327,29 @@ fn has_required_mount(mounts: &[PodmanContainerMount], destination: &str) -> boo
     mounts.iter().any(|mount| mount.destination == destination)
 }
 
-pub(crate) struct ServerStartSpec {
+pub(crate) struct RuntimeCommandSpec {
     pub(crate) argv: Vec<String>,
     pub(crate) workdir: Option<String>,
-}
-
-pub(crate) fn server_start_spec(
-    runtime: &OpencodeRuntime,
-    target: &Utf8Path,
-    git_root: &Utf8Path,
-) -> ServerStartSpec {
-    let base = runtime.detached_server_start();
-    let workdir = Some(target.to_string());
-
-    if direnv_applies_to_target(target, git_root) {
-        let mut argv = vec!["direnv".to_string(), "exec".to_string(), ".".to_string()];
-        argv.extend(base.argv);
-        ServerStartSpec { argv, workdir }
-    } else {
-        ServerStartSpec {
-            argv: base.argv,
-            workdir,
-        }
-    }
 }
 
 pub(crate) fn foreground_run_spec(
     runtime: &OpencodeRuntime,
     target: &Utf8Path,
     git_root: &Utf8Path,
-) -> ServerStartSpec {
+) -> RuntimeCommandSpec {
     let base = runtime.foreground_command();
     let workdir = Some(target.to_string());
 
     if direnv_applies_to_target(target, git_root) {
         let mut argv = vec!["direnv".to_string(), "exec".to_string(), ".".to_string()];
         argv.extend(base.argv);
-        ServerStartSpec { argv, workdir }
+        RuntimeCommandSpec { argv, workdir }
     } else {
-        ServerStartSpec {
+        RuntimeCommandSpec {
             argv: base.argv,
             workdir,
         }
     }
-}
-
-pub(crate) fn wait_for_readiness(
-    process_runner: &ProcessRunner,
-    container_name: &str,
-    runtime: &OpencodeRuntime,
-) -> Result<()> {
-    let probe = runtime.health_probe();
-    let mut last_error = None;
-
-    for attempt in 0..READINESS_ATTEMPTS {
-        match podman_exec(process_runner, container_name, &probe.argv, None, false) {
-            Ok(()) => return Ok(()),
-            Err(error) => last_error = Some(error),
-        }
-
-        if attempt + 1 < READINESS_ATTEMPTS {
-            thread::sleep(READINESS_DELAY);
-        }
-    }
-
-    let detail = last_error
-        .map(|error| error.to_string())
-        .unwrap_or_else(|| "no readiness probe was executed".to_string());
-    Err(Error::msg(detail))
 }
 
 fn classify_run_error(
@@ -415,71 +365,6 @@ fn classify_run_error(
         &original_error.to_string(),
     );
     classify_create_error(podman, workspace, create_spec, wrapped)
-}
-
-pub(crate) fn podman_start(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
-    let mut command = process_runner.command("podman")?;
-    command.args(["start", container_name]);
-    run_command(&mut command).map(|_| ())
-}
-
-pub(crate) fn podman_exec(
-    process_runner: &ProcessRunner,
-    container_name: &str,
-    argv: &[String],
-    workdir: Option<&str>,
-    detached: bool,
-) -> Result<()> {
-    let mut command = process_runner.command("podman")?;
-    command.arg("exec");
-    if detached {
-        command.arg("--detach");
-    }
-    if let Some(workdir) = workdir {
-        command.args(["--workdir", workdir]);
-    }
-    command.arg(container_name);
-    command.args(argv);
-    run_command(&mut command).map(|_| ())
-}
-
-pub(crate) fn podman_exec_interactive(
-    process_runner: &ProcessRunner,
-    container_name: &str,
-    argv: &[String],
-    workdir: Option<&str>,
-) -> Result<()> {
-    let mut command = process_runner.command("podman")?;
-    command.arg("exec");
-    command.arg("--interactive");
-    if should_allocate_tty() {
-        command.arg("--tty");
-    }
-    if let Some(workdir) = workdir {
-        command.args(["--workdir", workdir]);
-    }
-    command.arg(container_name);
-    command.args(argv);
-    command.stdin(Stdio::inherit());
-    command.stdout(Stdio::inherit());
-    command.stderr(Stdio::inherit());
-
-    let description = describe_command(&command);
-    let status = command
-        .status()
-        .map_err(|error| Error::msg(format!("failed to run `{description}`: {error}")))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Error::msg(format!(
-            "`{description}` exited with {}",
-            status
-                .code()
-                .map(|code| format!("exit status {code}"))
-                .unwrap_or_else(|| "signal".to_string())
-        )))
-    }
 }
 
 fn podman_run_interactive(
