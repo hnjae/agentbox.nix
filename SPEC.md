@@ -316,6 +316,12 @@ Supported host models:
 - NixOS
 - Linux with multi-user Nix
 
+Default image asset source:
+
+- The repository's canonical source of truth for the default runtime image assets is `assets/image/`.
+- The installed `agentbox` binary embeds only the files required to assemble the default `podman build` context: `Containerfile`, `bootstrap`, `entrypoint`, `lib/runtime-contract.sh`, and `runtime-packages.nix`.
+- When `agentbox run` needs to build the default image, it materializes those embedded files into a temporary readable build context and invokes `podman build` from that temporary directory.
+
 Rules:
 
 - `/nix` is mounted into the container so the host Nix store and nix-daemon socket are available.
