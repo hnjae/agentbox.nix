@@ -12,16 +12,18 @@ use agentbox::preflight::{
 };
 use agentbox::runtime::RuntimeMountKind;
 use agentbox::runtime::opencode::{
-    DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME, packaged_default_image_dir_for_exe,
-    required_host_mount_destinations, resolve_default_image_dir_from,
+    DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME, embedded_default_image_paths,
+    materialize_default_image_context, required_host_mount_destinations,
 };
 use agentbox::session::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
-use agentbox::workspace::resolve_workspace_identity;
-use camino::Utf8Path;
 use std::fs;
+use std::path::Path;
+
+use agentbox::workspace::resolve_workspace_identity;
+use camino::{Utf8Path, Utf8PathBuf};
 
 #[path = "support/mod.rs"]
 mod support;
@@ -173,34 +175,31 @@ fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
 }
 
 #[test]
-fn packaged_default_image_dir_uses_installed_share_layout() {
-    let sandbox = tempfile::tempdir().unwrap();
-    let root = Utf8Path::from_path(sandbox.path()).unwrap();
-    let executable = root.join("bin/agentbox");
-    let packaged = root.join("share/agentbox/assets/image");
+fn materialized_default_image_context_contains_only_required_files() {
+    let context = materialize_default_image_context().unwrap();
+    let mut files =
+        collect_relative_files(context.root().as_std_path(), context.root().as_std_path());
+    files.sort();
 
-    fs::create_dir_all(packaged.as_std_path()).unwrap();
+    let mut expected = embedded_default_image_paths()
+        .iter()
+        .map(|path| path.to_string())
+        .collect::<Vec<_>>();
+    expected.sort();
 
-    assert_eq!(
-        packaged_default_image_dir_for_exe(&executable),
-        Some(packaged)
-    );
+    assert_eq!(files, expected);
 }
 
 #[test]
-fn default_image_dir_falls_back_to_repo_during_dev_and_tests() {
-    let sandbox = tempfile::tempdir().unwrap();
-    let manifest_root = Utf8Path::from_path(sandbox.path()).unwrap();
-    let fallback = manifest_root.join("assets/image");
-    fs::create_dir_all(fallback.as_std_path()).unwrap();
-    fs::write(
-        fallback.join("Containerfile").as_std_path(),
-        "FROM scratch\n",
-    )
-    .unwrap();
-    let resolved = resolve_default_image_dir_from(None, manifest_root).unwrap();
+fn materialized_default_image_context_matches_repo_assets() {
+    let context = materialize_default_image_context().unwrap();
+    let asset_root = Utf8Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/image");
 
-    assert_eq!(resolved, fallback);
+    for relative_path in embedded_default_image_paths() {
+        let materialized = fs::read(context.root().join(relative_path).as_std_path()).unwrap();
+        let source = fs::read(asset_root.join(relative_path).as_std_path()).unwrap();
+        assert_eq!(materialized, source, "mismatch for {relative_path}");
+    }
 }
 
 fn init_git_repo(path: &std::path::Path) {
@@ -212,4 +211,26 @@ fn init_git_repo(path: &std::path::Path) {
     )
     .unwrap();
     fs::write(path.join(".gitignore"), "\n").unwrap();
+}
+
+fn collect_relative_files(root: &Path, current: &Path) -> Vec<String> {
+    let mut files = Vec::new();
+
+    for entry in fs::read_dir(current).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            files.extend(collect_relative_files(root, &path));
+            continue;
+        }
+
+        let relative = path.strip_prefix(root).unwrap();
+        files.push(
+            Utf8PathBuf::from_path_buf(relative.to_path_buf())
+                .unwrap()
+                .to_string(),
+        );
+    }
+
+    files
 }

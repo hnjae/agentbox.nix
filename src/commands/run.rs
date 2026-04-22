@@ -88,14 +88,15 @@ fn ensure_default_runtime_image(
         return Ok(());
     }
 
-    let context_dir = runtime.default_image_context_dir()?;
-    let containerfile = context_dir.join("Containerfile");
+    let context = runtime.default_image_context()?;
+    let containerfile = context.containerfile();
     podman
-        .build_image(DEFAULT_IMAGE, containerfile.as_ref(), context_dir.as_ref())
+        .build_image(DEFAULT_IMAGE, containerfile.as_ref(), context.root())
         .map_err(|error| {
             Error::msg(format!(
                 "failed to build default runtime image `{DEFAULT_IMAGE}` for `{}` from `{}`: {error}",
-                workspace.canonical_git_root, context_dir,
+                workspace.canonical_git_root,
+                context.root(),
             ))
         })
 }
