@@ -171,6 +171,7 @@ impl Harness {
         let state_home = tempfile::tempdir().unwrap();
         let original_path = std::env::var("PATH").unwrap();
 
+        fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("git"), &fake_git_script());
         write_executable(fake_bin.path().join("podman"), &fake_podman_script());
@@ -377,6 +378,26 @@ fixtures=${AGENTBOX_TEST_FIXTURES:?missing AGENTBOX_TEST_FIXTURES}
 case "$1" in
   ps)
     cat "$fixtures/ps.json"
+    ;;
+  image)
+    shift
+    subcommand=${1:-}
+    shift || true
+    case "$subcommand" in
+      exists)
+        if [ -f "$fixtures/image.exists" ]; then
+          exit 0
+        fi
+        exit 1
+        ;;
+      *)
+        printf 'unexpected podman image invocation: %s %s\n' "$subcommand" "$*" >&2
+        exit 97
+        ;;
+    esac
+    ;;
+  build)
+    printf 'built\n'
     ;;
   inspect)
     cat "$fixtures/inspect-$2.json"

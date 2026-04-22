@@ -393,6 +393,7 @@ impl Harness {
         let state_home = tempfile::tempdir().unwrap();
         let original_path = std::env::var("PATH").unwrap();
 
+        fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("podman"), &fake_podman_script());
 
@@ -588,6 +589,25 @@ shift || true
 case "$cmd" in
   ps)
     cat "$fixtures/ps.json"
+    ;;
+  image)
+    subcommand=${1:-}
+    shift || true
+    case "$subcommand" in
+      exists)
+        if [ -f "$fixtures/image.exists" ]; then
+          exit 0
+        fi
+        exit 1
+        ;;
+      *)
+        printf 'unexpected podman image invocation: %s %s\n' "$subcommand" "$*" >&2
+        exit 97
+        ;;
+    esac
+    ;;
+  build)
+    printf 'built\n'
     ;;
   inspect)
     target=${1:?missing inspect target}
