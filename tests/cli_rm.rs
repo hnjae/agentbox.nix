@@ -270,7 +270,7 @@ fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
     json!({
         "Id": id,
         "Image": DEFAULT_IMAGE,
-        "Command": ["sleep", "infinity"],
+        "Command": ["opencode"],
         "Created": 1713681300,
         "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
         "Names": [name],
@@ -316,8 +316,8 @@ fn managed_inspect_fixture(
     serde_json::to_string(&vec![json!({
         "Id": container_name,
         "Created": "2026-04-21T10:15:00.000000000Z",
-        "Path": "/usr/bin/sleep",
-        "Args": ["infinity"],
+        "Path": "/usr/bin/opencode",
+        "Args": [],
         "State": {
             "Status": if running { "running" } else { "exited" },
             "Running": running,
@@ -331,7 +331,7 @@ fn managed_inspect_fixture(
         "Config": {
             "User": "user",
             "Env": [],
-            "Cmd": ["sleep", "infinity"],
+            "Cmd": ["opencode"],
             "WorkingDir": git_root,
             "Labels": labels,
             "Entrypoint": ["/entrypoint"],

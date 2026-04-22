@@ -405,6 +405,9 @@ case "$1" in
   run)
     printf 'running\n'
     ;;
+  attach)
+    printf 'attached\n'
+    ;;
   start)
     printf 'started\n'
     ;;
