@@ -28,9 +28,9 @@
           // {
             inherit cargoArtifacts;
             postInstall = ''
-              mkdir -p "$out/share/${projectName}"
-              cp -R ${../../container-example} "$out/share/${projectName}/container-example"
-              chmod -R u+w "$out/share/${projectName}/container-example"
+              mkdir -p "$out/share/${projectName}/assets"
+              cp -R ${../../assets/image} "$out/share/${projectName}/assets/image"
+              chmod -R u+w "$out/share/${projectName}/assets/image"
             '';
             meta = {
               mainProgram = projectName;

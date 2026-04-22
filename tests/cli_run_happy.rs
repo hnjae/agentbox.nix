@@ -54,8 +54,8 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[3].contains("lock=released"));
 
     assert!(log[2].contains(&format!("-t {DEFAULT_IMAGE} -f")));
-    assert!(log[2].contains("container-example/Containerfile"));
-    assert!(log[2].contains("container-example"));
+    assert!(log[2].contains("assets/image/Containerfile"));
+    assert!(log[2].contains("assets/image"));
 
     assert!(log[3].contains("--rm"));
     assert!(log[3].contains("--interactive"));

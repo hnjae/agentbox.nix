@@ -194,7 +194,7 @@ fn podman_build_image_uses_containerfile_and_context_arguments() {
     let sandbox = tempfile::tempdir().unwrap();
     let context = Utf8Path::from_path(sandbox.path())
         .unwrap()
-        .join("container-example");
+        .join("assets/image");
     fs::create_dir_all(context.as_std_path()).unwrap();
     let containerfile = context.join("Containerfile");
     fs::write(containerfile.as_std_path(), "FROM scratch\n").unwrap();

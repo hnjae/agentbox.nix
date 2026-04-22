@@ -24,7 +24,7 @@ use crate::{Error, Result};
 
 pub const RUNTIME_NAME: &str = "opencode";
 pub const DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
-const PACKAGED_CONTAINER_EXAMPLE_RELATIVE: &str = "share/agentbox/container-example";
+const PACKAGED_DEFAULT_IMAGE_RELATIVE: &str = "share/agentbox/assets/image";
 
 #[derive(Debug, Clone, Default)]
 pub struct OpencodeRuntime;
@@ -92,7 +92,7 @@ impl OpencodeRuntime {
     }
 
     pub fn default_image_context_dir(&self) -> Result<Utf8PathBuf> {
-        resolve_container_example_dir()
+        resolve_default_image_dir()
     }
 }
 
@@ -105,44 +105,44 @@ pub fn required_host_mount_destinations() -> [&'static str; 4] {
     ]
 }
 
-pub fn resolve_container_example_dir() -> Result<Utf8PathBuf> {
-    if let Some(resolved) = resolve_container_example_dir_from(
-        packaged_container_example_dir_from_current_exe().as_deref(),
+pub fn resolve_default_image_dir() -> Result<Utf8PathBuf> {
+    if let Some(resolved) = resolve_default_image_dir_from(
+        packaged_default_image_dir_from_current_exe().as_deref(),
         Utf8Path::new(env!("CARGO_MANIFEST_DIR")),
     ) {
         return Ok(resolved);
     }
 
     Err(Error::msg(format!(
-        "could not locate the bundled runtime build context; expected `{PACKAGED_CONTAINER_EXAMPLE_RELATIVE}` next to the installed binary or `container-example/` under `{}`",
+        "could not locate the bundled runtime build context; expected `{PACKAGED_DEFAULT_IMAGE_RELATIVE}` next to the installed binary or `assets/image/` under `{}`",
         env!("CARGO_MANIFEST_DIR")
     )))
 }
 
-pub fn resolve_container_example_dir_from(
+pub fn resolve_default_image_dir_from(
     executable: Option<&Utf8Path>,
     manifest_root: &Utf8Path,
 ) -> Option<Utf8PathBuf> {
     executable
-        .and_then(packaged_container_example_dir_for_exe)
-        .or_else(|| repo_local_container_example_dir_for_manifest_root(manifest_root))
+        .and_then(packaged_default_image_dir_for_exe)
+        .or_else(|| repo_local_default_image_dir_for_manifest_root(manifest_root))
 }
 
-pub fn packaged_container_example_dir_for_exe(executable: &Utf8Path) -> Option<Utf8PathBuf> {
+pub fn packaged_default_image_dir_for_exe(executable: &Utf8Path) -> Option<Utf8PathBuf> {
     let package_root = executable.parent()?.parent()?;
-    let candidate = package_root.join(PACKAGED_CONTAINER_EXAMPLE_RELATIVE);
+    let candidate = package_root.join(PACKAGED_DEFAULT_IMAGE_RELATIVE);
     candidate.is_dir().then_some(candidate)
 }
 
-fn packaged_container_example_dir_from_current_exe() -> Option<Utf8PathBuf> {
+fn packaged_default_image_dir_from_current_exe() -> Option<Utf8PathBuf> {
     let executable = std::env::current_exe().ok()?;
     let executable = Utf8PathBuf::from_path_buf(executable).ok()?;
     Some(executable)
 }
 
-pub fn repo_local_container_example_dir_for_manifest_root(
+pub fn repo_local_default_image_dir_for_manifest_root(
     manifest_root: &Utf8Path,
 ) -> Option<Utf8PathBuf> {
-    let candidate = manifest_root.join("container-example");
+    let candidate = manifest_root.join("assets/image");
     candidate.is_dir().then_some(candidate)
 }
