@@ -24,7 +24,6 @@ use crate::{Error, Result};
 
 pub const RUNTIME_NAME: &str = "opencode";
 pub const DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
-pub const KEEPALIVE_COMMAND: [&str; 2] = ["sleep", "infinity"];
 pub const SERVER_HOST: &str = "127.0.0.1";
 pub const SERVER_PORT: u16 = 4096;
 const PACKAGED_CONTAINER_EXAMPLE_RELATIVE: &str = "share/agentbox/container-example";
@@ -77,13 +76,20 @@ impl OpencodeRuntime {
             image,
             labels,
             mounts,
-            command: KEEPALIVE_COMMAND
-                .iter()
-                .map(|value| value.to_string())
-                .collect(),
+            command: self.foreground_command().argv,
             default_env: BTreeMap::new(),
             network_enabled: true,
             published_ports: Vec::new(),
+        }
+    }
+
+    pub fn foreground_command(&self) -> RuntimeExecSpec {
+        RuntimeExecSpec {
+            argv: ["opencode"]
+                .into_iter()
+                .map(|value| value.to_string())
+                .collect(),
+            detached: false,
         }
     }
 

@@ -57,66 +57,25 @@ pub fn run(args: RunArgs) -> Result<()> {
     let runtime = OpencodeRuntime::new();
     let process_runner = ProcessRunner::new();
     ensure_default_runtime_image(&process_runner, &runtime, &workspace, args.image.as_deref())?;
-    let create_spec = runtime.create_spec(&workspace, args.image.as_deref(), &preflight);
-    podman_create(&process_runner, &workspace.container_name, &create_spec)
-        .map_err(|error| classify_create_error(&podman, &workspace, &create_spec, error))?;
-    podman_start(&process_runner, &workspace.container_name).map_err(|error| {
-        Error::session_start_failed(
-            workspace.canonical_git_root.as_ref(),
-            &workspace.container_name,
-            &error.to_string(),
-        )
-    })?;
-
-    let server_start = server_start_spec(
+    let mut run_spec = runtime.create_spec(&workspace, args.image.as_deref(), &preflight);
+    let foreground_run = foreground_run_spec(
         &runtime,
         workspace.canonical_target.as_ref(),
         workspace.canonical_git_root.as_ref(),
     );
-    podman_exec(
-        &process_runner,
-        &workspace.container_name,
-        &server_start.argv,
-        server_start.workdir.as_deref(),
-        true,
-    )
-    .map_err(|error| {
-        Error::runtime_command_failed(
-            workspace.canonical_git_root.as_ref(),
-            &workspace.container_name,
-            "start the runtime server",
-            &error.to_string(),
-        )
-    })?;
-
-    wait_for_readiness(&process_runner, &workspace.container_name, &runtime).map_err(|error| {
-        Error::runtime_readiness_timeout(
-            workspace.canonical_git_root.as_ref(),
-            &workspace.container_name,
-            &error.to_string(),
-        )
-    })?;
+    run_spec.command = foreground_run.argv;
 
     std::hint::black_box(&workspace_guard);
     drop(workspace_guard);
     drop(workspace_lock);
 
-    podman_exec_interactive(
+    podman_run_interactive(
         &process_runner,
         &workspace.container_name,
-        &runtime
-            .attach_command(workspace.canonical_target.as_ref())
-            .argv,
-        None,
+        &run_spec,
+        foreground_run.workdir.as_deref(),
     )
-    .map_err(|error| {
-        Error::runtime_command_failed(
-            workspace.canonical_git_root.as_ref(),
-            &workspace.container_name,
-            "attach via `/entrypoint`",
-            &error.to_string(),
-        )
-    })
+    .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))
 }
 
 fn ensure_default_runtime_image(
@@ -156,12 +115,18 @@ fn existing_session_error(
     }
 
     match session.status {
-        SessionStatus::Running | SessionStatus::Stopped => session
+        SessionStatus::Running => session
             .runtime
             .as_deref()
             .filter(|runtime| *runtime != RUNTIME_NAME)
             .map(|runtime| runtime_mismatch_error(workspace, &session.container_name, runtime))
-            .unwrap_or_else(|| attach_existing_session_error(workspace, session)),
+            .unwrap_or_else(|| running_existing_session_error(workspace, session)),
+        SessionStatus::Stopped => session
+            .runtime
+            .as_deref()
+            .filter(|runtime| *runtime != RUNTIME_NAME)
+            .map(|runtime| runtime_mismatch_error(workspace, &session.container_name, runtime))
+            .unwrap_or_else(|| stopped_existing_session_error(workspace, session)),
         SessionStatus::Orphaned => Error::msg(format!(
             "managed session `{}` for `{}` is orphaned after the repository moved; remove or recreate it before retrying",
             session.container_name, workspace.canonical_git_root,
@@ -306,10 +271,23 @@ fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
     ))
 }
 
-fn attach_existing_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
+fn running_existing_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
     Error::msg(format!(
-        "managed session `{}` already exists for `{}`; use `agentbox attach {}` instead",
-        session.container_name, workspace.canonical_git_root, workspace.requested_target
+        "managed session `{}` is already running for `{}`; use `agentbox attach {}` to join it or `agentbox stop {}` to stop it first",
+        session.container_name,
+        workspace.canonical_git_root,
+        workspace.requested_target,
+        workspace.requested_target,
+    ))
+}
+
+fn stopped_existing_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
+    Error::msg(format!(
+        "managed session `{}` already exists for `{}` but is not running; use `agentbox stop {}` before retrying `agentbox run {}`",
+        session.container_name,
+        workspace.canonical_git_root,
+        workspace.requested_target,
+        workspace.requested_target,
     ))
 }
 
@@ -379,6 +357,26 @@ pub(crate) fn server_start_spec(
     }
 }
 
+pub(crate) fn foreground_run_spec(
+    runtime: &OpencodeRuntime,
+    target: &Utf8Path,
+    git_root: &Utf8Path,
+) -> ServerStartSpec {
+    let base = runtime.foreground_command();
+    let workdir = Some(target.to_string());
+
+    if direnv_applies_to_target(target, git_root) {
+        let mut argv = vec!["direnv".to_string(), "exec".to_string(), ".".to_string()];
+        argv.extend(base.argv);
+        ServerStartSpec { argv, workdir }
+    } else {
+        ServerStartSpec {
+            argv: base.argv,
+            workdir,
+        }
+    }
+}
+
 pub(crate) fn wait_for_readiness(
     process_runner: &ProcessRunner,
     container_name: &str,
@@ -404,42 +402,19 @@ pub(crate) fn wait_for_readiness(
     Err(Error::msg(detail))
 }
 
-fn podman_create(
-    process_runner: &ProcessRunner,
-    container_name: &str,
-    spec: &RuntimeCreateSpec,
-) -> Result<()> {
-    let mut command = process_runner.command("podman")?;
-    command.arg("create");
-    command.args(["--name", container_name]);
-
-    for (name, value) in &spec.labels {
-        command.arg("--label");
-        command.arg(format!("{name}={value}"));
-    }
-
-    for mount in &spec.mounts {
-        command.arg("--mount");
-        command.arg(render_mount(mount));
-    }
-
-    for (name, value) in &spec.default_env {
-        command.arg("--env");
-        command.arg(format!("{name}={value}"));
-    }
-
-    if !spec.network_enabled {
-        command.arg("--network=none");
-    }
-
-    for port in &spec.published_ports {
-        command.arg("--publish");
-        command.arg(port);
-    }
-
-    command.arg(&spec.image);
-    command.args(&spec.command);
-    run_command(&mut command).map(|_| ())
+fn classify_run_error(
+    podman: &Podman,
+    workspace: &WorkspaceIdentity,
+    create_spec: &RuntimeCreateSpec,
+    original_error: Error,
+) -> Error {
+    let wrapped = Error::runtime_command_failed(
+        workspace.canonical_git_root.as_ref(),
+        &workspace.container_name,
+        "run the foreground runtime command",
+        &original_error.to_string(),
+    );
+    classify_create_error(podman, workspace, create_spec, wrapped)
 }
 
 pub(crate) fn podman_start(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
@@ -485,6 +460,72 @@ pub(crate) fn podman_exec_interactive(
     }
     command.arg(container_name);
     command.args(argv);
+    command.stdin(Stdio::inherit());
+    command.stdout(Stdio::inherit());
+    command.stderr(Stdio::inherit());
+
+    let description = describe_command(&command);
+    let status = command
+        .status()
+        .map_err(|error| Error::msg(format!("failed to run `{description}`: {error}")))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::msg(format!(
+            "`{description}` exited with {}",
+            status
+                .code()
+                .map(|code| format!("exit status {code}"))
+                .unwrap_or_else(|| "signal".to_string())
+        )))
+    }
+}
+
+fn podman_run_interactive(
+    process_runner: &ProcessRunner,
+    container_name: &str,
+    spec: &RuntimeCreateSpec,
+    workdir: Option<&str>,
+) -> Result<()> {
+    let mut command = process_runner.command("podman")?;
+    command.arg("run");
+    command.arg("--rm");
+    command.args(["--name", container_name]);
+    command.arg("--interactive");
+    if should_allocate_tty() {
+        command.arg("--tty");
+    }
+    if let Some(workdir) = workdir {
+        command.args(["--workdir", workdir]);
+    }
+
+    for (name, value) in &spec.labels {
+        command.arg("--label");
+        command.arg(format!("{name}={value}"));
+    }
+
+    for mount in &spec.mounts {
+        command.arg("--mount");
+        command.arg(render_mount(mount));
+    }
+
+    for (name, value) in &spec.default_env {
+        command.arg("--env");
+        command.arg(format!("{name}={value}"));
+    }
+
+    if !spec.network_enabled {
+        command.arg("--network=none");
+    }
+
+    for port in &spec.published_ports {
+        command.arg("--publish");
+        command.arg(port);
+    }
+
+    command.arg(&spec.image);
+    command.args(&spec.command);
     command.stdin(Stdio::inherit());
     command.stdout(Stdio::inherit());
     command.stderr(Stdio::inherit());

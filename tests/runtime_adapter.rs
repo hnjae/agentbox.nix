@@ -80,10 +80,7 @@ fn opencode_create_spec_matches_mvp_contract() {
         spec.labels.get(LABEL_LOGICAL_NAME),
         Some(&workspace.container_name)
     );
-    assert_eq!(
-        spec.command,
-        vec!["sleep".to_string(), "infinity".to_string()]
-    );
+    assert_eq!(spec.command, vec!["opencode".to_string()]);
     assert!(spec.network_enabled);
     assert!(spec.published_ports.is_empty());
     assert!(spec.default_env.is_empty());
@@ -122,6 +119,8 @@ fn opencode_create_spec_matches_mvp_contract() {
         ]
     );
 
+    assert_eq!(runtime.foreground_command().argv, vec!["opencode"]);
+    assert!(!runtime.foreground_command().detached);
     assert_eq!(
         runtime.detached_server_start().argv,
         vec![

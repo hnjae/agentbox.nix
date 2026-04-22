@@ -229,37 +229,26 @@ fn attach_side_drift_errors_are_actionable() {
 }
 
 fn runtime_command_failures_are_actionable() {
-    let start_failure = RunFailureCase {
-        target_subdir: "start-failure",
-        failure: FailureSpec::new("start", "container failed to start", 125),
+    let run_failure = RunFailureCase {
+        target_subdir: "run-failure",
+        failure: FailureSpec::new("run", "container failed to start", 125),
         expected: vec![
-            "failed to start managed session",
+            "failed to run the foreground runtime command",
             "container failed to start",
-            "Check `podman logs",
+            "Verify the runtime image still provides `/entrypoint`",
         ],
     };
-    assert_run_failure_case(start_failure);
-
-    let readiness_timeout = RunFailureCase {
-        target_subdir: "readiness-timeout",
-        failure: FailureSpec::new("exec-ready", "curl: (7) connection refused", 7),
-        expected: vec![
-            "did not become ready after 30 attempts",
-            "curl: (7) connection refused",
-            "Check `podman logs",
-        ],
-    };
-    assert_run_failure_case(readiness_timeout);
+    assert_run_failure_case(run_failure);
 
     let missing_ca_bundle = RunFailureCase {
         target_subdir: "missing-ca-bundle",
         failure: FailureSpec::new(
-            "exec-detach",
+            "run",
             "Missing image-local CA bundle at /etc/ssl/certs/ca-certificates.crt.",
             126,
         ),
         expected: vec![
-            "failed to start the runtime server",
+            "failed to run the foreground runtime command",
             "Missing image-local CA bundle at /etc/ssl/certs/ca-certificates.crt.",
             "Verify the runtime image still provides `/entrypoint`",
         ],
@@ -269,34 +258,34 @@ fn runtime_command_failures_are_actionable() {
     let unusable_state_path = RunFailureCase {
         target_subdir: "unusable-state-path",
         failure: FailureSpec::new(
-            "exec-detach",
+            "run",
             "Unusable Nix profile state path: /proc/agentbox-state/nix/profile. Ensure XDG_STATE_HOME or HOME points to a writable location.",
             125,
         ),
         expected: vec![
-            "failed to start the runtime server",
+            "failed to run the foreground runtime command",
             "Unusable Nix profile state path: /proc/agentbox-state/nix/profile",
             "retry or recreate the session",
         ],
     };
     assert_run_failure_case(unusable_state_path);
 
-    let missing_attach_command = RunFailureCase {
-        target_subdir: "missing-attach-command",
-        failure: FailureSpec::new("exec-attach", "opencode: not found", 127),
+    let missing_foreground_command = RunFailureCase {
+        target_subdir: "missing-foreground-command",
+        failure: FailureSpec::new("run", "opencode: not found", 127),
         expected: vec![
-            "failed to attach via `/entrypoint`",
+            "failed to run the foreground runtime command",
             "opencode: not found",
             "Verify the runtime image still provides `/entrypoint` and the expected runtime tools",
         ],
     };
-    assert_run_failure_case(missing_attach_command);
+    assert_run_failure_case(missing_foreground_command);
 
     let entrypoint_failure = RunFailureCase {
         target_subdir: "entrypoint-failure",
-        failure: FailureSpec::new("exec-attach", "/entrypoint: Permission denied", 126),
+        failure: FailureSpec::new("run", "/entrypoint: Permission denied", 126),
         expected: vec![
-            "failed to attach via `/entrypoint`",
+            "failed to run the foreground runtime command",
             "/entrypoint: Permission denied",
             "retry or recreate the session",
         ],
@@ -306,12 +295,12 @@ fn runtime_command_failures_are_actionable() {
     let permission_denied = RunFailureCase {
         target_subdir: "workspace-permission-denied",
         failure: FailureSpec::new(
-            "exec-attach",
+            "run",
             "Permission denied: /tmp/agentbox-denied/workspace-permission-denied",
             13,
         ),
         expected: vec![
-            "failed to attach via `/entrypoint`",
+            "failed to run the foreground runtime command",
             "Permission denied: /tmp/agentbox-denied/workspace-permission-denied",
             "retry or recreate the session",
         ],
@@ -457,7 +446,7 @@ fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
     json!({
         "Id": id,
         "Image": DEFAULT_IMAGE,
-        "Command": ["sleep", "infinity"],
+        "Command": ["opencode"],
         "Created": 1713681300,
         "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
         "Names": [name],
@@ -520,8 +509,8 @@ fn managed_inspect_fixture(
     serde_json::to_string(&vec![json!({
         "Id": container_name,
         "Created": "2026-04-21T10:15:00.000000000Z",
-        "Path": "/usr/bin/sleep",
-        "Args": ["infinity"],
+        "Path": "/usr/bin/opencode",
+        "Args": [],
         "State": {
             "Status": if running { "running" } else { "exited" },
             "Running": running,
@@ -535,7 +524,7 @@ fn managed_inspect_fixture(
         "Config": {
             "User": "user",
             "Env": [],
-            "Cmd": ["sleep", "infinity"],
+            "Cmd": ["opencode"],
             "WorkingDir": git_root,
             "Labels": labels,
             "Entrypoint": ["/entrypoint"],
@@ -620,6 +609,10 @@ case "$cmd" in
   start)
     maybe_fail start
     printf 'started\n'
+    ;;
+  run)
+    maybe_fail run
+    printf 'ok\n'
     ;;
   exec)
     mode=exec-attach

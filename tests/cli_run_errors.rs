@@ -57,7 +57,11 @@ fn existing_managed_session_suggests_attach_and_ignores_image_override() {
     assert
         .failure()
         .stderr(predicates::str::contains(format!(
-            "use `agentbox attach {}` instead",
+            "agentbox attach {}",
+            target.display()
+        )))
+        .stderr(predicates::str::contains(format!(
+            "agentbox stop {}",
             target.display()
         )))
         .stderr(predicates::str::contains(&workspace.container_name));
@@ -209,7 +213,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
     let other_root = other_root.to_str().unwrap();
     let harness = install_harness();
     harness.write_ps(&ps_fixture(Vec::new()));
-    harness.fail_create("the container name is already in use", 125);
+    harness.fail_run("the container name is already in use", 125);
     harness.write_inspect(
         &workspace.container_name,
         &managed_inspect_fixture(
@@ -237,7 +241,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
         ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "create", "inspect"]);
+    assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
 }
 
 #[test]
@@ -400,10 +404,10 @@ impl Harness {
         .unwrap();
     }
 
-    fn fail_create(&self, stderr: &str, exit_code: i32) {
-        fs::write(self.fixtures.path().join("create.stderr"), stderr).unwrap();
+    fn fail_run(&self, stderr: &str, exit_code: i32) {
+        fs::write(self.fixtures.path().join("run.stderr"), stderr).unwrap();
         fs::write(
-            self.fixtures.path().join("create.exit"),
+            self.fixtures.path().join("run.exit"),
             format!("{exit_code}\n"),
         )
         .unwrap();
@@ -446,7 +450,7 @@ fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
     json!({
         "Id": id,
         "Image": DEFAULT_IMAGE,
-        "Command": ["sleep", "infinity"],
+        "Command": ["opencode"],
         "Created": 1713681300,
         "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
         "Names": [name],
@@ -508,8 +512,8 @@ fn managed_inspect_fixture(
     serde_json::to_string(&vec![json!({
         "Id": container_name,
         "Created": "2026-04-21T10:15:00.000000000Z",
-        "Path": "/usr/bin/sleep",
-        "Args": ["infinity"],
+        "Path": "/usr/bin/opencode",
+        "Args": [],
         "State": {
             "Status": "running",
             "Running": true,
@@ -523,7 +527,7 @@ fn managed_inspect_fixture(
         "Config": {
             "User": "user",
             "Env": [],
-            "Cmd": ["sleep", "infinity"],
+            "Cmd": ["opencode"],
             "WorkingDir": git_root,
             "Labels": labels,
             "Entrypoint": ["/entrypoint"],
@@ -598,18 +602,12 @@ case "$cmd" in
     fi
     cat "$fixture"
     ;;
-  create)
-    if [ -f "$fixtures/create.exit" ]; then
-      cat "$fixtures/create.stderr" >&2
-      exit "$(tr -d '\n' < "$fixtures/create.exit")"
+  run)
+    if [ -f "$fixtures/run.exit" ]; then
+      cat "$fixtures/run.stderr" >&2
+      exit "$(tr -d '\n' < "$fixtures/run.exit")"
     fi
-    printf 'created\n'
-    ;;
-  start)
     printf 'started\n'
-    ;;
-  exec)
-    printf 'executed\n'
     ;;
   *)
     printf 'unexpected podman invocation: %s %s\n' "$cmd" "$*" >&2

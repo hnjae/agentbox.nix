@@ -45,54 +45,37 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        [
-            "ps",
-            "image-exists",
-            "build",
-            "create",
-            "start",
-            "serve",
-            "ready",
-            "attach",
-        ]
+        ["ps", "image-exists", "build", "run"]
     );
 
     assert!(log[0].contains("lock=held"));
     assert!(log[1].contains("lock=held"));
     assert!(log[2].contains("lock=held"));
-    assert!(log[3].contains("lock=held"));
-    assert!(log[4].contains("lock=held"));
-    assert!(log[5].contains("lock=held"));
-    assert!(log[6].contains("lock=held"));
-    assert!(log[7].contains("lock=released"));
+    assert!(log[3].contains("lock=released"));
 
     assert!(log[2].contains(&format!("-t {DEFAULT_IMAGE} -f")));
     assert!(log[2].contains("container-example/Containerfile"));
     assert!(log[2].contains("container-example"));
 
+    assert!(log[3].contains("--rm"));
+    assert!(log[3].contains("--interactive"));
+    assert!(!log[3].contains("--tty"));
     assert!(log[3].contains("--label io.agentbox.image=localhost/agentbox-opencode:local"));
     assert!(log[3].contains(&format!(
         "--label io.agentbox.git_root={}",
         workspace.canonical_git_root
     )));
     assert!(log[3].contains(&format!("--name {}", workspace.container_name)));
+    assert!(log[3].contains(&format!("--workdir {}", workspace.canonical_target)));
     assert!(log[3].contains(DEFAULT_IMAGE));
+    assert!(log[3].contains(" opencode"));
     assert!(!log[3].contains("--publish"));
-
-    assert!(log[5].contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(log[5].contains("/entrypoint opencode serve --hostname 127.0.0.1 --port 4096"));
-    assert!(!log[5].contains("direnv exec ."));
-    assert!(
-        log[6].contains("/entrypoint curl --max-time 2 -sf http://127.0.0.1:4096/global/health")
-    );
-    assert!(log[7].contains(&format!(
-        "/entrypoint opencode attach http://127.0.0.1:4096 --dir {}",
-        workspace.canonical_target
-    )));
+    assert!(!log[3].contains("direnv exec ."));
+    assert!(!log[3].contains("sleep infinity"));
 }
 
 #[test]
-fn run_wraps_server_start_with_direnv_when_envrc_applies() {
+fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -116,18 +99,14 @@ fn run_wraps_server_start_with_direnv_when_envrc_applies() {
     command.assert().success();
 
     let log = harness.read_log();
-    let serve = log.iter().find(|line| line.starts_with("serve ")).unwrap();
-    let attach = log.iter().find(|line| line.starts_with("attach ")).unwrap();
+    let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
 
-    assert!(serve.contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(
-        serve.contains("direnv exec . /entrypoint opencode serve --hostname 127.0.0.1 --port 4096")
-    );
-    assert!(!attach.contains("direnv exec ."));
+    assert!(run.contains(&format!("--workdir {}", workspace.canonical_target)));
+    assert!(run.contains("direnv exec . opencode"));
 }
 
 #[test]
-fn run_persists_the_first_create_image_override_exactly() {
+fn run_uses_the_requested_image_override_exactly() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -151,12 +130,12 @@ fn run_persists_the_first_create_image_override_exactly() {
     command.assert().success();
 
     let log = harness.read_log();
-    let create = log.iter().find(|line| line.starts_with("create ")).unwrap();
+    let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
 
     assert!(!log.iter().any(|line| line.starts_with("image-exists ")));
     assert!(!log.iter().any(|line| line.starts_with("build ")));
-    assert!(create.contains(&format!("--label io.agentbox.image={image}")));
-    assert!(create.contains(&format!(" {image} sleep infinity")));
+    assert!(run.contains(&format!("--label io.agentbox.image={image}")));
+    assert!(run.contains(&format!(" {image} opencode")));
 }
 
 #[test]
@@ -185,7 +164,7 @@ fn run_skips_build_when_default_image_already_exists_locally() {
 
     let log = harness.read_log();
     let operations = operation_names(&log);
-    assert_eq!(&operations[..3], ["ps", "image-exists", "create"]);
+    assert_eq!(&operations[..3], ["ps", "image-exists", "run"]);
     assert!(!log.iter().any(|line| line.starts_with("build ")));
 }
 
@@ -360,28 +339,9 @@ case "$1" in
     fi
     printf 'built\n'
     ;;
-  create)
+  run)
     shift
-    record create "$@"
-    printf 'created\n'
-    ;;
-  start)
-    shift
-    record start "$@"
-    printf 'started\n'
-    ;;
-  exec)
-    shift
-    op=attach
-    case "$*" in
-      --detach*)
-        op=serve
-        ;;
-      *'/entrypoint curl '* )
-        op=ready
-        ;;
-    esac
-    record "$op" "$@"
+    record run "$@"
     ;;
   *)
     printf 'unexpected podman invocation: %s\n' "$*" >&2
