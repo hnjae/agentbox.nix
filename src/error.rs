@@ -56,12 +56,6 @@ impl Error {
         ))
     }
 
-    pub fn session_start_failed(git_root: &Utf8Path, container_name: &str, detail: &str) -> Self {
-        Self::msg(format!(
-            "failed to start managed session `{container_name}` for `{git_root}`: {detail}. Check `podman logs {container_name}` or recreate the session before retrying."
-        ))
-    }
-
     pub fn runtime_command_failed(
         git_root: &Utf8Path,
         container_name: &str,
@@ -70,16 +64,6 @@ impl Error {
     ) -> Self {
         Self::msg(format!(
             "failed to {action} for managed session `{container_name}` in `{git_root}`: {detail}. Verify the runtime image still provides `/entrypoint` and the expected runtime tools, then retry or recreate the session."
-        ))
-    }
-
-    pub fn runtime_readiness_timeout(
-        git_root: &Utf8Path,
-        container_name: &str,
-        detail: &str,
-    ) -> Self {
-        Self::msg(format!(
-            "managed session `{container_name}` for `{git_root}` did not become ready after 30 attempts: {detail}. Check `podman logs {container_name}` or recreate the session before retrying."
         ))
     }
 }

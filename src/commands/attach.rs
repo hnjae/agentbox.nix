@@ -6,15 +6,12 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::process::Stdio;
+
 use crate::cli::DirectoryArgs;
-use crate::commands::run::{
-    podman_exec, podman_exec_interactive, podman_start, server_start_spec, wait_for_readiness,
-};
 use crate::lock::lock_workspace;
 use crate::podman::Podman;
-use crate::preflight::check_host_prerequisites;
-use crate::process::ProcessRunner;
-use crate::runtime::opencode::OpencodeRuntime;
+use crate::process::{ProcessRunner, run_command_status};
 use crate::session::{
     REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionRecord, SessionStatus,
     discover_sessions_for_git_root,
@@ -35,71 +32,20 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
         _ => return Err(duplicate_sessions_error(&workspace)),
     };
 
-    let runtime = OpencodeRuntime::new();
     let process_runner = ProcessRunner::new();
-
-    if session.status == SessionStatus::Stopped {
-        check_host_prerequisites(
-            Some(workspace.canonical_target.as_ref()),
-            Some(workspace.canonical_git_root.as_ref()),
-        )?;
-        podman_start(&process_runner, &session.container_name).map_err(|error| {
-            Error::session_start_failed(
-                workspace.canonical_git_root.as_ref(),
-                &session.container_name,
-                &error.to_string(),
-            )
-        })?;
-
-        let server_start = server_start_spec(
-            &runtime,
-            workspace.canonical_target.as_ref(),
-            workspace.canonical_git_root.as_ref(),
-        );
-        podman_exec(
-            &process_runner,
-            &session.container_name,
-            &server_start.argv,
-            server_start.workdir.as_deref(),
-            true,
-        )
-        .map_err(|error| {
-            Error::runtime_command_failed(
-                workspace.canonical_git_root.as_ref(),
-                &session.container_name,
-                "start the runtime server",
-                &error.to_string(),
-            )
-        })?;
-    }
-
-    wait_for_readiness(&process_runner, &session.container_name, &runtime).map_err(|error| {
-        Error::runtime_readiness_timeout(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            &error.to_string(),
-        )
-    })?;
 
     std::hint::black_box(&workspace_guard);
     drop(workspace_guard);
     drop(workspace_lock);
 
-    podman_exec_interactive(
-        &process_runner,
-        &session.container_name,
-        &runtime
-            .attach_command(workspace.canonical_target.as_ref())
-            .argv,
-        None,
-    )
-    .map_err(|error| {
-        Error::runtime_command_failed(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            "attach via `/entrypoint`",
-            &error.to_string(),
-        )
+    podman_attach_interactive(&process_runner, &session.container_name).map_err(|error| {
+        Error::msg(format!(
+            "failed to attach to managed session `{}` for `{}`: {error}. If the session already exited, rerun `agentbox run {}` or remove the leftover container with `agentbox stop {}`.",
+            session.container_name,
+            workspace.canonical_git_root,
+            workspace.requested_target,
+            workspace.requested_target,
+        ))
     })
 }
 
@@ -112,7 +58,7 @@ fn validate_attachable_session<'a>(
     }
 
     match session.status {
-        SessionStatus::Running | SessionStatus::Stopped => {
+        SessionStatus::Running => {
             if session.runtime.as_deref() != Some(crate::runtime::opencode::RUNTIME_NAME) {
                 Err(runtime_mismatch_error(
                     workspace,
@@ -121,6 +67,17 @@ fn validate_attachable_session<'a>(
                 ))
             } else {
                 Ok(session)
+            }
+        }
+        SessionStatus::Stopped => {
+            if session.runtime.as_deref() != Some(crate::runtime::opencode::RUNTIME_NAME) {
+                Err(runtime_mismatch_error(
+                    workspace,
+                    &session.container_name,
+                    session.runtime.as_deref().unwrap_or("unknown"),
+                ))
+            } else {
+                Err(stopped_session_error(workspace, session))
             }
         }
         SessionStatus::Orphaned => Err(Error::msg(format!(
@@ -172,6 +129,16 @@ fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
     ))
 }
 
+fn stopped_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
+    Error::msg(format!(
+        "managed session `{}` for `{}` is not running; rerun `agentbox run {}` to start a new foreground session or `agentbox stop {}` to remove the leftover container",
+        session.container_name,
+        workspace.canonical_git_root,
+        workspace.requested_target,
+        workspace.requested_target,
+    ))
+}
+
 fn runtime_mismatch_error(
     workspace: &WorkspaceIdentity,
     container_name: &str,
@@ -184,4 +151,26 @@ fn runtime_mismatch_error(
         actual_runtime,
         crate::runtime::opencode::RUNTIME_NAME,
     ))
+}
+
+fn podman_attach_interactive(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
+    let mut command = process_runner.command("podman")?;
+    command.arg("attach");
+    command.arg(container_name);
+    command.stdin(Stdio::inherit());
+    command.stdout(Stdio::inherit());
+    command.stderr(Stdio::inherit());
+
+    let status = run_command_status(&mut command)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::msg(format!(
+            "`podman attach {container_name}` exited with {}",
+            status
+                .code()
+                .map(|code| format!("exit status {code}"))
+                .unwrap_or_else(|| "signal".to_string())
+        )))
+    }
 }

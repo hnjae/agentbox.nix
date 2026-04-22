@@ -41,9 +41,9 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    /// Create and attach to a managed session.
+    /// Run a managed session in the foreground.
     Run(RunArgs),
-    /// Attach to an existing managed session.
+    /// Attach to a running managed session.
     Attach(DirectoryArgs),
     /// List managed sessions.
     Ls,
@@ -63,7 +63,7 @@ pub struct CompletionArgs {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RunArgs {
-    /// Runtime image to persist on first session creation.
+    /// Runtime image to use for this run.
     #[arg(long)]
     pub image: Option<String>,
 

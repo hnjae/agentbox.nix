@@ -26,26 +26,25 @@ use serde_json::{Value, json};
 mod support;
 
 #[test]
-fn attach_restarts_a_stopped_session_then_serves_waits_and_attaches() {
+fn attach_to_a_running_session_attaches_to_container_stdio() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
-    fs::write(repo.path().join(".envrc"), "use nix\n").unwrap();
 
     let workspace = resolve_workspace_identity(&target).unwrap();
-    let harness = install_harness(repo.path(), true);
+    let harness = install_harness(repo.path(), false);
     let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
     harness.write_ps(&ps_fixture(vec![managed_ps_entry(
-        "stopped-id",
+        "running-id",
         &workspace.container_name,
         &workspace.hash12,
     )]));
     harness.write_inspect(
-        "stopped-id",
+        "running-id",
         &managed_inspect_fixture(
             &workspace.container_name,
             workspace.canonical_git_root.as_str(),
-            false,
+            true,
             managed_labels(
                 workspace.canonical_git_root.as_str(),
                 &workspace.hash12,
@@ -68,47 +67,36 @@ fn attach_restarts_a_stopped_session_then_serves_waits_and_attaches() {
     command.assert().success();
 
     let log = harness.read_log();
-    assert_eq!(
-        operation_names(&log),
-        ["ps", "inspect", "start", "serve", "ready", "attach"]
-    );
+    assert_eq!(operation_names(&log), ["ps", "inspect", "attach"]);
     assert!(log[0].contains("lock=held"));
-    assert!(log[4].contains("lock=held"));
-    assert!(log[5].contains("lock=released"));
-    assert!(log[3].contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(
-        log[3]
-            .contains("direnv exec . /entrypoint opencode serve --hostname 127.0.0.1 --port 4096")
-    );
-    assert!(log[5].contains("--interactive"));
-    assert!(!log[5].contains("--tty"));
-    assert!(log[5].contains(&format!(
-        "/entrypoint opencode attach http://127.0.0.1:4096 --dir {}",
-        workspace.canonical_target
-    )));
+    assert!(log[1].contains("lock=held"));
+    assert!(log[2].contains("lock=released"));
+    assert!(log[2].contains(&workspace.container_name));
+    assert!(!log[2].contains("--tty"));
+    assert!(!log[2].contains("opencode attach"));
     assert!(!log.iter().any(|line| line.starts_with("create ")));
 }
 
 #[test]
-fn attach_to_a_running_session_skips_direnv_and_server_restart() {
+fn attach_to_a_stopped_session_reports_the_running_only_model() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
-    fs::write(repo.path().join(".envrc"), "use nix\n").unwrap();
 
     let workspace = resolve_workspace_identity(&target).unwrap();
     let harness = install_harness(repo.path(), false);
+    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
     harness.write_ps(&ps_fixture(vec![managed_ps_entry(
-        "running-id",
+        "stopped-id",
         &workspace.container_name,
         &workspace.hash12,
     )]));
     harness.write_inspect(
-        "running-id",
+        "stopped-id",
         &managed_inspect_fixture(
             &workspace.container_name,
             workspace.canonical_git_root.as_str(),
-            true,
+            false,
             managed_labels(
                 workspace.canonical_git_root.as_str(),
                 &workspace.hash12,
@@ -123,15 +111,26 @@ fn attach_to_a_running_session_skips_direnv_and_server_restart() {
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
+        .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
         .arg("attach")
         .arg(&target);
 
-    command.assert().success();
+    command
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is not running"))
+        .stderr(predicates::str::contains(format!(
+            "agentbox run {}",
+            target.display()
+        )))
+        .stderr(predicates::str::contains(format!(
+            "agentbox stop {}",
+            target.display()
+        )));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "ready", "attach"]);
-    assert!(!log.iter().any(|line| line.starts_with("start ")));
-    assert!(!log.iter().any(|line| line.starts_with("serve ")));
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
 }
 
 #[test]
@@ -243,7 +242,7 @@ fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
     json!({
         "Id": id,
         "Image": DEFAULT_IMAGE,
-        "Command": ["sleep", "infinity"],
+        "Command": ["opencode"],
         "Created": 1713681300,
         "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
         "Names": [name],
@@ -289,8 +288,8 @@ fn managed_inspect_fixture(
     serde_json::to_string(&vec![json!({
         "Id": container_name,
         "Created": "2026-04-21T10:15:00.000000000Z",
-        "Path": "/usr/bin/sleep",
-        "Args": ["infinity"],
+        "Path": "/usr/bin/opencode",
+        "Args": [],
         "State": {
             "Status": if running { "running" } else { "exited" },
             "Running": running,
@@ -304,7 +303,7 @@ fn managed_inspect_fixture(
         "Config": {
             "User": "user",
             "Env": [],
-            "Cmd": ["sleep", "infinity"],
+            "Cmd": ["opencode"],
             "WorkingDir": git_root,
             "Labels": labels,
             "Entrypoint": ["/entrypoint"],
@@ -385,21 +384,8 @@ case "$cmd" in
     record inspect "$@"
     cat "$fixtures/inspect-$target.json"
     ;;
-  start)
-    record start "$@"
-    printf 'started\n'
-    ;;
-  exec)
-    op=attach
-    case "$*" in
-      --detach*)
-        op=serve
-        ;;
-      *'/entrypoint curl '* )
-        op=ready
-        ;;
-    esac
-    record "$op" "$@"
+  attach)
+    record attach "$@"
     printf 'executed\n'
     ;;
   *)
