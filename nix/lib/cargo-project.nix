@@ -5,7 +5,25 @@ rec {
   projectName = cargo.package.name;
 
   craneLib = crane.mkLib pkgs;
-  src = craneLib.cleanCargoSource ../..;
+  src =
+    let
+      repoRoot = toString ../..;
+      assetsRoot = "${repoRoot}/assets";
+      imageRoot = "${assetsRoot}/image";
+    in
+    pkgs.lib.cleanSourceWith {
+      src = ../..;
+      filter =
+        path: type:
+        let
+          pathString = toString path;
+          isEmbeddedImageAsset =
+            pathString == assetsRoot
+            || pathString == imageRoot
+            || pkgs.lib.hasPrefix "${imageRoot}/" pathString;
+        in
+        craneLib.filterCargoSources path type || isEmbeddedImageAsset;
+    };
 
   # Common arguments can be set here to avoid repeating them later
   commonArgs = {
