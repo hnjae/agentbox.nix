@@ -12,7 +12,8 @@ use agentbox::preflight::{
 };
 use agentbox::runtime::RuntimeMountKind;
 use agentbox::runtime::opencode::{
-    DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME, required_host_mount_destinations,
+    DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME, packaged_container_example_dir_for_exe,
+    required_host_mount_destinations, resolve_container_example_dir_from,
 };
 use agentbox::session::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
@@ -204,6 +205,38 @@ fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
     );
 
     assert!(!snapshot.direnv_required);
+}
+
+#[test]
+fn packaged_container_example_dir_uses_installed_share_layout() {
+    let sandbox = tempfile::tempdir().unwrap();
+    let root = Utf8Path::from_path(sandbox.path()).unwrap();
+    let executable = root.join("bin/agentbox");
+    let packaged = root.join("share/agentbox/container-example");
+
+    fs::create_dir_all(packaged.as_std_path()).unwrap();
+
+    assert_eq!(
+        packaged_container_example_dir_for_exe(&executable),
+        Some(packaged)
+    );
+}
+
+#[test]
+fn container_example_dir_falls_back_to_repo_during_dev_and_tests() {
+    let sandbox = tempfile::tempdir().unwrap();
+    let manifest_root = Utf8Path::from_path(sandbox.path()).unwrap();
+    let fallback = manifest_root.join("container-example");
+    fs::create_dir_all(fallback.as_std_path()).unwrap();
+    fs::write(
+        fallback.join("Containerfile").as_std_path(),
+        "FROM scratch\n",
+    )
+    .unwrap();
+
+    let resolved = resolve_container_example_dir_from(None, manifest_root).unwrap();
+
+    assert_eq!(resolved, fallback);
 }
 
 fn init_git_repo(path: &std::path::Path) {

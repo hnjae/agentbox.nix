@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::preflight::{
     ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CACHE_DESTINATION, NIX_CLIENT_DESTINATION,
@@ -20,12 +20,14 @@ use crate::session::{
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use crate::workspace::WorkspaceIdentity;
+use crate::{Error, Result};
 
 pub const RUNTIME_NAME: &str = "opencode";
 pub const DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
 pub const KEEPALIVE_COMMAND: [&str; 2] = ["sleep", "infinity"];
 pub const SERVER_HOST: &str = "127.0.0.1";
 pub const SERVER_PORT: u16 = 4096;
+const PACKAGED_CONTAINER_EXAMPLE_RELATIVE: &str = "share/agentbox/container-example";
 
 #[derive(Debug, Clone, Default)]
 pub struct OpencodeRuntime;
@@ -133,6 +135,10 @@ impl OpencodeRuntime {
             detached: false,
         }
     }
+
+    pub fn default_image_context_dir(&self) -> Result<Utf8PathBuf> {
+        resolve_container_example_dir()
+    }
 }
 
 pub fn required_host_mount_destinations() -> [&'static str; 4] {
@@ -142,4 +148,46 @@ pub fn required_host_mount_destinations() -> [&'static str; 4] {
         ETC_NIX_DESTINATION,
         ETC_STATIC_NIX_DESTINATION,
     ]
+}
+
+pub fn resolve_container_example_dir() -> Result<Utf8PathBuf> {
+    if let Some(resolved) = resolve_container_example_dir_from(
+        packaged_container_example_dir_from_current_exe().as_deref(),
+        Utf8Path::new(env!("CARGO_MANIFEST_DIR")),
+    ) {
+        return Ok(resolved);
+    }
+
+    Err(Error::msg(format!(
+        "could not locate the bundled runtime build context; expected `{PACKAGED_CONTAINER_EXAMPLE_RELATIVE}` next to the installed binary or `container-example/` under `{}`",
+        env!("CARGO_MANIFEST_DIR")
+    )))
+}
+
+pub fn resolve_container_example_dir_from(
+    executable: Option<&Utf8Path>,
+    manifest_root: &Utf8Path,
+) -> Option<Utf8PathBuf> {
+    executable
+        .and_then(packaged_container_example_dir_for_exe)
+        .or_else(|| repo_local_container_example_dir_for_manifest_root(manifest_root))
+}
+
+pub fn packaged_container_example_dir_for_exe(executable: &Utf8Path) -> Option<Utf8PathBuf> {
+    let package_root = executable.parent()?.parent()?;
+    let candidate = package_root.join(PACKAGED_CONTAINER_EXAMPLE_RELATIVE);
+    candidate.is_dir().then_some(candidate)
+}
+
+fn packaged_container_example_dir_from_current_exe() -> Option<Utf8PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    let executable = Utf8PathBuf::from_path_buf(executable).ok()?;
+    Some(executable)
+}
+
+pub fn repo_local_container_example_dir_for_manifest_root(
+    manifest_root: &Utf8Path,
+) -> Option<Utf8PathBuf> {
+    let candidate = manifest_root.join("container-example");
+    candidate.is_dir().then_some(candidate)
 }

@@ -27,6 +27,11 @@
           commonArgs
           // {
             inherit cargoArtifacts;
+            postInstall = ''
+              mkdir -p "$out/share/${projectName}"
+              cp -R ${../../container-example} "$out/share/${projectName}/container-example"
+              chmod -R u+w "$out/share/${projectName}/container-example"
+            '';
             meta = {
               mainProgram = projectName;
               description = cargo.package.description;
