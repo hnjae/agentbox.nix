@@ -54,7 +54,6 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[3].contains("lock=released"));
 
     assert!(log[2].contains(&format!("-t {DEFAULT_IMAGE} -f")));
-    assert!(log[2].contains("Containerfile"));
 
     assert!(log[3].contains("--rm"));
     assert!(log[3].contains("--interactive"));
@@ -305,6 +304,56 @@ record() {
   printf '%s lock=%s args=%s\n' "$op" "$(lock_state)" "$*" >> "$log_path"
 }
 
+validate_build_context() {
+  containerfile=
+  context_dir=
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -f)
+        shift
+        containerfile=${1:-}
+        ;;
+    esac
+
+    context_dir=$1
+    shift || true
+  done
+
+  [ -n "$containerfile" ] || {
+    printf 'missing build containerfile argument\n' >&2
+    exit 98
+  }
+
+  [ -n "$context_dir" ] || {
+    printf 'missing build context directory argument\n' >&2
+    exit 98
+  }
+
+  [ -r "$containerfile" ] || {
+    printf 'unreadable build containerfile: %s\n' "$containerfile" >&2
+    exit 98
+  }
+
+  [ "$containerfile" = "$context_dir/Containerfile" ] || {
+    printf 'build containerfile %s did not match context %s\n' "$containerfile" "$context_dir" >&2
+    exit 98
+  }
+
+  for relative_path in \
+    Containerfile \
+    bootstrap \
+    entrypoint \
+    lib/runtime-contract.sh \
+    runtime-packages.nix
+  do
+    [ -r "$context_dir/$relative_path" ] || {
+      printf 'missing embedded build file: %s\n' "$relative_path" >&2
+      exit 98
+    }
+  done
+}
+
 case "$1" in
   ps)
     shift
@@ -331,6 +380,7 @@ case "$1" in
     ;;
   build)
     shift
+    validate_build_context "$@"
     record build "$@"
     if [ -f "$AGENTBOX_TEST_FIXTURES/build.exit" ]; then
       cat "$AGENTBOX_TEST_FIXTURES/build.stderr" >&2
