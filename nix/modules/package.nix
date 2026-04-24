@@ -27,6 +27,7 @@
           commonArgs
           // {
             inherit cargoArtifacts;
+            cargoBuildExtraArgs = "--bin ${projectName}";
             meta = {
               mainProgram = projectName;
               description = cargo.package.description;
