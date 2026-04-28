@@ -51,7 +51,13 @@ RUN set -eu; \
 	rm -rf /var/lib/apt/lists/*
 
 RUN set -eu; \
-	useradd --create-home --home-dir /home/user --shell /bin/zsh user
+	useradd --create-home --home-dir /home/user --shell /bin/zsh user; \
+	install -d -o user -g user /home/user/.config/direnv; \
+	printf '%s\n' \
+	'[whitelist]' \
+	'prefix = ["/"]' \
+	> /home/user/.config/direnv/direnv.toml; \
+	chown user:user /home/user/.config/direnv/direnv.toml
 
 WORKDIR /workspace
 
