@@ -11,7 +11,7 @@ The MVP is workspace-centric rather than name-centric:
 - `agentbox ls`
 - `agentbox stop <directory>`
 
-`agentbox run <directory>` resolves `<directory>` to its canonical git root and launches a new managed workspace session for that repository as a foreground `podman run --rm`, with the runtime's actual agent command as the container main process and interactive stdio inherited directly. If a matching managed session is already running for that repository, `run` fails clearly and directs the user to `agentbox attach <directory>` or `agentbox stop <directory>`.
+`agentbox run <directory>` resolves `<directory>` to its canonical git root and launches a new managed workspace session for that repository as a foreground `podman run --rm`, with the runtime's actual agent command as the container main process and interactive stdio inherited directly. `agentbox` owns cleanup of managed containers, while images and named cache volumes remain explicit cache resources. If a matching managed session is already running for that repository, `run` fails clearly and directs the user to `agentbox attach <directory>` or `agentbox stop <directory>`.
 
 MVP runtime support is OpenCode only. Codex remains future-facing and informative, not normative MVP scope.
 
@@ -24,6 +24,7 @@ The MVP runtime contract uses host-attached Nix at runtime. The container consum
 - Keep durable state minimal: the workspace bind mount, one Podman-managed runtime cache volume, and flat container labels. Host-side coordination is limited to a per-root lock.
 - Run the runtime's actual foreground agent command directly instead of maintaining a synthetic keepalive container layer.
 - Manage lifecycle directly through the Podman CLI.
+- Keep container cleanup under `agentbox` control while leaving image and named volume reclamation to explicit user or administrator action.
 
 ## Non-Goals
 
@@ -35,6 +36,7 @@ The MVP runtime contract uses host-attached Nix at runtime. The container consum
 - Persisting extra runtime state volumes beyond the workspace bind mount and one Podman-managed runtime cache volume.
 - Maintaining host-side session metadata beyond the per-root lock.
 - Bundling a standalone Nix installation inside the image.
+- Automatically removing runtime images after each session.
 
 ## Assumptions
 
@@ -63,6 +65,8 @@ It has:
 - one per-git-root host lock used only for operation coordination
 
 Normal MVP `run` launches that managed container in the foreground with `podman run --rm`. `agentbox` must not create an idle keepalive container whose only job is to stay alive for later `exec` or attach flows.
+
+`run` does not pass `--rmi` by default. The runtime image is a reusable cache resource: the default image is built only when missing, and a user-supplied `--image` reference must not be removed implicitly by `agentbox`.
 
 The canonical git root is the primary identity. There is exactly one managed container total per canonical git root.
 
@@ -157,6 +161,7 @@ Image rules:
 - `agentbox` labels the running managed container with the exact image reference as `io.agentbox.image` so live discovery can report it while the container exists.
 - If `--image` is supplied, use that exact image reference.
 - If `--image` is omitted, use the runtime adapter's default image reference.
+- `run` must not pass `--rmi` implicitly. Image cleanup is outside the `run` and `stop` lifecycle.
 - If a managed session already exists for the resolved git root, `run` fails before reusing or comparing any stored image reference.
 - `attach` does not accept or interpret `--image`.
 - `--image` does not change session identity.
@@ -206,7 +211,7 @@ Status rules:
 
 ### `agentbox stop <directory>`
 
-`stop` stops the workspace session for the resolved repository and removes the managed container if it still exists.
+`stop` stops the workspace session for the resolved repository and removes the managed container if it still exists. It is an idempotent cleanup command for managed containers, including stale or legacy leftovers, not an image or volume pruning command.
 
 Expected behavior:
 
@@ -215,15 +220,17 @@ Expected behavior:
 3. Acquire the per-git-root lock.
 4. Stop the container if it is running.
 5. Remove the container if it still exists, including stopped or legacy leftovers.
-6. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed later by Podman volume garbage collection.
+6. Leave runtime images unmanaged by `stop`.
+7. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed later by explicit Podman volume cleanup.
 
 Optional flags:
 
-- `--force`: best-effort cleanup when some artifacts are already missing
+- `--force`: best-effort cleanup when duplicate exact matches exist
 
 Safety rule:
 
 - `stop` never deletes the user workspace.
+- `stop` never removes images or named cache volumes.
 
 ## Completion
 
@@ -393,6 +400,10 @@ High-level command strategy:
 3. `ls` derives session status from live Podman state and host path checks.
 4. `stop` stops the container and removes it if it still exists.
 
+Image lifecycle is separate from session lifecycle. The default runtime image is treated as a reusable local cache and is built only when absent. `agentbox run` must not use `--rmi` by default, and `agentbox stop` must not remove images. Image reclamation is an explicit user or administrator operation, for example `podman image prune` or `podman rmi <image>`.
+
+Named runtime cache volume lifecycle is also separate. `agentbox stop` leaves the workspace cache volume intact so later sessions can reuse it. Volume reclamation is explicit, for example `podman volume rm <container-name>` or `podman volume prune --all`.
+
 ### `run` Sequence
 
 Required sequence:
@@ -403,7 +414,7 @@ Required sequence:
 4. Query Podman for managed containers with the matching git-root hash, then verify the exact `io.agentbox.git_root` label matches the resolved canonical git root before treating a container as a candidate.
 5. If more than one container matches, fail as `duplicate` and do not guess.
 6. If one matching managed session already exists, fail clearly and suggest `agentbox attach <directory>` or `agentbox stop <directory>`.
-7. If none matches, execute `podman run --rm` with the resolved container name, required labels, required mounts, target-directory working directory, and the runtime foreground command as the container main command.
+7. If none matches, execute `podman run --rm` with the resolved container name, required labels, required mounts, target-directory working directory, and the runtime foreground command as the container main command. Do not pass `--rmi` by default.
 8. The image bootstrap path validates prerequisites, materializes the runtime profile, hands off to `/entrypoint`, and then execs the requested foreground runtime command.
 9. Inherit interactive stdio directly for the foreground run.
 
@@ -437,8 +448,10 @@ Required sequence:
 2. Acquire the per-root lock.
 3. Stop the container as best effort.
 4. Remove the container if it still exists.
-5. Leave any now-unused named cache volume available for later explicit reclamation, for example with `podman volume rm <container-name>` or `podman volume prune --all`.
-6. Surface any partial failure with enough detail for manual cleanup.
+5. Treat an already-removed container as success after verifying it is absent.
+6. Leave the runtime image available for reuse.
+7. Leave any now-unused named cache volume available for later explicit reclamation, for example with `podman volume rm <container-name>` or `podman volume prune --all`.
+8. Surface any partial failure with enough detail for manual managed-container cleanup.
 
 ## Interactive Transport
 
@@ -497,7 +510,7 @@ Required drift behavior:
 - Missing image-local CA bundle: fail clearly and require an image fix.
 - `/entrypoint` contract failure: fail clearly and preserve the runtime state for inspection.
 - Hash collision between different canonical git roots: fail clearly and do not alias discovery or locking.
-- Partial cleanup failure during `stop`: report exactly which artifacts remain.
+- Partial cleanup failure during `stop`: report exactly which managed containers remain.
 
 ## Security And Isolation
 
