@@ -12,8 +12,8 @@ use crate::error::Result;
 pub mod attach;
 pub mod completion;
 pub mod ls;
-pub mod rm;
 pub mod run;
+pub mod stop;
 
 pub fn dispatch(command: Command) -> Result<()> {
     tracing::debug!(?command, "dispatching CLI command");
@@ -22,7 +22,7 @@ pub fn dispatch(command: Command) -> Result<()> {
         Command::Run(args) => run::run(args),
         Command::Attach(args) => attach::run(args),
         Command::Ls => ls::run(),
-        Command::Stop(args) => rm::run(args),
+        Command::Stop(args) => stop::run(args),
         Command::Completion(args) => completion::run(args.shell),
         Command::CompletionRoots => {
             print!("{}", completion::live_roots_output()?);

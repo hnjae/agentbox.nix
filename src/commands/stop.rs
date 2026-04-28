@@ -19,7 +19,7 @@ use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
 pub fn run(args: StopArgs) -> Result<()> {
-    let git_root = resolve_rm_git_root(&args.directory)?;
+    let git_root = resolve_stop_git_root(&args.directory)?;
     let mut workspace_lock = lock_git_root(git_root.as_ref())?;
     let workspace_guard = workspace_lock.guard()?;
     let podman = Podman::new();
@@ -60,7 +60,7 @@ pub fn run(args: StopArgs) -> Result<()> {
     }
 }
 
-fn resolve_rm_git_root(directory: &Path) -> Result<Utf8PathBuf> {
+fn resolve_stop_git_root(directory: &Path) -> Result<Utf8PathBuf> {
     if directory.exists() {
         return resolve_workspace_identity(directory).map(|workspace| workspace.canonical_git_root);
     }
@@ -92,7 +92,7 @@ fn cleanup_session(
     session: &SessionRecord,
 ) -> Option<CleanupFailure> {
     let stop_error = podman_stop(process_runner, &session.container_name).err();
-    let remove_error = podman_rm(process_runner, &session.container_name).err();
+    let remove_error = podman_remove_container(process_runner, &session.container_name).err();
 
     if stop_error.is_none() && remove_error.is_none() {
         return None;
@@ -121,7 +121,7 @@ fn podman_stop(process_runner: &ProcessRunner, container_name: &str) -> Result<(
     run_command(&mut command).map(|_| ())
 }
 
-fn podman_rm(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
+fn podman_remove_container(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
     let mut command = process_runner.command("podman")?;
     command.args(["rm", container_name]);
     run_command(&mut command).map(|_| ())
