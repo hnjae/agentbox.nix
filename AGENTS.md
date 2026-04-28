@@ -12,3 +12,7 @@
 ## Coding Style & Naming Conventions
 
 Follow standard Rust formatting with `cargo fmt`; Use 4-space indentation.
+
+## Commit Guidelines
+
+Use Conventional Commits style for commit messages, such as `feat: add nix package output` or `fix: handle missing cargo metadata`.
