@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 use agentbox::lock::lock_path_in_state_dir;
 use agentbox::runtime::opencode::DEFAULT_IMAGE;
 use agentbox::session::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
 };
 use agentbox::workspace::resolve_workspace_identity;
 use assert_cmd::Command as AssertCommand;
@@ -67,14 +67,14 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
     command.assert().success();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "attach"]);
+    assert_eq!(operation_names(&log), ["ps", "inspect", "opencode"]);
     assert!(log[0].contains("lock=held"));
     assert!(log[1].contains("lock=held"));
-    assert!(log[2].contains("lock=released"));
-    assert!(log[2].contains(&workspace.container_name));
-    assert!(!log[2].contains("--tty"));
-    assert!(!log[2].contains("opencode attach"));
+    assert!(log[2].contains("lock=held"));
+    assert!(log[2].contains("attach http://127.0.0.1:49152"));
+    assert!(log[2].contains(&format!("cwd={}", workspace.canonical_target)));
     assert!(!log.iter().any(|line| line.starts_with("create ")));
+    assert!(!log.iter().any(|line| line.starts_with("attach ")));
 }
 
 #[test]
@@ -183,6 +183,7 @@ fn install_harness(repo_root: &Path, include_direnv: bool) -> Harness {
     fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
     write_executable(fake_bin.path().join("git"), &fake_git_script());
     write_executable(fake_bin.path().join("podman"), &fake_podman_script());
+    write_executable(fake_bin.path().join("opencode"), &fake_opencode_script());
     if include_direnv {
         write_executable(fake_bin.path().join("direnv"), "#!/bin/sh\nexit 0\n");
     }
@@ -276,6 +277,9 @@ fn managed_labels(
         (LABEL_RUNTIME.to_string(), "opencode".to_string()),
         (LABEL_IMAGE.to_string(), DEFAULT_IMAGE.to_string()),
         (LABEL_LOGICAL_NAME.to_string(), logical_name.to_string()),
+        (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
+        (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
+        (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
     ])
 }
 
@@ -330,6 +334,14 @@ fn managed_inspect_fixture(
         ],
         "NetworkSettings": {
             "Networks": {},
+            "Ports": {
+                "4096/tcp": [
+                    {
+                        "HostIp": "127.0.0.1",
+                        "HostPort": "49152"
+                    }
+                ]
+            },
         },
     })])
     .unwrap()
@@ -393,6 +405,27 @@ case "$cmd" in
     exit 97
     ;;
 esac
+"#
+    .to_string()
+}
+
+fn fake_opencode_script() -> String {
+    r#"#!/bin/sh
+set -eu
+
+log_path=${AGENTBOX_TEST_LOG:?missing AGENTBOX_TEST_LOG}
+lock_path=${AGENTBOX_TEST_LOCK_PATH:-}
+lock_probe=${AGENTBOX_TEST_LOCK_PROBE:-}
+
+lock_state() {
+  if [ -n "$lock_path" ] && [ -n "$lock_probe" ]; then
+    "$lock_probe" "$lock_path"
+  else
+    printf 'unknown'
+  fi
+}
+
+printf 'opencode lock=%s args=%s cwd=%s\n' "$(lock_state)" "$*" "$(pwd)" >> "$log_path"
 "#
     .to_string()
 }

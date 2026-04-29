@@ -11,13 +11,14 @@ use std::fs;
 
 use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
-    PodmanHostConfig, PodmanNetworkSettings, PodmanPsContainer,
+    PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
 };
 use agentbox::session::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionStatus, discover_managed_sessions_from_ps,
-    discover_sessions_for_git_root_from_ps, group_sessions_by_git_root,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+    SessionStatus, discover_managed_sessions_from_ps, discover_sessions_for_git_root_from_ps,
+    group_sessions_by_git_root,
 };
 use agentbox::workspace::hash12;
 use camino::Utf8Path;
@@ -77,7 +78,7 @@ fn missing_cache_mount_marks_failed() {
 }
 
 #[test]
-fn stopped_and_running_statuses_are_derived_from_inspect_state() {
+fn non_running_containers_are_failed_in_the_live_session_model() {
     let running_repo = git_repo::temp_git_repo();
     let stopped_repo = git_repo::temp_git_repo();
     let running_root = Utf8Path::from_path(running_repo.path()).unwrap();
@@ -92,7 +93,7 @@ fn stopped_and_running_statuses_are_derived_from_inspect_state() {
     .unwrap();
 
     assert_eq!(status_for(&sessions, "running"), SessionStatus::Running);
-    assert_eq!(status_for(&sessions, "stopped"), SessionStatus::Stopped);
+    assert_eq!(status_for(&sessions, "stopped"), SessionStatus::Failed);
 }
 
 #[test]
@@ -189,6 +190,9 @@ fn managed_container_with_hash(
         "localhost/agentbox-opencode:local".to_string(),
     );
     inspect_labels.insert(LABEL_LOGICAL_NAME.to_string(), name.to_string());
+    inspect_labels.insert(LABEL_ATTACH_SCHEME.to_string(), "http".to_string());
+    inspect_labels.insert(LABEL_CONTAINER_PORT.to_string(), "4096".to_string());
+    inspect_labels.insert(LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string());
 
     let mounts = if include_cache_mount {
         vec![PodmanContainerMount {
@@ -261,6 +265,13 @@ fn managed_container_with_hash(
             mounts,
             network_settings: PodmanNetworkSettings {
                 networks: BTreeMap::new(),
+                ports: BTreeMap::from([(
+                    "4096/tcp".to_string(),
+                    Some(vec![PodmanPortBinding {
+                        host_ip: Some("127.0.0.1".to_string()),
+                        host_port: Some("49152".to_string()),
+                    }]),
+                )]),
             },
         },
     )

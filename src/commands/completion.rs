@@ -76,7 +76,6 @@ complete -c agentbox -f -a "(__agentbox_completion_roots)"
 fn status_label(status: crate::session::SessionStatus) -> &'static str {
     match status {
         crate::session::SessionStatus::Running => "running",
-        crate::session::SessionStatus::Stopped => "stopped",
         crate::session::SessionStatus::Orphaned => "orphaned",
         crate::session::SessionStatus::Duplicate => "duplicate",
         crate::session::SessionStatus::Failed => "failed",

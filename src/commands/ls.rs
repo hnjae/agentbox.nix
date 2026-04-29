@@ -49,7 +49,6 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
 fn status_label(status: SessionStatus) -> &'static str {
     match status {
         SessionStatus::Running => "running",
-        SessionStatus::Stopped => "stopped",
         SessionStatus::Orphaned => "orphaned",
         SessionStatus::Duplicate => "duplicate",
         SessionStatus::Failed => "failed",

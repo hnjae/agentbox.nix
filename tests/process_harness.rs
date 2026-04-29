@@ -103,7 +103,14 @@ fn podman_ps_parses_stable_json_fields_from_a_fake_binary() {
     let fake_bins = support::FakeBinDir::new();
     fake_bins.install_exact_response(
         "podman",
-        &["ps", "--all", "--format", "json"],
+        &[
+            "ps",
+            "--all",
+            "--filter",
+            "label=io.agentbox.managed=true",
+            "--format",
+            "json",
+        ],
         support::podman_ps_fixture(),
     );
 

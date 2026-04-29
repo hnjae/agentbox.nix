@@ -10,6 +10,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::runtime::RuntimeKind;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompletionShell {
     Bash,
@@ -63,6 +65,10 @@ pub struct CompletionArgs {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RunArgs {
+    /// Runtime to launch for this run.
+    #[arg(long, value_enum, default_value_t = RuntimeKind::Opencode)]
+    pub runtime: RuntimeKind,
+
     /// Runtime image to use for this run.
     #[arg(long)]
     pub image: Option<String>,

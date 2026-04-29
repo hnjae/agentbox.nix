@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 use agentbox::preflight::{PreflightSnapshot, check_host_prerequisites_with_snapshot};
 use agentbox::runtime::opencode::DEFAULT_IMAGE;
 use agentbox::session::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
 };
 use agentbox::workspace::resolve_workspace_identity;
 use assert_cmd::Command as AssertCommand;
@@ -233,7 +233,7 @@ fn runtime_command_failures_are_actionable() {
         target_subdir: "run-failure",
         failure: FailureSpec::new("run", "container failed to start", 125),
         expected: vec![
-            "failed to run the foreground runtime command",
+            "failed to run the runtime server command",
             "container failed to start",
             "Verify the runtime image still provides `/entrypoint`",
         ],
@@ -248,7 +248,7 @@ fn runtime_command_failures_are_actionable() {
             126,
         ),
         expected: vec![
-            "failed to run the foreground runtime command",
+            "failed to run the runtime server command",
             "Missing image-local CA bundle at /etc/ssl/certs/ca-certificates.crt.",
             "Verify the runtime image still provides `/entrypoint`",
         ],
@@ -263,7 +263,7 @@ fn runtime_command_failures_are_actionable() {
             125,
         ),
         expected: vec![
-            "failed to run the foreground runtime command",
+            "failed to run the runtime server command",
             "Unusable Nix profile state path: /proc/agentbox-state/nix/profile",
             "retry or recreate the session",
         ],
@@ -274,7 +274,7 @@ fn runtime_command_failures_are_actionable() {
         target_subdir: "missing-foreground-command",
         failure: FailureSpec::new("run", "opencode: not found", 127),
         expected: vec![
-            "failed to run the foreground runtime command",
+            "failed to run the runtime server command",
             "opencode: not found",
             "Verify the runtime image still provides `/entrypoint` and the expected runtime tools",
         ],
@@ -285,7 +285,7 @@ fn runtime_command_failures_are_actionable() {
         target_subdir: "entrypoint-failure",
         failure: FailureSpec::new("run", "/entrypoint: Permission denied", 126),
         expected: vec![
-            "failed to run the foreground runtime command",
+            "failed to run the runtime server command",
             "/entrypoint: Permission denied",
             "retry or recreate the session",
         ],
@@ -300,7 +300,7 @@ fn runtime_command_failures_are_actionable() {
             13,
         ),
         expected: vec![
-            "failed to run the foreground runtime command",
+            "failed to run the runtime server command",
             "Permission denied: /tmp/agentbox-denied/workspace-permission-denied",
             "retry or recreate the session",
         ],
@@ -481,6 +481,9 @@ fn managed_labels(
         (LABEL_RUNTIME.to_string(), runtime.to_string()),
         (LABEL_IMAGE.to_string(), DEFAULT_IMAGE.to_string()),
         (LABEL_LOGICAL_NAME.to_string(), logical_name.to_string()),
+        (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
+        (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
+        (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
     ])
 }
 
@@ -538,6 +541,14 @@ fn managed_inspect_fixture(
         "Mounts": mounts,
         "NetworkSettings": {
             "Networks": {},
+            "Ports": {
+                "4096/tcp": [
+                    {
+                        "HostIp": "127.0.0.1",
+                        "HostPort": "49152"
+                    }
+                ]
+            },
         },
     })])
     .unwrap()

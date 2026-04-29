@@ -12,6 +12,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::git::Git;
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
+use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeKind};
 use crate::workspace::hash12;
 use crate::{Error, Result};
 
@@ -22,8 +23,11 @@ pub const LABEL_GIT_ROOT_HASH: &str = "io.agentbox.git_root_hash";
 pub const LABEL_RUNTIME: &str = "io.agentbox.runtime";
 pub const LABEL_IMAGE: &str = "io.agentbox.image";
 pub const LABEL_LOGICAL_NAME: &str = "io.agentbox.logical_name";
+pub const LABEL_ATTACH_SCHEME: &str = "io.agentbox.attach_scheme";
+pub const LABEL_CONTAINER_PORT: &str = "io.agentbox.container_port";
+pub const LABEL_CONTAINER_LISTEN_IP: &str = "io.agentbox.container_listen_ip";
 
-pub const REQUIRED_LABEL_NAMES: [&str; 7] = [
+pub const REQUIRED_LABEL_NAMES: [&str; 10] = [
     LABEL_MANAGED,
     LABEL_SCHEMA,
     LABEL_GIT_ROOT,
@@ -31,6 +35,9 @@ pub const REQUIRED_LABEL_NAMES: [&str; 7] = [
     LABEL_RUNTIME,
     LABEL_IMAGE,
     LABEL_LOGICAL_NAME,
+    LABEL_ATTACH_SCHEME,
+    LABEL_CONTAINER_PORT,
+    LABEL_CONTAINER_LISTEN_IP,
 ];
 
 pub const LABEL_MANAGED_VALUE: &str = "true";
@@ -40,7 +47,6 @@ pub const REQUIRED_NIX_CACHE_MOUNT_DESTINATION: &str = "/home/user/.cache/nix";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionStatus {
     Running,
-    Stopped,
     Orphaned,
     Duplicate,
     Failed,
@@ -51,6 +57,10 @@ pub enum SessionFailure {
     MissingRequiredLabels,
     DriftedGitRootHash,
     MissingCacheMount,
+    NotRunning,
+    UnsupportedRuntimeLabel,
+    MalformedEndpointLabels,
+    MissingPublishedAttachPort,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +74,10 @@ pub struct SessionRecord {
     pub runtime: Option<String>,
     pub image: Option<String>,
     pub logical_name: Option<String>,
+    pub attach_scheme: Option<String>,
+    pub container_port: Option<String>,
+    pub container_listen_ip: Option<String>,
+    pub attach_endpoint: Option<AttachEndpoint>,
     pub failure: Option<SessionFailure>,
     pub status: SessionStatus,
 }
@@ -215,6 +229,16 @@ fn build_session_record(
     let runtime = required_label_value(labels, LABEL_RUNTIME);
     let image = required_label_value(labels, LABEL_IMAGE);
     let logical_name = required_label_value(labels, LABEL_LOGICAL_NAME);
+    let attach_scheme = required_label_value(labels, LABEL_ATTACH_SCHEME);
+    let container_port = required_label_value(labels, LABEL_CONTAINER_PORT);
+    let container_listen_ip = required_label_value(labels, LABEL_CONTAINER_LISTEN_IP);
+    let attach_endpoint = derive_attach_endpoint(
+        runtime.as_deref(),
+        attach_scheme.as_deref(),
+        container_port.as_deref(),
+        &inspect,
+    )
+    .ok();
 
     let (status, failure) = derive_status(
         &managed,
@@ -224,6 +248,10 @@ fn build_session_record(
         runtime.as_deref(),
         image.as_deref(),
         logical_name.as_deref(),
+        attach_scheme.as_deref(),
+        container_port.as_deref(),
+        container_listen_ip.as_deref(),
+        attach_endpoint.as_ref(),
         inspect.state.running,
         &inspect.mounts,
         git,
@@ -239,6 +267,10 @@ fn build_session_record(
         runtime,
         image,
         logical_name,
+        attach_scheme,
+        container_port,
+        container_listen_ip,
+        attach_endpoint,
         failure,
         status,
     }
@@ -253,6 +285,10 @@ fn derive_status(
     runtime: Option<&str>,
     image: Option<&str>,
     logical_name: Option<&str>,
+    attach_scheme: Option<&str>,
+    container_port: Option<&str>,
+    container_listen_ip: Option<&str>,
+    attach_endpoint: Option<&AttachEndpoint>,
     running: bool,
     mounts: &[PodmanContainerMount],
     git: &Git,
@@ -263,7 +299,10 @@ fn derive_status(
         && git_root_hash.is_some()
         && runtime.is_some()
         && image.is_some()
-        && logical_name.is_some();
+        && logical_name.is_some()
+        && attach_scheme.is_some()
+        && container_port.is_some()
+        && container_listen_ip.is_some();
 
     let hash_matches_root = canonical_git_root
         .zip(git_root_hash)
@@ -283,6 +322,43 @@ fn derive_status(
         );
     }
 
+    let runtime = match runtime.and_then(|runtime| runtime.parse::<RuntimeKind>().ok()) {
+        Some(runtime) => runtime,
+        None => {
+            return (
+                SessionStatus::Failed,
+                Some(SessionFailure::UnsupportedRuntimeLabel),
+            );
+        }
+    };
+
+    let adapter = runtime.adapter();
+    let _parsed_container_port = match container_port.and_then(|port| port.parse::<u16>().ok()) {
+        Some(port) if port == adapter.container_port() => port,
+        _ => {
+            return (
+                SessionStatus::Failed,
+                Some(SessionFailure::MalformedEndpointLabels),
+            );
+        }
+    };
+
+    if attach_scheme != Some(adapter.attach_scheme())
+        || container_listen_ip != Some(adapter.container_listen_ip())
+    {
+        return (
+            SessionStatus::Failed,
+            Some(SessionFailure::MalformedEndpointLabels),
+        );
+    }
+
+    if attach_endpoint.is_none() {
+        return (
+            SessionStatus::Failed,
+            Some(SessionFailure::MissingPublishedAttachPort),
+        );
+    }
+
     if !has_required_mount(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
         return (
             SessionStatus::Failed,
@@ -291,15 +367,15 @@ fn derive_status(
     }
 
     let canonical_git_root = canonical_git_root.expect("validated above");
+    if !running {
+        return (SessionStatus::Failed, Some(SessionFailure::NotRunning));
+    }
+
     if git_root_is_orphaned(canonical_git_root, git) {
         return (SessionStatus::Orphaned, None);
     }
 
-    if running {
-        (SessionStatus::Running, None)
-    } else {
-        (SessionStatus::Stopped, None)
-    }
+    (SessionStatus::Running, None)
 }
 
 fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<SessionRecord> {
@@ -331,6 +407,86 @@ fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<SessionRecor
     }
 
     sessions
+}
+
+pub fn discover_attach_endpoint_from_inspect(
+    inspect: &PodmanContainerInspect,
+) -> Result<AttachEndpoint> {
+    let labels = &inspect.config.labels;
+    derive_attach_endpoint(
+        required_label_value(labels, LABEL_RUNTIME).as_deref(),
+        required_label_value(labels, LABEL_ATTACH_SCHEME).as_deref(),
+        required_label_value(labels, LABEL_CONTAINER_PORT).as_deref(),
+        inspect,
+    )
+}
+
+fn derive_attach_endpoint(
+    runtime: Option<&str>,
+    attach_scheme: Option<&str>,
+    container_port: Option<&str>,
+    inspect: &PodmanContainerInspect,
+) -> Result<AttachEndpoint> {
+    let runtime = runtime
+        .ok_or_else(|| Error::msg("missing required label `io.agentbox.runtime`"))?
+        .parse::<RuntimeKind>()?;
+    let adapter = runtime.adapter();
+    let attach_scheme = attach_scheme
+        .ok_or_else(|| Error::msg("missing required label `io.agentbox.attach_scheme`"))?;
+    if attach_scheme != adapter.attach_scheme() {
+        return Err(Error::msg(format!(
+            "managed session has attach scheme `{attach_scheme}` but runtime `{runtime}` requires `{}`",
+            adapter.attach_scheme(),
+        )));
+    }
+
+    let container_port = container_port
+        .ok_or_else(|| Error::msg("missing required label `io.agentbox.container_port`"))?
+        .parse::<u16>()
+        .map_err(|error| {
+            Error::msg(format!(
+                "malformed `io.agentbox.container_port` label: {error}"
+            ))
+        })?;
+
+    if container_port != adapter.container_port() {
+        return Err(Error::msg(format!(
+            "managed session publishes container port `{container_port}` but runtime `{runtime}` requires `{}`",
+            adapter.container_port(),
+        )));
+    }
+
+    let port_key = format!("{container_port}/tcp");
+    let binding = inspect
+        .network_settings
+        .ports
+        .get(&port_key)
+        .and_then(|bindings| bindings.as_ref())
+        .and_then(|bindings| bindings.iter().find(|binding| binding.host_port.is_some()))
+        .ok_or_else(|| {
+            Error::msg(format!(
+                "managed session has no published attach port for `{port_key}`"
+            ))
+        })?;
+
+    let host_port = binding
+        .host_port
+        .as_deref()
+        .ok_or_else(|| Error::msg(format!("missing host port for `{port_key}`")))?
+        .parse::<u16>()
+        .map_err(|error| Error::msg(format!("malformed published host port: {error}")))?;
+    let host_ip = binding
+        .host_ip
+        .as_deref()
+        .filter(|host_ip| !host_ip.trim().is_empty())
+        .unwrap_or(DEFAULT_HOST_ATTACH_IP)
+        .to_string();
+
+    Ok(AttachEndpoint {
+        scheme: attach_scheme.to_string(),
+        host_ip,
+        host_port,
+    })
 }
 
 fn ps_candidate_is_managed(container: &PodmanPsContainer) -> bool {

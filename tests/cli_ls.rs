@@ -7,7 +7,7 @@ use clap::Parser;
 #[test]
 fn ls_renders_all_status_rows_in_stable_order() {
     let sessions = vec![
-        session("/workspace/b", "beta", SessionStatus::Stopped),
+        session("/workspace/b", "beta", SessionStatus::Failed),
         session("/workspace/a", "alpha-one", SessionStatus::Running),
         session("/workspace/c", "gamma", SessionStatus::Orphaned),
         session("/workspace/d", "delta", SessionStatus::Failed),
@@ -31,7 +31,6 @@ fn ls_renders_all_status_rows_in_stable_order() {
         "roots sort lexicographically"
     );
     assert!(table.contains("running"));
-    assert!(table.contains("stopped"));
     assert!(table.contains("orphaned"));
     assert!(table.contains("failed"));
     assert!(table.contains("duplicate"));
@@ -60,6 +59,10 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
         runtime: Some("opencode".to_string()),
         image: Some("image".to_string()),
         logical_name: Some(name.to_string()),
+        attach_scheme: Some("http".to_string()),
+        container_port: Some("4096".to_string()),
+        container_listen_ip: Some("0.0.0.0".to_string()),
+        attach_endpoint: None,
         failure: None,
         status,
     }

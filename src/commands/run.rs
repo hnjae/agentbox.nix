@@ -7,8 +7,8 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::io::IsTerminal;
-use std::process::{Command, Stdio};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::time::{Duration, Instant};
 
 use camino::Utf8Path;
 
@@ -16,19 +16,20 @@ use crate::cli::RunArgs;
 use crate::lock::lock_workspace;
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount};
 use crate::preflight::{check_host_prerequisites, direnv_applies_to_target};
-use crate::process::ProcessRunner;
-use crate::runtime::RuntimeCreateSpec;
-use crate::runtime::opencode::{DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME};
+use crate::process::{ProcessRunner, run_command};
+use crate::runtime::opencode::OpencodeRuntime;
+use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
 use crate::session::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, REQUIRED_LABEL_NAMES, REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure,
-    SessionRecord, SessionStatus, discover_sessions_for_git_root,
+    REQUIRED_LABEL_NAMES, REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionRecord,
+    SessionStatus, discover_attach_endpoint_from_inspect, discover_sessions_for_git_root,
 };
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
 pub fn run(args: RunArgs) -> Result<()> {
     let workspace = resolve_workspace_identity(&args.directory)?;
+    let runtime = args.runtime.adapter();
     let mut workspace_lock = lock_workspace(&workspace)?;
     let workspace_guard = workspace_lock.guard()?;
 
@@ -49,33 +50,44 @@ pub fn run(args: RunArgs) -> Result<()> {
         }
     }
 
-    let runtime = OpencodeRuntime::new();
     let process_runner = ProcessRunner::new();
-    ensure_default_runtime_image(&process_runner, &runtime, &workspace, args.image.as_deref())?;
-    let mut run_spec = runtime.create_spec(&workspace, args.image.as_deref(), &preflight);
-    let foreground_run = foreground_run_spec(
+    ensure_default_runtime_image(&process_runner, runtime, &workspace, args.image.as_deref())?;
+    let mut run_spec = runtime.create_spec(
+        &workspace,
+        args.image.as_deref(),
+        &preflight.host_nix_mounts,
+    );
+    let server_run = server_run_spec(
         &runtime,
         workspace.canonical_target.as_ref(),
         workspace.canonical_git_root.as_ref(),
     );
-    run_spec.command = foreground_run.argv;
+    run_spec.command = server_run.argv;
 
     std::hint::black_box(&workspace_guard);
-    drop(workspace_guard);
-    drop(workspace_lock);
 
-    podman_run_interactive(
+    let endpoint = podman_run_detached(
         &process_runner,
         &workspace.container_name,
         &run_spec,
-        foreground_run.workdir.as_deref(),
+        server_run.workdir.as_deref(),
     )
-    .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))
+    .and_then(|_| wait_for_server_endpoint(&podman, &workspace, runtime))
+    .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))?;
+
+    drop(workspace_guard);
+    drop(workspace_lock);
+
+    println!(
+        "managed session `{}` is running for `{}` at `{endpoint}`; use `agentbox attach {}` to connect",
+        workspace.container_name, workspace.canonical_git_root, workspace.requested_target,
+    );
+    Ok(())
 }
 
 fn ensure_default_runtime_image(
     process_runner: &ProcessRunner,
-    runtime: &OpencodeRuntime,
+    runtime: RuntimeAdapter,
     workspace: &WorkspaceIdentity,
     image_override: Option<&str>,
 ) -> Result<()> {
@@ -84,17 +96,18 @@ fn ensure_default_runtime_image(
     }
 
     let podman = Podman::with_runner(process_runner.clone());
-    if podman.image_exists(DEFAULT_IMAGE)? {
+    let default_image = runtime.default_image();
+    if podman.image_exists(default_image)? {
         return Ok(());
     }
 
-    let context = runtime.default_image_context()?;
+    let context = OpencodeRuntime::new().default_image_context()?;
     let containerfile = context.containerfile();
     podman
-        .build_image(DEFAULT_IMAGE, containerfile.as_ref(), context.root())
+        .build_image(default_image, containerfile.as_ref(), context.root())
         .map_err(|error| {
             Error::msg(format!(
-                "failed to build default runtime image `{DEFAULT_IMAGE}` for `{}` from `{}`: {error}",
+                "failed to build default runtime image `{default_image}` for `{}` from `{}`: {error}",
                 workspace.canonical_git_root,
                 context.root(),
             ))
@@ -111,18 +124,7 @@ fn existing_session_error(
     }
 
     match session.status {
-        SessionStatus::Running => session
-            .runtime
-            .as_deref()
-            .filter(|runtime| *runtime != RUNTIME_NAME)
-            .map(|runtime| runtime_mismatch_error(workspace, &session.container_name, runtime))
-            .unwrap_or_else(|| running_existing_session_error(workspace, session)),
-        SessionStatus::Stopped => session
-            .runtime
-            .as_deref()
-            .filter(|runtime| *runtime != RUNTIME_NAME)
-            .map(|runtime| runtime_mismatch_error(workspace, &session.container_name, runtime))
-            .unwrap_or_else(|| stopped_existing_session_error(workspace, session)),
+        SessionStatus::Running => running_existing_session_error(workspace, session),
         SessionStatus::Orphaned => Error::msg(format!(
             "managed session `{}` for `{}` is orphaned after the repository moved; remove or recreate it before retrying",
             session.container_name, workspace.canonical_git_root,
@@ -164,6 +166,30 @@ fn failed_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) 
             ),
             "recreate the container before retrying",
         ),
+        SessionFailure::NotRunning => Error::managed_session_requires_action(
+            workspace.canonical_git_root.as_ref(),
+            &session.container_name,
+            "is not running",
+            "stop it or recreate it before retrying",
+        ),
+        SessionFailure::UnsupportedRuntimeLabel => Error::managed_session_requires_action(
+            workspace.canonical_git_root.as_ref(),
+            &session.container_name,
+            "has an unsupported or malformed `io.agentbox.runtime` label",
+            "repair or recreate it before retrying",
+        ),
+        SessionFailure::MalformedEndpointLabels => Error::managed_session_requires_action(
+            workspace.canonical_git_root.as_ref(),
+            &session.container_name,
+            "has missing or inconsistent attach endpoint labels",
+            "repair or recreate it before retrying",
+        ),
+        SessionFailure::MissingPublishedAttachPort => Error::managed_session_requires_action(
+            workspace.canonical_git_root.as_ref(),
+            &session.container_name,
+            "has no published attach endpoint port",
+            "repair or recreate it before retrying",
+        ),
     })
 }
 
@@ -196,7 +222,6 @@ fn classify_named_container_conflict(
     let managed = required_label_value(labels, LABEL_MANAGED);
     let canonical_git_root = required_label_value(labels, LABEL_GIT_ROOT);
     let git_root_hash = required_label_value(labels, LABEL_GIT_ROOT_HASH);
-    let runtime = required_label_value(labels, LABEL_RUNTIME);
 
     if managed == Some(LABEL_MANAGED_VALUE) {
         if missing_required_label(labels) {
@@ -219,14 +244,6 @@ fn classify_named_container_conflict(
         }
 
         if canonical_git_root == Some(workspace.canonical_git_root.as_str()) {
-            if runtime.is_some_and(|runtime| runtime != RUNTIME_NAME) {
-                return Some(runtime_mismatch_error(
-                    workspace,
-                    &container_name,
-                    runtime.unwrap_or("unknown"),
-                ));
-            }
-
             if git_root_hash != Some(workspace.hash12.as_str()) {
                 return Some(Error::msg(format!(
                     "managed session `{}` for `{}` has a drifted `io.agentbox.git_root_hash`; repair or recreate it before retrying",
@@ -277,27 +294,6 @@ fn running_existing_session_error(workspace: &WorkspaceIdentity, session: &Sessi
     ))
 }
 
-fn stopped_existing_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
-    Error::msg(format!(
-        "managed session `{}` already exists for `{}` but is not running; use `agentbox stop {}` before retrying `agentbox run {}`",
-        session.container_name,
-        workspace.canonical_git_root,
-        workspace.requested_target,
-        workspace.requested_target,
-    ))
-}
-
-fn runtime_mismatch_error(
-    workspace: &WorkspaceIdentity,
-    container_name: &str,
-    actual_runtime: &str,
-) -> Error {
-    Error::msg(format!(
-        "managed session `{}` for `{}` uses runtime `{}` instead of `{}`; recreate it before retrying",
-        container_name, workspace.canonical_git_root, actual_runtime, RUNTIME_NAME,
-    ))
-}
-
 fn generic_failed_session_error(workspace: &WorkspaceIdentity, container_name: &str) -> Error {
     Error::msg(format!(
         "managed session `{}` for `{}` is in a failed state; repair or recreate it before retrying",
@@ -333,12 +329,12 @@ pub(crate) struct RuntimeCommandSpec {
     pub(crate) workdir: Option<String>,
 }
 
-pub(crate) fn foreground_run_spec(
-    runtime: &OpencodeRuntime,
+pub(crate) fn server_run_spec(
+    runtime: &RuntimeAdapter,
     target: &Utf8Path,
     git_root: &Utf8Path,
 ) -> RuntimeCommandSpec {
-    let base = runtime.foreground_command();
+    let base = runtime.server_command();
     let workdir = Some(target.to_string());
 
     if direnv_applies_to_target(target, git_root) {
@@ -362,13 +358,13 @@ fn classify_run_error(
     let wrapped = Error::runtime_command_failed(
         workspace.canonical_git_root.as_ref(),
         &workspace.container_name,
-        "run the foreground runtime command",
+        "run the runtime server command",
         &original_error.to_string(),
     );
     classify_create_error(podman, workspace, create_spec, wrapped)
 }
 
-fn podman_run_interactive(
+fn podman_run_detached(
     process_runner: &ProcessRunner,
     container_name: &str,
     spec: &RuntimeCreateSpec,
@@ -376,12 +372,10 @@ fn podman_run_interactive(
 ) -> Result<()> {
     let mut command = process_runner.command("podman")?;
     command.arg("run");
+    command.arg("--detach");
     command.arg("--rm");
+    command.arg("--rmi");
     command.args(["--name", container_name]);
-    command.arg("--interactive");
-    if should_allocate_tty() {
-        command.arg("--tty");
-    }
     if let Some(workdir) = workdir {
         command.args(["--workdir", workdir]);
     }
@@ -412,32 +406,69 @@ fn podman_run_interactive(
 
     command.arg(&spec.image);
     command.args(&spec.command);
-    command.stdin(Stdio::inherit());
-    command.stdout(Stdio::inherit());
-    command.stderr(Stdio::inherit());
+    run_command(&mut command).map(|_| ())
+}
 
-    let description = describe_command(&command);
-    let status = command
-        .status()
-        .map_err(|error| Error::msg(format!("failed to run `{description}`: {error}")))?;
+fn wait_for_server_endpoint(
+    podman: &Podman,
+    workspace: &WorkspaceIdentity,
+    runtime: RuntimeAdapter,
+) -> Result<AttachEndpoint> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut last_error = None::<String>;
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Error::msg(format!(
-            "`{description}` exited with {}",
-            status
-                .code()
-                .map(|code| format!("exit status {code}"))
-                .unwrap_or_else(|| "signal".to_string())
-        )))
+    loop {
+        if Instant::now() >= deadline {
+            let last_error = last_error
+                .as_deref()
+                .unwrap_or("no inspect data was available");
+            return Err(Error::msg(format!(
+                "runtime server for managed session `{}` in `{}` did not become reachable: {last_error}",
+                workspace.container_name, workspace.canonical_git_root,
+            )));
+        }
+
+        match podman.inspect_one(&workspace.container_name) {
+            Ok(inspect) if !inspect.state.running => {
+                return Err(Error::msg(format!(
+                    "container `{}` for `{}` exited before the `{}` runtime server became reachable; status: {}, exit code: {}",
+                    workspace.container_name,
+                    workspace.canonical_git_root,
+                    runtime.name(),
+                    inspect.state.status,
+                    inspect.state.exit_code,
+                )));
+            }
+            Ok(inspect) => match discover_attach_endpoint_from_inspect(&inspect) {
+                Ok(endpoint) if readiness_check_succeeded(&endpoint) => return Ok(endpoint),
+                Ok(endpoint) => {
+                    last_error = Some(format!("endpoint `{endpoint}` is not reachable yet"));
+                }
+                Err(error) => {
+                    last_error = Some(error.to_string());
+                }
+            },
+            Err(error) => {
+                last_error = Some(error.to_string());
+            }
+        }
+
+        std::thread::sleep(Duration::from_millis(200));
     }
 }
 
-fn should_allocate_tty() -> bool {
-    std::io::stdin().is_terminal()
-        && std::io::stdout().is_terminal()
-        && std::io::stderr().is_terminal()
+fn readiness_check_succeeded(endpoint: &AttachEndpoint) -> bool {
+    if std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some() {
+        return true;
+    }
+
+    let Ok(addresses) = (endpoint.host_ip.as_str(), endpoint.host_port).to_socket_addrs() else {
+        return false;
+    };
+
+    addresses
+        .into_iter()
+        .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(250)).is_ok())
 }
 
 fn render_mount(mount: &crate::runtime::RuntimeMount) -> String {
@@ -454,12 +485,4 @@ fn render_mount(mount: &crate::runtime::RuntimeMount) -> String {
         options.push("ro".to_string());
     }
     options.join(",")
-}
-
-fn describe_command(command: &Command) -> String {
-    std::iter::once(command.get_program())
-        .chain(command.get_args())
-        .map(|value| value.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(" ")
 }

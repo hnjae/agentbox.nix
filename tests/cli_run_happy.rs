@@ -6,15 +6,22 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use agentbox::lock::lock_path_in_state_dir;
 use agentbox::runtime::opencode::DEFAULT_IMAGE;
-use agentbox::workspace::resolve_workspace_identity;
+use agentbox::session::{
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+};
+use agentbox::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use assert_cmd::Command as AssertCommand;
 use assert_cmd::cargo::cargo_bin;
 use predicates::prelude::*;
+use serde_json::json;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -27,6 +34,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
 
     let workspace = resolve_workspace_identity(&target).unwrap();
     let harness = install_harness(repo.path());
+    harness.write_inspect(&workspace, DEFAULT_IMAGE);
     let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
 
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
@@ -45,21 +53,25 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        ["ps", "image-exists", "build", "run"]
+        ["ps", "image-exists", "build", "run", "inspect"]
     );
 
     assert!(log[0].contains("lock=held"));
     assert!(log[1].contains("lock=held"));
     assert!(log[2].contains("lock=held"));
-    assert!(log[3].contains("lock=released"));
+    assert!(log[3].contains("lock=held"));
+    assert!(log[4].contains("lock=held"));
 
     assert!(log[2].contains(&format!("-t {DEFAULT_IMAGE} -f")));
 
     assert!(log[3].contains("--rm"));
-    assert!(!log[3].contains("--rmi"));
-    assert!(log[3].contains("--interactive"));
+    assert!(log[3].contains("--rmi"));
+    assert!(log[3].contains("--detach"));
+    assert!(!log[3].contains("--interactive"));
     assert!(!log[3].contains("--tty"));
     assert!(log[3].contains("--label io.agentbox.image=localhost/agentbox-opencode:local"));
+    assert!(log[3].contains("--label io.agentbox.attach_scheme=http"));
+    assert!(log[3].contains("--label io.agentbox.container_port=4096"));
     assert!(log[3].contains(&format!(
         "--label io.agentbox.git_root={}",
         workspace.canonical_git_root
@@ -67,8 +79,8 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[3].contains(&format!("--name {}", workspace.container_name)));
     assert!(log[3].contains(&format!("--workdir {}", workspace.canonical_target)));
     assert!(log[3].contains(DEFAULT_IMAGE));
-    assert!(log[3].contains(" opencode"));
-    assert!(!log[3].contains("--publish"));
+    assert!(log[3].contains(" opencode serve --port 4096"));
+    assert!(log[3].contains("--publish 127.0.0.1::4096"));
     assert!(!log[3].contains("direnv exec ."));
     assert!(!log[3].contains("sleep infinity"));
 }
@@ -82,6 +94,7 @@ fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
 
     let harness = install_harness(repo.path());
     let workspace = resolve_workspace_identity(&target).unwrap();
+    harness.write_inspect(&workspace, DEFAULT_IMAGE);
     let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
 
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
@@ -101,7 +114,7 @@ fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
     let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
 
     assert!(run.contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(run.contains("direnv exec . opencode"));
+    assert!(run.contains("direnv exec . opencode serve --port 4096"));
 }
 
 #[test]
@@ -112,8 +125,9 @@ fn run_uses_the_requested_image_override_exactly() {
 
     let harness = install_harness(repo.path());
     let workspace = resolve_workspace_identity(&target).unwrap();
-    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
     let image = "registry.example/agentbox/custom:test";
+    harness.write_inspect(&workspace, image);
+    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
 
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
     command
@@ -134,7 +148,7 @@ fn run_uses_the_requested_image_override_exactly() {
     assert!(!log.iter().any(|line| line.starts_with("image-exists ")));
     assert!(!log.iter().any(|line| line.starts_with("build ")));
     assert!(run.contains(&format!("--label io.agentbox.image={image}")));
-    assert!(run.contains(&format!(" {image} opencode")));
+    assert!(run.contains(&format!(" {image} opencode serve --port 4096")));
 }
 
 #[test]
@@ -146,6 +160,7 @@ fn run_skips_build_when_default_image_already_exists_locally() {
     let harness = install_harness(repo.path());
     harness.mark_default_image_present();
     let workspace = resolve_workspace_identity(&target).unwrap();
+    harness.write_inspect(&workspace, DEFAULT_IMAGE);
     let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
 
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
@@ -163,7 +178,7 @@ fn run_skips_build_when_default_image_already_exists_locally() {
 
     let log = harness.read_log();
     let operations = operation_names(&log);
-    assert_eq!(&operations[..3], ["ps", "image-exists", "run"]);
+    assert_eq!(&operations[..4], ["ps", "image-exists", "run", "inspect"]);
     assert!(!log.iter().any(|line| line.starts_with("build ")));
 }
 
@@ -264,6 +279,90 @@ impl Harness {
 
     fn mark_default_image_present(&self) {
         fs::write(self.fixtures.path().join("image.exists"), "present\n").unwrap();
+    }
+
+    fn write_inspect(&self, workspace: &WorkspaceIdentity, image: &str) {
+        let labels = BTreeMap::from([
+            (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
+            (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
+            (
+                LABEL_GIT_ROOT.to_string(),
+                workspace.canonical_git_root.to_string(),
+            ),
+            (LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone()),
+            (LABEL_RUNTIME.to_string(), "opencode".to_string()),
+            (LABEL_IMAGE.to_string(), image.to_string()),
+            (
+                LABEL_LOGICAL_NAME.to_string(),
+                workspace.container_name.clone(),
+            ),
+            (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
+            (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
+            (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
+        ]);
+        let inspect = json!([{
+            "Id": workspace.container_name,
+            "Created": "2026-04-21T10:15:00.000000000Z",
+            "Path": "/usr/bin/opencode",
+            "Args": [],
+            "State": {
+                "Status": "running",
+                "Running": true,
+                "ExitCode": 0,
+                "Pid": 4321,
+                "StartedAt": "2026-04-21T10:15:01.000000000Z",
+                "FinishedAt": null,
+                "Health": null,
+            },
+            "ImageName": image,
+            "Config": {
+                "User": "user",
+                "Env": [],
+                "Cmd": ["opencode", "serve", "--port", "4096"],
+                "WorkingDir": workspace.canonical_target.as_str(),
+                "Labels": labels,
+                "Entrypoint": ["/entrypoint"],
+                "StopSignal": "SIGTERM",
+            },
+            "HostConfig": {
+                "AutoRemove": true,
+                "NetworkMode": "bridge",
+                "Privileged": false,
+            },
+            "Mounts": [
+                {
+                    "Type": "bind",
+                    "Source": workspace.canonical_git_root.as_str(),
+                    "Destination": workspace.canonical_git_root.as_str(),
+                    "RW": true,
+                },
+                {
+                    "Type": "volume",
+                    "Source": workspace.container_name,
+                    "Destination": REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+                    "RW": true,
+                }
+            ],
+            "NetworkSettings": {
+                "Networks": {},
+                "Ports": {
+                    "4096/tcp": [
+                        {
+                            "HostIp": "127.0.0.1",
+                            "HostPort": "49152"
+                        }
+                    ]
+                },
+            },
+        }]);
+
+        fs::write(
+            self.fixtures
+                .path()
+                .join(format!("inspect-{}.json", workspace.container_name)),
+            serde_json::to_string(&inspect).unwrap(),
+        )
+        .unwrap();
     }
 }
 
@@ -392,6 +491,11 @@ case "$1" in
   run)
     shift
     record run "$@"
+    ;;
+  inspect)
+    shift
+    record inspect "$@"
+    cat "$AGENTBOX_TEST_FIXTURES/inspect-$1.json"
     ;;
   *)
     printf 'unexpected podman invocation: %s\n' "$*" >&2

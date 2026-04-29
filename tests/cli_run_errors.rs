@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 
 use agentbox::runtime::opencode::DEFAULT_IMAGE;
 use agentbox::session::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
 };
 use agentbox::workspace::{hash12, resolve_workspace_identity};
 use assert_cmd::Command as AssertCommand;
@@ -128,7 +128,7 @@ fn duplicate_sessions_fail_closed() {
 }
 
 #[test]
-fn runtime_mismatch_fails_before_attach() {
+fn unsupported_runtime_label_requires_repair_or_recreation() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -158,9 +158,11 @@ fn runtime_mismatch_fails_before_attach() {
     run_command(&harness, &target, &[])
         .failure()
         .stderr(predicates::str::contains(
-            "uses runtime `other-runtime` instead of `opencode`",
+            "unsupported or malformed `io.agentbox.runtime` label",
         ))
-        .stderr(predicates::str::contains("recreate it before retrying"));
+        .stderr(predicates::str::contains(
+            "repair or recreate it before retrying",
+        ));
 }
 
 #[test]
@@ -485,6 +487,9 @@ fn managed_labels(
         (LABEL_RUNTIME.to_string(), runtime.to_string()),
         (LABEL_IMAGE.to_string(), DEFAULT_IMAGE.to_string()),
         (LABEL_LOGICAL_NAME.to_string(), logical_name.to_string()),
+        (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
+        (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
+        (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
     ])
 }
 
@@ -541,6 +546,14 @@ fn managed_inspect_fixture(
         "Mounts": mounts,
         "NetworkSettings": {
             "Networks": {},
+            "Ports": {
+                "4096/tcp": [
+                    {
+                        "HostIp": "127.0.0.1",
+                        "HostPort": "49152"
+                    }
+                ]
+            },
         },
     })])
     .unwrap()

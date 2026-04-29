@@ -13,11 +13,11 @@ use std::path::{Path, PathBuf};
 use agentbox::lock::lock_path_in_state_dir;
 use agentbox::runtime::opencode::DEFAULT_IMAGE;
 use agentbox::session::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
 };
-use agentbox::workspace::{hash12, resolve_workspace_identity};
+use agentbox::workspace::{WorkspaceIdentity, hash12, resolve_workspace_identity};
 use assert_cmd::Command as AssertCommand;
 use serde_json::{Value, json};
 
@@ -33,6 +33,7 @@ fn no_extra_host_metadata_is_written_beyond_locks() {
     let workspace = resolve_workspace_identity(&target).unwrap();
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(Vec::new()));
+    harness.write_workspace_inspect(&workspace);
     harness
         .run_assert(&["run", target.to_str().unwrap()])
         .success();
@@ -79,6 +80,7 @@ fn stale_lock_file_is_reused_in_run_and_attach_flows() {
     let run_workspace = resolve_workspace_identity(&run_target).unwrap();
     let run_harness = Harness::new();
     run_harness.write_ps(&ps_fixture(Vec::new()));
+    run_harness.write_workspace_inspect(&run_workspace);
     let run_lock = lock_path_in_state_dir(run_harness.state_home.path(), &run_workspace.digest64);
     fs::create_dir_all(run_lock.parent().unwrap()).unwrap();
     fs::write(&run_lock, b"stale-lock").unwrap();
@@ -175,6 +177,7 @@ impl Harness {
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("git"), &fake_git_script());
         write_executable(fake_bin.path().join("podman"), &fake_podman_script());
+        write_executable(fake_bin.path().join("opencode"), "#!/bin/sh\nexit 0\n");
 
         Self {
             fake_bin,
@@ -214,6 +217,22 @@ impl Harness {
                 git_root,
                 true,
                 managed_labels(git_root, &git_root_hash, name),
+            ),
+        );
+    }
+
+    fn write_workspace_inspect(&self, workspace: &WorkspaceIdentity) {
+        self.write_inspect(
+            &workspace.container_name,
+            &managed_inspect_fixture(
+                &workspace.container_name,
+                workspace.canonical_git_root.as_str(),
+                true,
+                managed_labels(
+                    workspace.canonical_git_root.as_str(),
+                    &workspace.hash12,
+                    &workspace.container_name,
+                ),
             ),
         );
     }
@@ -297,6 +316,9 @@ fn managed_labels(
         (LABEL_RUNTIME.to_string(), "opencode".to_string()),
         (LABEL_IMAGE.to_string(), DEFAULT_IMAGE.to_string()),
         (LABEL_LOGICAL_NAME.to_string(), logical_name.to_string()),
+        (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
+        (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
+        (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
     ])
 }
 
@@ -351,6 +373,14 @@ fn managed_inspect_fixture(
         ],
         "NetworkSettings": {
             "Networks": {},
+            "Ports": {
+                "4096/tcp": [
+                    {
+                        "HostIp": "127.0.0.1",
+                        "HostPort": "49152"
+                    }
+                ]
+            },
         },
     })])
     .unwrap()

@@ -10,14 +10,15 @@ use agentbox::preflight::{
     ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION,
     PreflightSnapshot, check_host_prerequisites_with_snapshot,
 };
-use agentbox::runtime::RuntimeMountKind;
 use agentbox::runtime::opencode::{
     DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME, embedded_default_image_paths,
     materialize_default_image_context, required_host_mount_destinations,
 };
+use agentbox::runtime::{AttachEndpoint, RuntimeKind, RuntimeMountKind};
 use agentbox::session::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use std::fs;
 use std::path::Path;
@@ -82,9 +83,29 @@ fn opencode_create_spec_matches_mvp_contract() {
         spec.labels.get(LABEL_LOGICAL_NAME),
         Some(&workspace.container_name)
     );
-    assert_eq!(spec.command, vec!["opencode".to_string()]);
+    assert_eq!(
+        spec.labels.get(LABEL_ATTACH_SCHEME),
+        Some(&"http".to_string())
+    );
+    assert_eq!(
+        spec.labels.get(LABEL_CONTAINER_PORT),
+        Some(&"4096".to_string())
+    );
+    assert_eq!(
+        spec.labels.get(LABEL_CONTAINER_LISTEN_IP),
+        Some(&"0.0.0.0".to_string())
+    );
+    assert_eq!(
+        spec.command,
+        vec![
+            "opencode".to_string(),
+            "serve".to_string(),
+            "--port".to_string(),
+            "4096".to_string()
+        ]
+    );
     assert!(spec.network_enabled);
-    assert!(spec.published_ports.is_empty());
+    assert_eq!(spec.published_ports, vec!["127.0.0.1::4096".to_string()]);
     assert!(spec.default_env.is_empty());
 
     assert_eq!(spec.mounts[0].kind, RuntimeMountKind::Bind);
@@ -123,9 +144,56 @@ fn opencode_create_spec_matches_mvp_contract() {
 
     assert_eq!(
         runtime.foreground_command().argv,
-        vec!["opencode".to_string()]
+        vec![
+            "opencode".to_string(),
+            "serve".to_string(),
+            "--port".to_string(),
+            "4096".to_string()
+        ]
     );
     assert!(!runtime.foreground_command().detached);
+}
+
+#[test]
+fn runtime_adapters_render_host_client_commands() {
+    let opencode = RuntimeKind::Opencode.adapter();
+    let opencode_endpoint = AttachEndpoint {
+        scheme: "http".to_string(),
+        host_ip: "127.0.0.1".to_string(),
+        host_port: 49152,
+    };
+    assert_eq!(
+        opencode.host_client_command(&opencode_endpoint).argv,
+        vec![
+            "opencode".to_string(),
+            "attach".to_string(),
+            "http://127.0.0.1:49152".to_string(),
+        ]
+    );
+
+    let codex = RuntimeKind::Codex.adapter();
+    let codex_endpoint = AttachEndpoint {
+        scheme: "ws".to_string(),
+        host_ip: "127.0.0.1".to_string(),
+        host_port: 49153,
+    };
+    assert_eq!(
+        codex.server_command().argv,
+        vec![
+            "codex".to_string(),
+            "app-server".to_string(),
+            "--listen".to_string(),
+            "ws://0.0.0.0:1455".to_string(),
+        ]
+    );
+    assert_eq!(
+        codex.host_client_command(&codex_endpoint).argv,
+        vec![
+            "codex".to_string(),
+            "--remote".to_string(),
+            "ws://127.0.0.1:49153".to_string(),
+        ]
+    );
 }
 
 #[test]

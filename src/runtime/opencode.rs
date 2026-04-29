@@ -6,21 +6,16 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
 use std::fs;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use tempfile::TempDir;
 
 use crate::preflight::{
-    ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CACHE_DESTINATION, NIX_CLIENT_DESTINATION,
-    NIX_STORE_DESTINATION, PreflightReport,
+    ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION,
+    PreflightReport,
 };
-use crate::runtime::{RuntimeCreateSpec, RuntimeExecSpec, RuntimeMount, RuntimeMountKind};
-use crate::session::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-};
+use crate::runtime::{RuntimeAdapter, RuntimeCreateSpec, RuntimeExecSpec, RuntimeKind};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
@@ -101,53 +96,18 @@ impl OpencodeRuntime {
         image: Option<&str>,
         preflight: &PreflightReport,
     ) -> RuntimeCreateSpec {
-        let image = image.unwrap_or(DEFAULT_IMAGE).to_string();
-        let mut labels = BTreeMap::new();
-        labels.insert(LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string());
-        labels.insert(LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string());
-        labels.insert(
-            LABEL_GIT_ROOT.to_string(),
-            workspace.canonical_git_root.to_string(),
-        );
-        labels.insert(LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone());
-        labels.insert(LABEL_RUNTIME.to_string(), RUNTIME_NAME.to_string());
-        labels.insert(LABEL_IMAGE.to_string(), image.clone());
-        labels.insert(
-            LABEL_LOGICAL_NAME.to_string(),
-            workspace.container_name.clone(),
-        );
-
-        let mut mounts = vec![RuntimeMount {
-            kind: RuntimeMountKind::Bind,
-            source: workspace.canonical_git_root.to_string(),
-            destination: workspace.canonical_git_root.to_string(),
-            read_only: false,
-        }];
-        mounts.push(RuntimeMount {
-            kind: RuntimeMountKind::Volume,
-            source: workspace.container_name.clone(),
-            destination: NIX_CACHE_DESTINATION.to_string(),
-            read_only: false,
-        });
-        mounts.extend(preflight.host_nix_mounts.iter().cloned());
-
-        RuntimeCreateSpec {
+        RuntimeAdapter::new(RuntimeKind::Opencode).create_spec(
+            workspace,
             image,
-            labels,
-            mounts,
-            command: self.foreground_command().argv,
-            default_env: BTreeMap::new(),
-            network_enabled: true,
-            published_ports: Vec::new(),
-        }
+            &preflight.host_nix_mounts,
+        )
     }
 
     pub fn foreground_command(&self) -> RuntimeExecSpec {
         RuntimeExecSpec {
-            argv: ["opencode"]
-                .into_iter()
-                .map(|value| value.to_string())
-                .collect(),
+            argv: RuntimeAdapter::new(RuntimeKind::Opencode)
+                .server_command()
+                .argv,
             detached: false,
         }
     }

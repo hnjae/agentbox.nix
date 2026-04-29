@@ -170,6 +170,8 @@ pub struct PodmanContainerMount {
 pub struct PodmanNetworkSettings {
     #[serde(default)]
     pub networks: BTreeMap<String, PodmanNetworkEndpoint>,
+    #[serde(default)]
+    pub ports: BTreeMap<String, Option<Vec<PodmanPortBinding>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -184,6 +186,15 @@ pub struct PodmanNetworkEndpoint {
     pub aliases: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct PodmanPortBinding {
+    #[serde(default)]
+    pub host_ip: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_option_string_or_number")]
+    pub host_port: Option<String>,
+}
+
 impl Podman {
     pub fn new() -> Self {
         Self::default()
@@ -195,7 +206,14 @@ impl Podman {
 
     pub fn ps(&self) -> Result<Vec<PodmanPsContainer>> {
         let output = self.runner.capture("podman", |command| {
-            command.args(["ps", "--all", "--format", "json"]);
+            command.args([
+                "ps",
+                "--all",
+                "--filter",
+                "label=io.agentbox.managed=true",
+                "--format",
+                "json",
+            ]);
         })?;
 
         parse_json("`podman ps --all --format json`", &output.stdout)
@@ -292,4 +310,24 @@ where
     T: Deserialize<'de>,
 {
     Option::<Vec<T>>::deserialize(deserializer)
+}
+
+fn deserialize_option_string_or_number<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        String(String),
+        Number(u16),
+    }
+
+    Ok(match Option::<StringOrNumber>::deserialize(deserializer)? {
+        Some(StringOrNumber::String(value)) => Some(value),
+        Some(StringOrNumber::Number(value)) => Some(value.to_string()),
+        None => None,
+    })
 }

@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 mod support;
 
 #[test]
-fn stop_removes_the_container_and_leaves_the_volume_and_workspace_untouched() {
+fn stop_stops_the_container_and_leaves_the_volume_and_workspace_untouched() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -53,10 +53,13 @@ fn stop_removes_the_container_and_leaves_the_volume_and_workspace_untouched() {
     run_command(&harness, &target, &[]).success();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "rm"]);
+    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "inspect"]);
     assert!(log[2].contains("--ignore"));
-    assert!(log[3].contains("--ignore"));
     assert!(target.exists(), "stop must not delete the user workspace");
+    assert!(
+        !log.iter().any(|line| line.starts_with("rm ")),
+        "stop must rely on podman --rm instead of directly removing containers"
+    );
     assert!(
         !log.iter().any(|line| line.starts_with("volume ")),
         "stop must not delete the matching cache volume"
@@ -94,9 +97,8 @@ fn stop_is_idempotent_when_the_container_disappears_during_cleanup() {
     run_command(&harness, &target, &[]).success();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "rm"]);
+    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "inspect"]);
     assert!(log[2].contains("--ignore"));
-    assert!(log[3].contains("--ignore"));
 }
 
 #[test]
@@ -143,7 +145,9 @@ fn stop_force_removes_all_exact_duplicate_root_matches() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        ["ps", "inspect", "inspect", "stop", "rm", "stop", "rm"]
+        [
+            "ps", "inspect", "inspect", "stop", "inspect", "stop", "inspect"
+        ]
     );
 }
 
@@ -224,7 +228,7 @@ fn stop_allows_exact_missing_path_match_for_orphaned_root_identity() {
     run_command(&harness, Path::new(&root_string), &[]).success();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "rm"]);
+    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "inspect"]);
 }
 
 struct Harness {

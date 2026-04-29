@@ -92,24 +92,17 @@ fn cleanup_managed_container(
     session: &SessionRecord,
 ) -> Option<CleanupFailure> {
     let stop_error = podman_stop(process_runner, &session.container_name).err();
-    let remove_error = podman_remove_container(process_runner, &session.container_name).err();
-
-    if stop_error.is_none() && remove_error.is_none() {
-        return None;
-    }
 
     match container_exists(podman, &session.container_name) {
         Ok(false) => None,
         Ok(true) => Some(CleanupFailure {
             container_name: session.container_name.clone(),
             stop_error,
-            remove_error,
             verification_error: None,
         }),
         Err(error) => Some(CleanupFailure {
             container_name: session.container_name.clone(),
             stop_error,
-            remove_error,
             verification_error: Some(error.to_string()),
         }),
     }
@@ -118,12 +111,6 @@ fn cleanup_managed_container(
 fn podman_stop(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
     let mut command = process_runner.command("podman")?;
     command.args(["stop", "--ignore", container_name]);
-    run_command(&mut command).map(|_| ())
-}
-
-fn podman_remove_container(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
-    let mut command = process_runner.command("podman")?;
-    command.args(["rm", "--ignore", container_name]);
     run_command(&mut command).map(|_| ())
 }
 
@@ -148,14 +135,13 @@ fn render_cleanup_failures(git_root: &Utf8Path, failures: &[CleanupFailure]) -> 
         .join("; ");
 
     format!(
-        "partial cleanup failed for `{git_root}`; remaining managed containers: {details}. runtime images and cache volumes are left untouched"
+        "partial stop failed for `{git_root}`; remaining managed containers: {details}. podman-owned image cleanup and cache volumes are left untouched"
     )
 }
 
 struct CleanupFailure {
     container_name: String,
     stop_error: Option<Error>,
-    remove_error: Option<Error>,
     verification_error: Option<String>,
 }
 
@@ -165,9 +151,6 @@ impl CleanupFailure {
 
         if let Some(error) = &self.stop_error {
             details.push(format!("stop failed: {error}"));
-        }
-        if let Some(error) = &self.remove_error {
-            details.push(format!("remove failed: {error}"));
         }
         if let Some(error) = &self.verification_error {
             details.push(format!("follow-up inspect failed: {error}"));

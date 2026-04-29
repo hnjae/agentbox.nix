@@ -9,6 +9,7 @@
 use agentbox::cli::{
     Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, RunArgs, StopArgs,
 };
+use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
 use clap::Parser;
 use predicates::prelude::*;
@@ -52,6 +53,7 @@ fn core_commands_parse_into_expected_variants() {
     assert_eq!(
         run.command,
         Command::Run(RunArgs {
+            runtime: RuntimeKind::Opencode,
             image: None,
             directory: "/tmp/workspace".into(),
         })
@@ -122,8 +124,52 @@ fn run_accepts_create_time_image_override() {
     assert_eq!(
         cli.command,
         Command::Run(RunArgs {
+            runtime: RuntimeKind::Opencode,
             image: Some("registry.example/agentbox:test".to_string()),
             directory: "/tmp/workspace".into(),
         })
+    );
+}
+
+#[test]
+fn run_accepts_runtime_selection() {
+    let cli =
+        Cli::try_parse_from(["agentbox", "run", "--runtime", "codex", "/tmp/workspace"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Run(RunArgs {
+            runtime: RuntimeKind::Codex,
+            image: None,
+            directory: "/tmp/workspace".into(),
+        })
+    );
+}
+
+#[test]
+fn attach_rejects_runtime_and_image_flags() {
+    let runtime_error =
+        Cli::try_parse_from(["agentbox", "attach", "--runtime", "codex", "/tmp/workspace"])
+            .unwrap_err();
+    assert_eq!(runtime_error.exit_code(), 2);
+    assert!(
+        runtime_error
+            .to_string()
+            .contains("unexpected argument '--runtime'")
+    );
+
+    let image_error = Cli::try_parse_from([
+        "agentbox",
+        "attach",
+        "--image",
+        "example:test",
+        "/tmp/workspace",
+    ])
+    .unwrap_err();
+    assert_eq!(image_error.exit_code(), 2);
+    assert!(
+        image_error
+            .to_string()
+            .contains("unexpected argument '--image'")
     );
 }
