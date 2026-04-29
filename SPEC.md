@@ -30,7 +30,7 @@ The MVP runtime contract uses host-attached Nix at runtime. The container consum
 
 - Supporting macOS or Windows in the MVP.
 - Managing more than one agent container for the same canonical git root.
-- Silent runtime switching or auto-recreation on runtime mismatch.
+- Silent runtime switching or auto-recreation when a live session has an unsupported or malformed runtime label.
 - Depending on a Podman socket, daemon API, or external service manager.
 - Acting as a generic container orchestrator.
 - Persisting extra runtime state volumes beyond the workspace bind mount and one Podman-managed runtime cache volume.
@@ -235,7 +235,7 @@ Status rules:
 
 Expected behavior:
 
-1. Resolve `<directory>` to the canonical git root.
+1. Resolve `<directory>` to a canonical git root or direct orphaned git-root identity.
 2. If `<directory>` does not exist, allow an exact absolute git-root path string to match an orphaned session directly.
 3. Acquire the per-git-root lock.
 4. Stop the container if it is running.
@@ -425,7 +425,7 @@ Normative rules:
 
 ### Per-Root Lock
 
-Mutating operations use one host-side lock per canonical git root.
+Session operations that must coordinate with lifecycle changes use one host-side lock per canonical git root.
 
 Example paths:
 
@@ -446,7 +446,7 @@ Hash collision rules:
 
 `podman inspect` is authoritative for container existence, running state, labels, mounts, and published port mappings.
 
-Supported operational behavior in MVP must be derivable from required labels and `podman inspect` alone.
+Supported operational behavior in MVP must be derivable from required labels, `podman inspect`, and host path checks alone.
 
 ## Lifecycle Management
 
@@ -545,7 +545,7 @@ Required cases:
 - unsupported runtime
 - Podman not installed
 - Git not installed
-- runtime mismatch
+- unsupported or malformed runtime label on an existing managed session
 - container failed to start
 - runtime server command not found
 - runtime host client command not found
