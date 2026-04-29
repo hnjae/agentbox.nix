@@ -54,11 +54,49 @@ fn stop_removes_the_container_and_leaves_the_volume_and_workspace_untouched() {
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "rm"]);
+    assert!(log[2].contains("--ignore"));
+    assert!(log[3].contains("--ignore"));
     assert!(target.exists(), "stop must not delete the user workspace");
     assert!(
         !log.iter().any(|line| line.starts_with("volume ")),
         "stop must not delete the matching cache volume"
     );
+}
+
+#[test]
+fn stop_is_idempotent_when_the_container_disappears_during_cleanup() {
+    let repo = support::temp_git_repo();
+    let target = repo.path().join("nested");
+    fs::create_dir(&target).unwrap();
+
+    let workspace = resolve_workspace_identity(&target).unwrap();
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        "session-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "session-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                &workspace.container_name,
+            ),
+        ),
+    );
+    harness.mark_missing_during_cleanup();
+
+    run_command(&harness, &target, &[]).success();
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "rm"]);
+    assert!(log[2].contains("--ignore"));
+    assert!(log[3].contains("--ignore"));
 }
 
 #[test]
@@ -233,6 +271,10 @@ impl Harness {
         .unwrap();
     }
 
+    fn mark_missing_during_cleanup(&self) {
+        fs::write(self.fixtures.path().join("missing-during-cleanup"), "").unwrap();
+    }
+
     fn read_log(&self) -> Vec<String> {
         match fs::read_to_string(&self.log_path) {
             Ok(contents) => contents.lines().map(|line| line.to_string()).collect(),
@@ -383,6 +425,25 @@ set -eu
 fixtures=${AGENTBOX_TEST_FIXTURES:?missing AGENTBOX_TEST_FIXTURES}
 log_path=${AGENTBOX_TEST_LOG:?missing AGENTBOX_TEST_LOG}
 
+has_flag() {
+  flag=$1
+  shift
+  for arg in "$@"; do
+    if [ "$arg" = "$flag" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+last_arg() {
+  last=
+  for arg in "$@"; do
+    last=$arg
+  done
+  printf '%s\n' "$last"
+}
+
 cmd=$1
 shift || true
 printf '%s args=%s\n' "$cmd" "$*" >> "$log_path"
@@ -401,9 +462,17 @@ case "$cmd" in
     cat "$fixture"
     ;;
   stop)
+    if [ -f "$fixtures/missing-during-cleanup" ] && ! has_flag --ignore "$@"; then
+      printf 'no such object: %s\n' "$(last_arg "$@")" >&2
+      exit 125
+    fi
     printf 'stopped\n'
     ;;
   rm)
+    if [ -f "$fixtures/missing-during-cleanup" ] && ! has_flag --ignore "$@"; then
+      printf 'no such object: %s\n' "$(last_arg "$@")" >&2
+      exit 125
+    fi
     printf 'removed\n'
     ;;
   *)

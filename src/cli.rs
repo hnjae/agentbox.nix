@@ -79,7 +79,7 @@ pub struct DirectoryArgs {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct StopArgs {
-    /// Best-effort cleanup when some artifacts are already missing.
+    /// Clean up all duplicate exact matches instead of failing.
     #[arg(long)]
     pub force: bool,
 

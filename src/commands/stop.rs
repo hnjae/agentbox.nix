@@ -44,7 +44,7 @@ pub fn run(args: StopArgs) -> Result<()> {
     let process_runner = ProcessRunner::new();
     let failures = sessions
         .iter()
-        .filter_map(|session| cleanup_session(&podman, &process_runner, session))
+        .filter_map(|session| cleanup_managed_container(&podman, &process_runner, session))
         .collect::<Vec<_>>();
 
     drop(workspace_guard);
@@ -86,7 +86,7 @@ fn exact_full_root_matches(
         .collect()
 }
 
-fn cleanup_session(
+fn cleanup_managed_container(
     podman: &Podman,
     process_runner: &ProcessRunner,
     session: &SessionRecord,
@@ -117,13 +117,13 @@ fn cleanup_session(
 
 fn podman_stop(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
     let mut command = process_runner.command("podman")?;
-    command.args(["stop", container_name]);
+    command.args(["stop", "--ignore", container_name]);
     run_command(&mut command).map(|_| ())
 }
 
 fn podman_remove_container(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
     let mut command = process_runner.command("podman")?;
-    command.args(["rm", container_name]);
+    command.args(["rm", "--ignore", container_name]);
     run_command(&mut command).map(|_| ())
 }
 
@@ -148,7 +148,7 @@ fn render_cleanup_failures(git_root: &Utf8Path, failures: &[CleanupFailure]) -> 
         .join("; ");
 
     format!(
-        "partial cleanup failed for `{git_root}`; remaining artifacts: {details}. cache volumes are left untouched and may be reclaimed separately"
+        "partial cleanup failed for `{git_root}`; remaining managed containers: {details}. runtime images and cache volumes are left untouched"
     )
 }
 

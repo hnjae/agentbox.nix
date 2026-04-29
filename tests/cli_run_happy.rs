@@ -56,6 +56,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[2].contains(&format!("-t {DEFAULT_IMAGE} -f")));
 
     assert!(log[3].contains("--rm"));
+    assert!(!log[3].contains("--rmi"));
     assert!(log[3].contains("--interactive"));
     assert!(!log[3].contains("--tty"));
     assert!(log[3].contains("--label io.agentbox.image=localhost/agentbox-opencode:local"));
