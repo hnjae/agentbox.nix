@@ -11,7 +11,7 @@ The MVP is workspace-centric rather than name-centric:
 - `agentbox ls`
 - `agentbox stop <directory>`
 
-`agentbox run <directory>` resolves `<directory>` to its canonical git root and launches a new managed workspace session for that repository as a detached runtime server container. The container main process is the runtime's remote server command. `agentbox attach <directory>` discovers the server endpoint and runs the runtime's host-side client command against it from the requested target directory. `agentbox` owns cleanup of managed containers, while images and named cache volumes remain explicit cache resources. If a matching managed session is already running for that repository, `run` fails clearly and directs the user to `agentbox attach <directory>` or `agentbox stop <directory>`.
+`agentbox run <directory>` resolves `<directory>` to its canonical git root and launches a new managed workspace session for that repository as a detached runtime server container. The container main process is the runtime's remote server command. `agentbox attach <directory>` discovers the server endpoint and runs the runtime's host-side client command against it from the requested target directory. `run` starts the container with Podman's `--rm` and `--rmi` cleanup flags, so `agentbox stop <directory>` only needs to stop the container and Podman removes the stopped container and its image when possible. Named cache volumes remain explicit cache resources. If a matching managed session is already running for that repository, `run` fails clearly and directs the user to `agentbox attach <directory>` or `agentbox stop <directory>`.
 
 MVP runtime support includes OpenCode and Codex.
 
@@ -21,10 +21,10 @@ The MVP runtime contract uses host-attached Nix at runtime. The container consum
 
 - Run code agents in isolated, reproducible Linux environments.
 - Make the primary user model "attach to this repo" rather than "remember this agent name".
-- Keep durable state minimal: the workspace bind mount, one Podman-managed runtime cache volume, and flat container labels. Host-side coordination is limited to a per-root lock.
+- Keep durable state minimal: the workspace bind mount, one Podman-managed runtime cache volume, and flat labels on the live container. Host-side coordination is limited to a per-root lock.
 - Run the runtime's actual remote server command directly instead of maintaining a synthetic keepalive container layer.
 - Manage lifecycle directly through the Podman CLI.
-- Keep container cleanup under `agentbox` control while leaving image and named volume reclamation to explicit user or administrator action.
+- Let Podman remove stopped managed containers and runtime images through `run --rm --rmi`, while leaving named volume reclamation to explicit user or administrator action.
 
 ## Non-Goals
 
@@ -36,7 +36,7 @@ The MVP runtime contract uses host-attached Nix at runtime. The container consum
 - Persisting extra runtime state volumes beyond the workspace bind mount and one Podman-managed runtime cache volume.
 - Maintaining host-side session metadata beyond the per-root lock.
 - Bundling a standalone Nix installation inside the image.
-- Automatically removing runtime images after each session.
+- Persisting stopped managed containers after their runtime server exits.
 
 ## Assumptions
 
@@ -67,7 +67,7 @@ It has:
 
 Normal MVP `run` launches that managed container detached with the runtime server as the container main process. `agentbox` must not create an idle keepalive container whose only job is to stay alive for later `exec` or attach flows.
 
-`run` does not pass `--rm` or `--rmi` by default. The managed container remains inspectable until `agentbox stop` removes it, and the runtime image is a reusable cache resource: the default image is built only when missing, and a user-supplied `--image` reference must not be removed implicitly by `agentbox`.
+`run` passes `--rm` and `--rmi`. The managed container remains inspectable only while it is running. When the runtime server exits or `agentbox stop` stops it, Podman removes the container and removes the image when Podman can do so.
 
 The canonical git root is the primary identity. There is exactly one managed container total per canonical git root.
 
@@ -103,7 +103,7 @@ Normative consequences:
 - A symlinked path resolves to the same canonical git root as the real path.
 - Nested repositories use the git root reported for the requested target directory, so an inner repository gets its own session.
 - Submodules and git worktrees each get their own session identity because each resolves to its own canonical git root.
-- Moving a repository to a different absolute path creates a new identity. The old container becomes orphaned until explicitly removed.
+- Moving a repository to a different absolute path creates a new identity. Any still-running old container becomes orphaned until it is stopped, at which point Podman removes it because it was started with `--rm`.
 
 ## Naming
 
@@ -151,7 +151,7 @@ Expected behavior:
 3. Discover existing managed containers for that canonical git root by label.
 4. If more than one matching container exists, fail as `duplicate` and do not guess.
 5. If exactly one matching container exists, fail clearly and suggest `agentbox attach <directory>` or `agentbox stop <directory>`.
-6. If none exists, execute detached `podman run` with the required labels, mounts, image selection, local-only published attach endpoint, and target-directory working directory.
+6. If none exists, execute detached `podman run --rm --rmi` with the required labels, mounts, image selection, local-only published attach endpoint, and target-directory working directory.
 7. The container main command must be the runtime's actual remote server command rather than `sleep infinity`.
 8. Wait until the runtime server endpoint is reachable or the container exits.
 9. Report the discovered attach endpoint and suggest `agentbox attach <directory>`.
@@ -175,7 +175,8 @@ Image rules:
 - `agentbox` labels the running managed container with the exact image reference as `io.agentbox.image` so live discovery can report it while the container exists.
 - If `--image` is supplied, use that exact image reference.
 - If `--image` is omitted, use the selected runtime adapter's default image reference.
-- `run` must not pass `--rm` or `--rmi` implicitly. Container cleanup is handled by `stop`, and image cleanup is outside the `run` and `stop` lifecycle.
+- `run` must pass `--rm` and `--rmi` so the managed container and image are removed when the runtime server exits.
+- If Podman cannot remove the image because it is still in use or otherwise protected, `agentbox` reports the Podman failure but does not perform extra image pruning.
 - If a managed session already exists for the resolved git root, `run` fails before reusing or comparing any stored image reference.
 - `attach` does not accept or interpret `--image`.
 - `--image` does not change session identity.
@@ -216,20 +217,19 @@ Expected output fields:
 
 - canonical git root
 - runtime
-- status: `running`, `stopped`, `orphaned`, `duplicate`, or `failed`
+- status: `running`, `orphaned`, `duplicate`, or `failed`
 - concrete container name
 
 Status rules:
 
 - `running`: container exists and is running.
-- `stopped`: container exists but is not running.
-- `orphaned`: stored git root path no longer exists on the host or no longer resolves as the same repository.
+- `orphaned`: container exists and is running, but the stored git root path no longer exists on the host or no longer resolves as the same repository.
 - `duplicate`: more than one managed container claims the same canonical git root.
-- `failed`: container exists but required labels, inspectable mounts, or other inspectable session invariants are inconsistent.
+- `failed`: container exists but required labels, inspectable mounts, published endpoint data, or other inspectable session invariants are inconsistent.
 
 ### `agentbox stop <directory>`
 
-`stop` stops the workspace session for the resolved repository and removes the managed container if it still exists. It is an idempotent cleanup command for managed containers, including stale or legacy leftovers, not an image or volume pruning command.
+`stop` stops the workspace session for the resolved repository. Because managed containers are started with `--rm --rmi`, Podman removes the stopped container and removes the image when possible. `stop` is an idempotent stop command for live managed containers, including orphaned live containers, not a volume pruning command.
 
 Expected behavior:
 
@@ -237,9 +237,8 @@ Expected behavior:
 2. If `<directory>` does not exist or no longer resolves as the same repository, allow an exact absolute git-root path string to match an orphaned session directly.
 3. Acquire the per-git-root lock.
 4. Stop the container if it is running.
-5. Remove the container if it still exists, including stopped or legacy leftovers.
-6. Leave runtime images unmanaged by `stop`.
-7. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed later by explicit Podman volume cleanup.
+5. Rely on Podman's `--rm --rmi` cleanup for container and image removal after the stop.
+6. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed later by explicit Podman volume cleanup.
 
 Optional flags:
 
@@ -248,7 +247,7 @@ Optional flags:
 Safety rule:
 
 - `stop` never deletes the user workspace.
-- `stop` never removes images or named cache volumes.
+- `stop` never directly removes images or named cache volumes.
 
 ## Completion
 
@@ -323,6 +322,7 @@ Rules:
 - No other subpath under `/home/user` is required to persist in MVP.
 - `agentbox stop <directory>` does not explicitly delete the runtime cache volume.
 - Once no container uses the cache volume, it remains available for later explicit reclamation, for example with `podman volume rm <container-name>` or `podman volume prune --all`.
+- Podman `--rm` removes the managed container, not the named runtime cache volume.
 
 ### Direnv
 
@@ -455,11 +455,11 @@ High-level command strategy:
 1. `run` creates the workspace session as a detached runtime server container. If a matching session already exists, it fails clearly and suggests `attach` or `stop`.
 2. `attach` discovers an existing running workspace session and runs the runtime host client against its published endpoint.
 3. `ls` derives session status from live Podman state and host path checks.
-4. `stop` stops the container and removes it if it still exists.
+4. `stop` stops the container and relies on the container's `--rm --rmi` run options for cleanup.
 
-Image lifecycle is separate from session lifecycle. The default runtime image is treated as a reusable local cache and is built only when absent. `agentbox run` must not use `--rmi` by default, and `agentbox stop` must not remove images. Image reclamation is an explicit user or administrator operation, for example `podman image prune` or `podman rmi <image>`.
+Image lifecycle is tied to the managed session. `agentbox run` must use `--rmi` together with `--rm`; when the runtime server exits or `agentbox stop` stops it, Podman removes the image if no other container prevents removal. `agentbox` does not run separate image-pruning commands.
 
-Named runtime cache volume lifecycle is also separate. `agentbox stop` leaves the workspace cache volume intact so later sessions can reuse it. Volume reclamation is explicit, for example `podman volume rm <container-name>` or `podman volume prune --all`.
+Named runtime cache volume lifecycle remains separate. `agentbox stop` leaves the workspace cache volume intact so later sessions can reuse it. Volume reclamation is explicit, for example `podman volume rm <container-name>` or `podman volume prune --all`.
 
 ### `run` Sequence
 
@@ -471,10 +471,10 @@ Required sequence:
 4. Query Podman for managed containers with the matching git-root hash, then verify the exact `io.agentbox.git_root` label matches the resolved canonical git root before treating a container as a candidate.
 5. If more than one container matches, fail as `duplicate` and do not guess.
 6. If one matching managed session already exists, fail clearly and suggest `agentbox attach <directory>` or `agentbox stop <directory>`.
-7. If none matches, execute detached `podman run` with the resolved container name, required labels, required mounts, local-only published attach endpoint, target-directory working directory, and the runtime server command as the container main command. Do not pass `--rm` or `--rmi` by default.
+7. If none matches, execute detached `podman run --rm --rmi` with the resolved container name, required labels, required mounts, local-only published attach endpoint, target-directory working directory, and the runtime server command as the container main command.
 8. The image bootstrap path validates prerequisites, materializes the runtime profile, hands off to `/entrypoint`, and then execs the requested runtime server command.
 9. Wait for the server endpoint to become reachable, then print the attach command suggestion.
-10. If the server fails readiness or exits early, surface the failure and leave any stopped container inspectable for `ls` or `stop`.
+10. If the server fails readiness or exits early, surface the failure. The container may already have been removed by Podman because it was started with `--rm`.
 
 ### `attach` Sequence
 
@@ -496,7 +496,7 @@ Required sequence:
 
 1. Query Podman for all managed containers.
 2. Group by full canonical git root, using the short hash only as a discovery index.
-3. Use `podman inspect` and host path checks to mark duplicates, orphaned paths, stopped containers, and inspectable failures.
+3. Use `podman inspect` and host path checks to mark duplicates, orphaned paths, and inspectable failures.
 4. Print a compact table in the default view.
 5. Do not require machine-readable output in MVP.
 
@@ -507,11 +507,10 @@ Required sequence:
 1. Resolve the target to a canonical git root or direct orphaned git-root identity.
 2. Acquire the per-root lock.
 3. Stop the container as best effort.
-4. Remove the container if it still exists.
-5. Treat an already-removed container as success after verifying it is absent.
-6. Leave the runtime image available for reuse.
-7. Leave any now-unused named cache volume available for later explicit reclamation, for example with `podman volume rm <container-name>` or `podman volume prune --all`.
-8. Surface any partial failure with enough detail for manual managed-container cleanup.
+4. Treat an already-removed container as success after verifying it is absent.
+5. Rely on Podman's `--rm --rmi` cleanup for managed container and image removal.
+6. Leave any now-unused named cache volume available for later explicit reclamation, for example with `podman volume rm <container-name>` or `podman volume prune --all`.
+7. Surface any stop failure with enough detail for manual managed-container cleanup.
 
 ## Interactive Transport
 
@@ -551,6 +550,7 @@ Required cases:
 - missing published attach port
 - duplicate managed containers for one git root
 - `run` called for a git root that already has a managed session
+- Podman image removal failure after the managed container exits
 - hash collision between different canonical git roots
 - missing required label on an existing session
 - stale lock file with no live owner
@@ -575,7 +575,8 @@ Required drift behavior:
 - Missing image-local CA bundle: fail clearly and require an image fix.
 - `/entrypoint` contract failure: fail clearly and preserve the runtime state for inspection.
 - Hash collision between different canonical git roots: fail clearly and do not alias discovery or locking.
-- Partial cleanup failure during `stop`: report exactly which managed containers remain.
+- Stop failure: report exactly which managed containers are still running or still inspectable.
+- Podman image removal failure: report the Podman error and the image reference.
 
 ## Security And Isolation
 
