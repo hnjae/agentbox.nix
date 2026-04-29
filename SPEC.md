@@ -279,7 +279,8 @@ Required package output paths:
 - `share/bash-completion/completions/agentbox`
 - `share/zsh/site-functions/_agentbox`
 - `share/fish/vendor_completions.d/agentbox.fish`
-- `share/man/man1/agentbox.1`
+- `share/man/man1/agentbox.1`, or `share/man/man1/agentbox.1.gz` when the
+  Nix fixup phase compresses manual pages
 
 Rules:
 
