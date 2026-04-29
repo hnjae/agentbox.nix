@@ -103,7 +103,7 @@ Normative consequences:
 - A symlinked path resolves to the same canonical git root as the real path.
 - Nested repositories use the git root reported for the requested target directory, so an inner repository gets its own session.
 - Submodules and git worktrees each get their own session identity because each resolves to its own canonical git root.
-- Moving a repository to a different absolute path creates a new identity. Any still-running old container becomes orphaned until it is stopped, at which point Podman removes it because it was started with `--rm`.
+- Moving a repository to a different absolute path creates a new identity. Any still-running old container whose labeled git-root path no longer exists becomes orphaned until it is stopped, at which point Podman removes it because it was started with `--rm`.
 
 ## Naming
 
@@ -146,15 +146,16 @@ The concrete naming algorithm must be deterministic from the canonical git root 
 
 Expected behavior:
 
-1. Resolve `<directory>` to a canonical git root and canonical target directory.
-2. Acquire a per-git-root lock so concurrent `run` and `stop` operations cannot create duplicate containers or race teardown.
-3. Discover existing managed containers for that canonical git root by label.
-4. If more than one matching container exists, fail as `duplicate` and do not guess.
-5. If exactly one matching container exists, fail clearly and suggest `agentbox attach <directory>` or `agentbox stop <directory>`.
-6. If none exists, execute detached `podman run --rm --rmi` with the required labels, mounts, image selection, local-only published attach endpoint, and target-directory working directory.
-7. The container main command must be the runtime's actual remote server command rather than `sleep infinity`.
-8. Wait until the runtime server endpoint is reachable or the container exits.
-9. Report the discovered attach endpoint and suggest `agentbox attach <directory>`.
+1. Validate Git availability and resolve `<directory>` to a canonical git root and canonical target directory.
+2. Validate Podman, selected runtime prerequisites, and the host-attached Nix contract.
+3. Acquire a per-git-root lock so concurrent `run` and `stop` operations cannot create duplicate containers or race teardown.
+4. Discover existing managed containers for that canonical git root by label.
+5. If more than one matching container exists, fail as `duplicate` and do not guess.
+6. If exactly one matching container exists, fail clearly and suggest `agentbox attach <directory>` or `agentbox stop <directory>`.
+7. If none exists, execute detached `podman run --rm --rmi` with the required labels, mounts, image selection, local-only published attach endpoint, and target-directory working directory.
+8. The container main command must be the runtime's actual remote server command rather than `sleep infinity`.
+9. Wait until the runtime server endpoint is reachable or the container exits.
+10. Report the discovered attach endpoint and suggest `agentbox attach <directory>`.
 
 Optional flag:
 
@@ -176,7 +177,7 @@ Image rules:
 - If `--image` is supplied, use that exact image reference.
 - If `--image` is omitted, use the selected runtime adapter's default image reference.
 - `run` must pass `--rm` and `--rmi` so the managed container and image are removed when the runtime server exits.
-- If Podman cannot remove the image because it is still in use or otherwise protected, `agentbox` reports the Podman failure but does not perform extra image pruning.
+- Podman owns image removal behavior for `--rmi`; `agentbox` does not perform extra image pruning or monitor later image removal outcomes.
 - If a managed session already exists for the resolved git root, `run` fails before reusing or comparing any stored image reference.
 - `attach` does not accept or interpret `--image`.
 - `--image` does not change session identity.
@@ -210,8 +211,9 @@ Rules:
 
 Discovery is label-first:
 
-- Query Podman for containers labeled as managed by `agentbox`.
+- Query Podman for containers labeled `io.agentbox.managed=true`.
 - Derive status from required labels, `podman inspect`, and host path checks.
+- Containers without `io.agentbox.managed=true` are not managed by `agentbox` and are ignored by discovery, even if their names resemble `agentbox` names.
 
 Expected output fields:
 
@@ -223,7 +225,7 @@ Expected output fields:
 Status rules:
 
 - `running`: container exists and is running.
-- `orphaned`: container exists and is running, but the stored git root path no longer exists on the host or no longer resolves as the same repository.
+- `orphaned`: container exists and is running, but the stored git root path no longer exists on the host.
 - `duplicate`: more than one managed container claims the same canonical git root.
 - `failed`: container exists but required labels, inspectable mounts, published endpoint data, or other inspectable session invariants are inconsistent.
 
@@ -234,7 +236,7 @@ Status rules:
 Expected behavior:
 
 1. Resolve `<directory>` to the canonical git root.
-2. If `<directory>` does not exist or no longer resolves as the same repository, allow an exact absolute git-root path string to match an orphaned session directly.
+2. If `<directory>` does not exist, allow an exact absolute git-root path string to match an orphaned session directly.
 3. Acquire the per-git-root lock.
 4. Stop the container if it is running.
 5. Rely on Podman's `--rm --rmi` cleanup for container and image removal after the stop.
@@ -401,7 +403,7 @@ A Podman-managed named Nix cache volume is created in the MVP. Its name is ident
 
 Discovery is label-first.
 
-Required container labels:
+Required labels on managed containers:
 
 - `io.agentbox.managed=true`
 - `io.agentbox.schema=1`
@@ -414,9 +416,11 @@ Required container labels:
 - `io.agentbox.container_port=<runtime server container port>`
 - `io.agentbox.container_listen_ip=<runtime server container listen IP>`
 
-Normative rule:
+Normative rules:
 
-- The required labels above are the complete live session record in MVP while the managed container exists.
+- Containers without `io.agentbox.managed=true` are outside `agentbox` management scope and are not reported as failed sessions.
+- The required labels above are the complete scalar label record in MVP while the managed container exists.
+- The complete live discovery source is the scalar label record plus `podman inspect`.
 - The full canonical git root is authoritative for identity. `io.agentbox.git_root_hash` is an index only and must never be trusted without verifying the exact `io.agentbox.git_root` value.
 
 ### Per-Root Lock
@@ -465,8 +469,8 @@ Named runtime cache volume lifecycle remains separate. `agentbox stop` leaves th
 
 Required sequence:
 
-1. Validate Podman, Git, selected runtime prerequisites, and the host-attached Nix contract.
-2. Resolve the canonical git root and target directory.
+1. Validate Git availability and resolve the canonical git root and target directory.
+2. Validate Podman, selected runtime prerequisites, and the host-attached Nix contract.
 3. Acquire the per-root lock.
 4. Query Podman for managed containers with the matching git-root hash, then verify the exact `io.agentbox.git_root` label matches the resolved canonical git root before treating a container as a candidate.
 5. If more than one container matches, fail as `duplicate` and do not guess.
@@ -550,7 +554,6 @@ Required cases:
 - missing published attach port
 - duplicate managed containers for one git root
 - `run` called for a git root that already has a managed session
-- Podman image removal failure after the managed container exits
 - hash collision between different canonical git roots
 - missing required label on an existing session
 - stale lock file with no live owner
@@ -576,7 +579,6 @@ Required drift behavior:
 - `/entrypoint` contract failure: fail clearly and preserve the runtime state for inspection.
 - Hash collision between different canonical git roots: fail clearly and do not alias discovery or locking.
 - Stop failure: report exactly which managed containers are still running or still inspectable.
-- Podman image removal failure: report the Podman error and the image reference.
 
 ## Security And Isolation
 
