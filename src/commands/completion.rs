@@ -1,4 +1,6 @@
-use crate::cli::CompletionShell;
+use clap::CommandFactory;
+
+use crate::cli::{Cli, CompletionShell};
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::session::{SessionRecord, discover_managed_sessions};
@@ -10,6 +12,28 @@ pub fn run(shell: CompletionShell) -> Result<()> {
         CompletionShell::Fish => print!("{}", fish_script()),
     }
 
+    Ok(())
+}
+
+pub fn generate_installed(shell: CompletionShell) -> Result<()> {
+    let mut command = installed_asset_command();
+    let bin_name = command.get_name().to_string();
+    let shell = match shell {
+        CompletionShell::Bash => clap_complete::Shell::Bash,
+        CompletionShell::Zsh => clap_complete::Shell::Zsh,
+        CompletionShell::Fish => clap_complete::Shell::Fish,
+    };
+    let mut stdout = std::io::stdout().lock();
+
+    clap_complete::generate(shell, &mut command, bin_name, &mut stdout);
+    Ok(())
+}
+
+pub fn generate_manpage() -> Result<()> {
+    let command = installed_asset_command();
+    let mut stdout = std::io::stdout().lock();
+
+    clap_mangen::Man::new(command).render(&mut stdout)?;
     Ok(())
 }
 
@@ -80,4 +104,21 @@ fn status_label(status: crate::session::SessionStatus) -> &'static str {
         crate::session::SessionStatus::Duplicate => "duplicate",
         crate::session::SessionStatus::Failed => "failed",
     }
+}
+
+fn installed_asset_command() -> clap::Command {
+    let command = Cli::command();
+    let mut installed = clap::Command::new("agentbox")
+        .version(env!("CARGO_PKG_VERSION"))
+        .about("Manage agentbox sessions")
+        .subcommand_required(true);
+
+    for subcommand in command
+        .get_subcommands()
+        .filter(|subcommand| !subcommand.is_hide_set())
+    {
+        installed = installed.subcommand(subcommand.clone());
+    }
+
+    installed
 }

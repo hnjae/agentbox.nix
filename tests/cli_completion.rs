@@ -59,6 +59,29 @@ fn fish_completion_script_keeps_helper_metadata_available() {
     assert!(script.contains("complete -c agentbox -f -a \"(__agentbox_completion_roots)\""));
 }
 
+#[test]
+fn installed_completion_script_uses_clap_model_without_internal_helpers() {
+    let script = capture_installed_completion_script("bash");
+
+    assert!(script.contains("_agentbox()"));
+    assert!(script.contains("run attach ls stop completion help"));
+    assert!(!script.contains("__completion-roots"));
+    assert!(!script.contains("__generate-completion"));
+    assert!(!script.contains("__generate-man"));
+}
+
+#[test]
+fn installed_manpage_uses_clap_model_without_internal_helpers() {
+    let manpage = capture_installed_manpage();
+
+    assert!(manpage.contains(".TH agentbox 1"));
+    assert!(manpage.contains("agentbox\\-run(1)"));
+    assert!(manpage.contains("Shell completion helpers"));
+    assert!(!manpage.contains("__completion-roots"));
+    assert!(!manpage.contains("__generate-completion"));
+    assert!(!manpage.contains("__generate-man"));
+}
+
 fn capture_completion_script() -> String {
     capture_completion_script_shell("zsh")
 }
@@ -68,6 +91,27 @@ fn capture_completion_script_shell(shell: &str) -> String {
         .unwrap()
         .arg("completion")
         .arg(shell)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn capture_installed_completion_script(shell: &str) -> String {
+    let output = AssertCommand::cargo_bin("agentbox")
+        .unwrap()
+        .arg("__generate-completion")
+        .arg(shell)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn capture_installed_manpage() -> String {
+    let output = AssertCommand::cargo_bin("agentbox")
+        .unwrap()
+        .arg("__generate-man")
         .output()
         .unwrap();
     assert!(output.status.success());

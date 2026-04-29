@@ -56,6 +56,10 @@ pub enum Command {
 
     #[command(name = "__completion-roots", hide = true)]
     CompletionRoots,
+    #[command(name = "__generate-completion", hide = true)]
+    GenerateCompletion(CompletionArgs),
+    #[command(name = "__generate-man", hide = true)]
+    GenerateMan,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]

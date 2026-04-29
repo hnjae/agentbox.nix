@@ -28,5 +28,7 @@ pub fn dispatch(command: Command) -> Result<()> {
             print!("{}", completion::live_roots_output()?);
             Ok(())
         }
+        Command::GenerateCompletion(args) => completion::generate_installed(args.shell),
+        Command::GenerateMan => completion::generate_manpage(),
     }
 }
