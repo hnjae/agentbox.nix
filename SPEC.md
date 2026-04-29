@@ -269,6 +269,27 @@ Implementation guidance:
 - The MVP does not require a machine-readable `ls` mode.
 - `agentbox ls` remains human-readable in MVP.
 
+### Installed Shell And Manual Assets
+
+The default Nix package installs generated shell completion and manual assets
+alongside the `agentbox` binary.
+
+Required package output paths:
+
+- `share/bash-completion/completions/agentbox`
+- `share/zsh/site-functions/_agentbox`
+- `share/fish/vendor_completions.d/agentbox.fish`
+- `share/man/man1/agentbox.1`
+
+Rules:
+
+- Installed shell completion files are generated from the Clap command model
+  with `clap_complete`.
+- The installed manual page is generated from the Clap command model with
+  `clap_mangen`.
+- `nix --no-warn-dirty build -- '.#default'` must produce those files in its
+  result path.
+
 ## Container And Filesystem Model
 
 Each workspace session container has exactly these persistent mounts in the MVP:
