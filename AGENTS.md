@@ -13,6 +13,13 @@
 
 Follow standard Rust formatting with `cargo fmt`; Use 4-space indentation.
 
+## Spec-Driven Development
+
+Follow spec-driven development for product behavior and implementation changes.
+Before implementing a change, update `SPEC.md` to describe the intended behavior,
+commit that specification update, and then carry out the work according to the
+committed spec.
+
 ## Commit Guidelines
 
 Use Conventional Commits style for commit messages, such as `feat: add nix package output` or `fix: handle missing cargo metadata`.
