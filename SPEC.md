@@ -157,15 +157,18 @@ Expected behavior:
 9. Wait until the runtime server endpoint is reachable or the container exits.
 10. Report the discovered attach endpoint and suggest `agentbox attach <directory>`.
 
-Optional flag:
+Required flag:
 
 - `--runtime <opencode|codex>`
+
+Optional flag:
+
 - `--image <image>`
 
 Runtime rules:
 
-- If `--runtime` is omitted, use the default runtime `opencode`.
-- If `--runtime` is supplied, it selects the runtime adapter for the new session.
+- `run` requires `--runtime <opencode|codex>`.
+- `--runtime` selects the runtime adapter for the new session.
 - If a managed session already exists for the resolved git root, `run` fails before reusing or comparing any stored runtime value.
 - `attach` does not accept or interpret `--runtime`; it discovers the runtime from the running container label.
 - `--runtime` does not change session identity.
