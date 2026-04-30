@@ -93,14 +93,10 @@ impl OpencodeRuntime {
     pub fn create_spec(
         &self,
         workspace: &WorkspaceIdentity,
-        image: Option<&str>,
         preflight: &PreflightReport,
     ) -> RuntimeCreateSpec {
-        RuntimeAdapter::new(RuntimeKind::Opencode).create_spec(
-            workspace,
-            image,
-            &preflight.host_nix_mounts,
-        )
+        RuntimeAdapter::new(RuntimeKind::Opencode)
+            .create_spec(workspace, &preflight.host_nix_mounts)
     }
 
     pub fn foreground_command(&self) -> RuntimeExecSpec {

@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use agentbox::lock::lock_path_in_state_dir;
-use agentbox::runtime::opencode::DEFAULT_IMAGE;
+use agentbox::runtime::{RuntimeKind, opencode::DEFAULT_IMAGE};
 use agentbox::session::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
@@ -118,40 +118,6 @@ fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
 }
 
 #[test]
-fn run_uses_the_requested_image_override_exactly() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let harness = install_harness(repo.path());
-    let workspace = resolve_workspace_identity(&target).unwrap();
-    let image = "registry.example/agentbox/custom:test";
-    harness.write_inspect(&workspace, image);
-    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
-
-    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
-    command
-        .env("PATH", harness.path_env())
-        .env("XDG_STATE_HOME", harness.state_home.path())
-        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
-        .env("AGENTBOX_TEST_LOG", &harness.log_path)
-        .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
-        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
-        .args(["run", "--runtime", "opencode", "--image", image])
-        .arg(&target);
-
-    command.assert().success();
-
-    let log = harness.read_log();
-    let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
-
-    assert!(!log.iter().any(|line| line.starts_with("image-exists ")));
-    assert!(!log.iter().any(|line| line.starts_with("build ")));
-    assert!(run.contains(&format!("--label io.agentbox.image={image}")));
-    assert!(run.contains(&format!(" {image} opencode serve --port 4096")));
-}
-
-#[test]
 fn run_launches_codex_server_in_yolo_mode() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
@@ -159,7 +125,7 @@ fn run_launches_codex_server_in_yolo_mode() {
 
     let harness = install_harness(repo.path());
     let workspace = resolve_workspace_identity(&target).unwrap();
-    let image = "registry.example/agentbox/codex:test";
+    let image = RuntimeKind::Codex.adapter().default_image();
     harness.write_codex_inspect(&workspace, image);
     let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
 
@@ -171,16 +137,21 @@ fn run_launches_codex_server_in_yolo_mode() {
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
-        .args(["run", "--runtime", "codex", "--image", image])
+        .args(["run", "--runtime", "codex"])
         .arg(&target);
 
     command.assert().success();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "run", "inspect"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image-exists", "build", "run", "inspect"]
+    );
 
     let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
+    assert!(log[2].contains(&format!("-t {image} -f")));
     assert!(run.contains("--label io.agentbox.runtime=codex"));
+    assert!(run.contains(&format!("--label io.agentbox.image={image}")));
     assert!(run.contains("--label io.agentbox.attach_scheme=ws"));
     assert!(run.contains("--label io.agentbox.container_port=1455"));
     assert!(run.contains(&format!(

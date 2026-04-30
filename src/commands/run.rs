@@ -51,12 +51,8 @@ pub fn run(args: RunArgs) -> Result<()> {
     }
 
     let process_runner = ProcessRunner::new();
-    ensure_default_runtime_image(&process_runner, runtime, &workspace, args.image.as_deref())?;
-    let mut run_spec = runtime.create_spec(
-        &workspace,
-        args.image.as_deref(),
-        &preflight.host_nix_mounts,
-    );
+    ensure_default_runtime_image(&process_runner, runtime, &workspace)?;
+    let mut run_spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
     let server_run = server_run_spec(
         &runtime,
         workspace.canonical_target.as_ref(),
@@ -89,12 +85,7 @@ fn ensure_default_runtime_image(
     process_runner: &ProcessRunner,
     runtime: RuntimeAdapter,
     workspace: &WorkspaceIdentity,
-    image_override: Option<&str>,
 ) -> Result<()> {
-    if image_override.is_some() {
-        return Ok(());
-    }
-
     let podman = Podman::with_runner(process_runner.clone());
     let default_image = runtime.default_image();
     if podman.image_exists(default_image)? {

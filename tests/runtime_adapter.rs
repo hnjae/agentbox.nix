@@ -52,7 +52,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     .unwrap();
 
     let runtime = OpencodeRuntime::new();
-    let spec = runtime.create_spec(&workspace, None, &preflight);
+    let spec = runtime.create_spec(&workspace, &preflight);
 
     assert_eq!(spec.image, DEFAULT_IMAGE);
     assert_eq!(

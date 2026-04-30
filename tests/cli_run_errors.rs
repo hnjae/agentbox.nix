@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 mod support;
 
 #[test]
-fn existing_managed_session_suggests_attach_and_ignores_image_override() {
+fn existing_managed_session_suggests_attach_before_image_work() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -51,8 +51,7 @@ fn existing_managed_session_suggests_attach_and_ignores_image_override() {
         ),
     );
 
-    let image_override = "registry.example/agentbox/custom:existing";
-    let assert = run_command(&harness, &target, &["--image", image_override]);
+    let assert = run_command(&harness, &target, &[]);
 
     assert
         .failure()

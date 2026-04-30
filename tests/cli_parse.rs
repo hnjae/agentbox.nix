@@ -55,7 +55,6 @@ fn core_commands_parse_into_expected_variants() {
         run.command,
         Command::Run(RunArgs {
             runtime: RuntimeKind::Opencode,
-            image: None,
             directory: "/tmp/workspace".into(),
         })
     );
@@ -106,8 +105,8 @@ fn directory_commands_require_a_path_argument() {
 }
 
 #[test]
-fn run_accepts_create_time_image_override() {
-    let cli = Cli::try_parse_from([
+fn run_rejects_image_override() {
+    let error = Cli::try_parse_from([
         "agentbox",
         "run",
         "--runtime",
@@ -116,15 +115,12 @@ fn run_accepts_create_time_image_override() {
         "registry.example/agentbox:test",
         "/tmp/workspace",
     ])
-    .unwrap();
+    .unwrap_err();
 
-    assert_eq!(
-        cli.command,
-        Command::Run(RunArgs {
-            runtime: RuntimeKind::Opencode,
-            image: Some("registry.example/agentbox:test".to_string()),
-            directory: "/tmp/workspace".into(),
-        })
+    assert_eq!(error.exit_code(), 2);
+    assert!(
+        error.to_string().contains("unexpected argument '--image'"),
+        "expected clap to reject the removed image option"
     );
 }
 
@@ -148,7 +144,6 @@ fn run_accepts_runtime_selection() {
         cli.command,
         Command::Run(RunArgs {
             runtime: RuntimeKind::Codex,
-            image: None,
             directory: "/tmp/workspace".into(),
         })
     );

@@ -203,10 +203,9 @@ impl RuntimeAdapter {
     pub fn create_spec(
         self,
         workspace: &WorkspaceIdentity,
-        image: Option<&str>,
         host_nix_mounts: &[RuntimeMount],
     ) -> RuntimeCreateSpec {
-        let image = image.unwrap_or(self.default_image()).to_string();
+        let image = self.default_image().to_string();
         let mut labels = BTreeMap::new();
         labels.insert(LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string());
         labels.insert(LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string());

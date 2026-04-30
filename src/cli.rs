@@ -73,10 +73,6 @@ pub struct RunArgs {
     #[arg(long, value_enum, required = true)]
     pub runtime: RuntimeKind,
 
-    /// Runtime image to use for this run.
-    #[arg(long)]
-    pub image: Option<String>,
-
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
 }
