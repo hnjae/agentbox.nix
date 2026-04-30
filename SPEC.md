@@ -379,7 +379,7 @@ OpenCode command contract:
 
 Codex command contract:
 
-- server command inside the container: `codex app-server --listen 'ws://<container-listen-ip>:<container-port>'`
+- server command inside the container: `codex --dangerously-bypass-approvals-and-sandbox app-server --listen 'ws://<container-listen-ip>:<container-port>'`
 - host client command: `codex --remote 'ws://<host-ip>:<host-port>'`
 - attach endpoint scheme: `ws`
 
