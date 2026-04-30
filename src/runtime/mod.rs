@@ -181,6 +181,7 @@ impl RuntimeAdapter {
             ],
             RuntimeKind::Codex => vec![
                 "codex".to_string(),
+                "--dangerously-bypass-approvals-and-sandbox".to_string(),
                 "app-server".to_string(),
                 "--listen".to_string(),
                 format!("ws://{}:{port}", self.container_listen_ip()),

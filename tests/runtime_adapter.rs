@@ -181,6 +181,7 @@ fn runtime_adapters_render_host_client_commands() {
         codex.server_command().argv,
         vec![
             "codex".to_string(),
+            "--dangerously-bypass-approvals-and-sandbox".to_string(),
             "app-server".to_string(),
             "--listen".to_string(),
             "ws://0.0.0.0:1455".to_string(),

@@ -152,6 +152,43 @@ fn run_uses_the_requested_image_override_exactly() {
 }
 
 #[test]
+fn run_launches_codex_server_in_yolo_mode() {
+    let repo = support::temp_git_repo();
+    let target = repo.path().join("nested");
+    fs::create_dir(&target).unwrap();
+
+    let harness = install_harness(repo.path());
+    let workspace = resolve_workspace_identity(&target).unwrap();
+    let image = "registry.example/agentbox/codex:test";
+    harness.write_codex_inspect(&workspace, image);
+    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
+
+    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+    command
+        .env("PATH", harness.path_env())
+        .env("XDG_STATE_HOME", harness.state_home.path())
+        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
+        .env("AGENTBOX_TEST_LOG", &harness.log_path)
+        .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
+        .args(["run", "--runtime", "codex", "--image", image])
+        .arg(&target);
+
+    command.assert().success();
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "run", "inspect"]);
+
+    let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
+    assert!(run.contains("--label io.agentbox.runtime=codex"));
+    assert!(run.contains("--label io.agentbox.attach_scheme=ws"));
+    assert!(run.contains("--label io.agentbox.container_port=1455"));
+    assert!(run.contains(&format!(
+        " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
+    )));
+}
+
+#[test]
 fn run_skips_build_when_default_image_already_exists_locally() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
@@ -282,6 +319,42 @@ impl Harness {
     }
 
     fn write_inspect(&self, workspace: &WorkspaceIdentity, image: &str) {
+        self.write_runtime_inspect(
+            workspace,
+            image,
+            "opencode",
+            &["opencode", "serve", "--port", "4096"],
+            "http",
+            "4096",
+        );
+    }
+
+    fn write_codex_inspect(&self, workspace: &WorkspaceIdentity, image: &str) {
+        self.write_runtime_inspect(
+            workspace,
+            image,
+            "codex",
+            &[
+                "codex",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "app-server",
+                "--listen",
+                "ws://0.0.0.0:1455",
+            ],
+            "ws",
+            "1455",
+        );
+    }
+
+    fn write_runtime_inspect(
+        &self,
+        workspace: &WorkspaceIdentity,
+        image: &str,
+        runtime: &str,
+        command: &[&str],
+        attach_scheme: &str,
+        container_port: &str,
+    ) {
         let labels = BTreeMap::from([
             (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
             (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
@@ -290,20 +363,29 @@ impl Harness {
                 workspace.canonical_git_root.to_string(),
             ),
             (LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone()),
-            (LABEL_RUNTIME.to_string(), "opencode".to_string()),
+            (LABEL_RUNTIME.to_string(), runtime.to_string()),
             (LABEL_IMAGE.to_string(), image.to_string()),
             (
                 LABEL_LOGICAL_NAME.to_string(),
                 workspace.container_name.clone(),
             ),
-            (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
-            (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
+            (LABEL_ATTACH_SCHEME.to_string(), attach_scheme.to_string()),
+            (LABEL_CONTAINER_PORT.to_string(), container_port.to_string()),
             (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
         ]);
+        let ports = BTreeMap::from([(
+            format!("{container_port}/tcp"),
+            json!([
+                {
+                    "HostIp": "127.0.0.1",
+                    "HostPort": "49152"
+                }
+            ]),
+        )]);
         let inspect = json!([{
             "Id": workspace.container_name,
             "Created": "2026-04-21T10:15:00.000000000Z",
-            "Path": "/usr/bin/opencode",
+            "Path": format!("/usr/bin/{runtime}"),
             "Args": [],
             "State": {
                 "Status": "running",
@@ -318,7 +400,7 @@ impl Harness {
             "Config": {
                 "User": "user",
                 "Env": [],
-                "Cmd": ["opencode", "serve", "--port", "4096"],
+                "Cmd": command,
                 "WorkingDir": workspace.canonical_target.as_str(),
                 "Labels": labels,
                 "Entrypoint": ["/entrypoint"],
@@ -345,14 +427,7 @@ impl Harness {
             ],
             "NetworkSettings": {
                 "Networks": {},
-                "Ports": {
-                    "4096/tcp": [
-                        {
-                            "HostIp": "127.0.0.1",
-                            "HostPort": "49152"
-                        }
-                    ]
-                },
+                "Ports": ports,
             },
         }]);
 
