@@ -435,7 +435,7 @@ fn run_command(
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
-        .arg("run")
+        .args(["run", "--runtime", "opencode"])
         .args(extra_args)
         .arg(target);
     command.assert()

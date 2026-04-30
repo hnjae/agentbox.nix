@@ -45,7 +45,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
-        .arg("run")
+        .args(["run", "--runtime", "opencode"])
         .arg(&target);
 
     command.assert().success();
@@ -105,7 +105,7 @@ fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
-        .arg("run")
+        .args(["run", "--runtime", "opencode"])
         .arg(&target);
 
     command.assert().success();
@@ -137,7 +137,7 @@ fn run_uses_the_requested_image_override_exactly() {
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
-        .args(["run", "--image", image])
+        .args(["run", "--runtime", "opencode", "--image", image])
         .arg(&target);
 
     command.assert().success();
@@ -208,7 +208,7 @@ fn run_skips_build_when_default_image_already_exists_locally() {
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
-        .arg("run")
+        .args(["run", "--runtime", "opencode"])
         .arg(&target);
 
     command.assert().success();
@@ -238,7 +238,7 @@ fn run_reports_default_image_build_failures_clearly() {
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
         .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
         .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
-        .arg("run")
+        .args(["run", "--runtime", "opencode"])
         .arg(&target);
 
     command

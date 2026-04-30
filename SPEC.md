@@ -6,12 +6,12 @@
 
 The MVP is workspace-centric rather than name-centric:
 
-- `agentbox run <directory>`
+- `agentbox run --runtime <opencode|codex> <directory>`
 - `agentbox attach <directory>`
 - `agentbox ls`
 - `agentbox stop <directory>`
 
-`agentbox run <directory>` resolves `<directory>` to its canonical git root and launches a new managed workspace session for that repository as a detached runtime server container. The container main process is the runtime's remote server command. `agentbox attach <directory>` discovers the server endpoint and runs the runtime's host-side client command against it from the requested target directory. `run` starts the container with Podman's `--rm` and `--rmi` cleanup flags, so `agentbox stop <directory>` only needs to stop the container and Podman removes the stopped container and its image when possible. Named cache volumes remain explicit cache resources. If a matching managed session is already running for that repository, `run` fails clearly and directs the user to `agentbox attach <directory>` or `agentbox stop <directory>`.
+`agentbox run --runtime <opencode|codex> <directory>` resolves `<directory>` to its canonical git root and launches a new managed workspace session for that repository as a detached runtime server container. The container main process is the runtime's remote server command. `agentbox attach <directory>` discovers the server endpoint and runs the runtime's host-side client command against it from the requested target directory. `run` starts the container with Podman's `--rm` and `--rmi` cleanup flags, so `agentbox stop <directory>` only needs to stop the container and Podman removes the stopped container and its image when possible. Named cache volumes remain explicit cache resources. If a matching managed session is already running for that repository, `run` fails clearly and directs the user to `agentbox attach <directory>` or `agentbox stop <directory>`.
 
 MVP runtime support includes OpenCode and Codex.
 
@@ -140,7 +140,7 @@ The concrete naming algorithm must be deterministic from the canonical git root 
 
 ## CLI
 
-### `agentbox run <directory>`
+### `agentbox run --runtime <opencode|codex> <directory>`
 
 `run` launches a new workspace session as a detached runtime server.
 
@@ -203,7 +203,7 @@ Rules:
 - `attach` must never create a new session.
 - `attach` must never start or restart a stopped session.
 - `attach` must never prompt for runtime selection.
-- If no managed session exists for the resolved git root, fail clearly and suggest `agentbox run <directory>`.
+- If no managed session exists for the resolved git root, fail clearly and suggest `agentbox run --runtime <opencode|codex> <directory>`.
 - `attach` must never use `podman attach` as the user transport in the MVP.
 - The host client process current working directory is the requested target directory. The running server process keeps the working directory and environment from its original `run`.
 - If the runtime client cannot be found on the host, `attach` fails clearly with the required command name.
@@ -319,7 +319,7 @@ The effective working directory for a given `run` or `attach` invocation is the 
 
 Examples:
 
-- command: `agentbox run /aaa/bbb/subdir`
+- command: `agentbox run --runtime opencode /aaa/bbb/subdir`
 - mounted git root inside container: `/aaa/bbb`
 - working directory seen by the runtime server: `/aaa/bbb/subdir`
 - command: `agentbox attach /aaa/bbb/other`

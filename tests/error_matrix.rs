@@ -425,7 +425,7 @@ impl Harness {
             .env("PATH", self.path_env())
             .env("XDG_STATE_HOME", self.state_home.path())
             .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
-            .arg("run")
+            .args(["run", "--runtime", "opencode"])
             .arg(target);
         command.assert()
     }

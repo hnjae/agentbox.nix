@@ -44,7 +44,8 @@ fn unknown_subcommand_fails() {
 
 #[test]
 fn core_commands_parse_into_expected_variants() {
-    let run = Cli::try_parse_from(["agentbox", "run", "/tmp/workspace"]).unwrap();
+    let run = Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode", "/tmp/workspace"])
+        .unwrap();
     let attach = Cli::try_parse_from(["agentbox", "attach", "/tmp/workspace"]).unwrap();
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
     let stop = Cli::try_parse_from(["agentbox", "stop", "/tmp/workspace"]).unwrap();
@@ -95,18 +96,12 @@ fn stop_accepts_force_cleanup_flag() {
 
 #[test]
 fn directory_commands_require_a_path_argument() {
-    let error = Cli::try_parse_from(["agentbox", "run"]).unwrap_err();
+    let error = Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode"]).unwrap_err();
 
     assert_eq!(error.exit_code(), 2);
     assert!(
         error.to_string().contains("<DIRECTORY>"),
         "expected clap to mention the missing directory argument"
-    );
-    assert!(
-        error
-            .to_string()
-            .contains("Usage: agentbox run <DIRECTORY>"),
-        "expected clap to show the command usage"
     );
 }
 
@@ -115,6 +110,8 @@ fn run_accepts_create_time_image_override() {
     let cli = Cli::try_parse_from([
         "agentbox",
         "run",
+        "--runtime",
+        "opencode",
         "--image",
         "registry.example/agentbox:test",
         "/tmp/workspace",
@@ -128,6 +125,17 @@ fn run_accepts_create_time_image_override() {
             image: Some("registry.example/agentbox:test".to_string()),
             directory: "/tmp/workspace".into(),
         })
+    );
+}
+
+#[test]
+fn run_requires_runtime_selection() {
+    let error = Cli::try_parse_from(["agentbox", "run", "/tmp/workspace"]).unwrap_err();
+
+    assert_eq!(error.exit_code(), 2);
+    assert!(
+        error.to_string().contains("--runtime <RUNTIME>"),
+        "expected clap to mention the missing runtime option"
     );
 }
 

@@ -47,15 +47,16 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
         .as_ref()
         .ok_or_else(|| missing_endpoint_error(&workspace, session))?;
     let client = host_client_spec(runtime.host_client_command(endpoint).argv, &workspace);
+    let retry_run_command = run_command_hint(Some(runtime.name()), &workspace);
 
     std::hint::black_box(&workspace_guard);
 
     run_host_client(&process_runner, &client.argv, &workspace).map_err(|error| {
         Error::msg(format!(
-            "failed to attach to managed session `{}` for `{}`: {error}. If the session already exited, rerun `agentbox run {}` or remove the leftover container with `agentbox stop {}`.",
+            "failed to attach to managed session `{}` for `{}`: {error}. If the session already exited, rerun `{}` or remove the leftover container with `agentbox stop {}`.",
             session.container_name,
             workspace.canonical_git_root,
-            workspace.requested_target,
+            retry_run_command,
             workspace.requested_target,
         ))
     })?;
@@ -127,8 +128,9 @@ fn validate_attachable_session<'a>(
 
 fn no_session_error(workspace: &WorkspaceIdentity) -> Error {
     Error::msg(format!(
-        "no managed session exists for `{}`; use `agentbox run {}` to create one",
-        workspace.canonical_git_root, workspace.requested_target,
+        "no managed session exists for `{}`; use `{}` to create one",
+        workspace.canonical_git_root,
+        run_command_hint(None, workspace),
     ))
 }
 
@@ -141,12 +143,22 @@ fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
 
 fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
     Error::msg(format!(
-        "managed session `{}` for `{}` is not running; rerun `agentbox run {}` to start a new session or `agentbox stop {}` to remove the leftover container",
+        "managed session `{}` for `{}` is not running; rerun `{}` to start a new session or `agentbox stop {}` to remove the leftover container",
         session.container_name,
         workspace.canonical_git_root,
-        workspace.requested_target,
+        run_command_hint(session.runtime.as_deref(), workspace),
         workspace.requested_target,
     ))
+}
+
+fn run_command_hint(runtime: Option<&str>, workspace: &WorkspaceIdentity) -> String {
+    let runtime = runtime
+        .filter(|runtime| runtime.parse::<RuntimeKind>().is_ok())
+        .unwrap_or("<opencode|codex>");
+    format!(
+        "agentbox run --runtime {runtime} {}",
+        workspace.requested_target
+    )
 }
 
 fn unsupported_runtime_label_error(

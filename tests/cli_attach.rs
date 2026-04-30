@@ -121,7 +121,7 @@ fn attach_to_a_stopped_session_reports_the_running_only_model() {
         .failure()
         .stderr(predicates::str::contains("is not running"))
         .stderr(predicates::str::contains(format!(
-            "agentbox run {}",
+            "agentbox run --runtime opencode {}",
             target.display()
         )))
         .stderr(predicates::str::contains(format!(
@@ -155,7 +155,7 @@ fn attach_without_an_existing_session_suggests_run() {
         .assert()
         .failure()
         .stderr(predicates::str::contains(format!(
-            "use `agentbox run {}` to create one",
+            "use `agentbox run --runtime <opencode|codex> {}` to create one",
             target.display()
         )));
 

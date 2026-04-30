@@ -70,7 +70,7 @@ pub struct CompletionArgs {
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RunArgs {
     /// Runtime to launch for this run.
-    #[arg(long, value_enum, default_value_t = RuntimeKind::Opencode)]
+    #[arg(long, value_enum, required = true)]
     pub runtime: RuntimeKind,
 
     /// Runtime image to use for this run.

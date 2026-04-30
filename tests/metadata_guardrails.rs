@@ -35,7 +35,7 @@ fn no_extra_host_metadata_is_written_beyond_locks() {
     harness.write_ps(&ps_fixture(Vec::new()));
     harness.write_workspace_inspect(&workspace);
     harness
-        .run_assert(&["run", target.to_str().unwrap()])
+        .run_assert(&["run", "--runtime", "opencode", target.to_str().unwrap()])
         .success();
 
     harness.write_ps(&ps_fixture(vec![managed_ps_entry(
@@ -86,7 +86,7 @@ fn stale_lock_file_is_reused_in_run_and_attach_flows() {
     fs::write(&run_lock, b"stale-lock").unwrap();
 
     run_harness
-        .run_assert(&["run", run_target.to_str().unwrap()])
+        .run_assert(&["run", "--runtime", "opencode", run_target.to_str().unwrap()])
         .success();
     assert_eq!(fs::read(&run_lock).unwrap(), b"stale-lock");
 
