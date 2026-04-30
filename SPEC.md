@@ -152,7 +152,7 @@ Expected behavior:
 4. Discover existing managed containers for that canonical git root by label.
 5. If more than one matching container exists, fail as `duplicate` and do not guess.
 6. If exactly one matching container exists, fail clearly and suggest `agentbox attach <directory>` or `agentbox stop <directory>`.
-7. If none exists, execute detached `podman run --rm --rmi` with the required labels, mounts, image selection, local-only published attach endpoint, and target-directory working directory.
+7. If none exists, execute detached `podman run --rm --rmi` with the required labels, mounts, default runtime image, local-only published attach endpoint, and target-directory working directory.
 8. The container main command must be the runtime's actual remote server command rather than `sleep infinity`.
 9. Wait until the runtime server endpoint is reachable or the container exits.
 10. Report the discovered attach endpoint and suggest `agentbox attach <directory>`.
@@ -160,10 +160,6 @@ Expected behavior:
 Required flag:
 
 - `--runtime <opencode|codex>`
-
-Optional flag:
-
-- `--image <image>`
 
 Runtime rules:
 
@@ -175,15 +171,14 @@ Runtime rules:
 
 Image rules:
 
-- `--image <reference>` selects the image reference for this server container run.
-- `agentbox` labels the running managed container with the exact image reference as `io.agentbox.image` so live discovery can report it while the container exists.
-- If `--image` is supplied, use that exact image reference.
-- If `--image` is omitted, use the selected runtime adapter's default image reference.
+- `run` does not accept a user-supplied image reference.
+- `run` always uses the selected runtime adapter's default image reference.
+- The default runtime image is assembled from the repository image assets rooted at `assets/image/`.
+- `agentbox` labels the running managed container with the exact default image reference as `io.agentbox.image` so live discovery can report it while the container exists.
 - `run` must pass `--rm` and `--rmi` so the managed container and image are removed when the runtime server exits.
 - Podman owns image removal behavior for `--rmi`; `agentbox` does not perform extra image pruning or monitor later image removal outcomes.
 - If a managed session already exists for the resolved git root, `run` fails before reusing or comparing any stored image reference.
 - `attach` does not accept or interpret `--image`.
-- `--image` does not change session identity.
 
 ### `agentbox attach <directory>`
 
@@ -407,6 +402,7 @@ Supported host models:
 Default image asset source:
 
 - The repository's canonical source of truth for the default runtime image assets is `assets/image/`.
+- A user-supplied runtime image is out of scope; `agentbox run` uses only the default image assets from `assets/image/`.
 - The installed `agentbox` binary embeds only the files required to assemble the default `podman build` context: `Containerfile`, `bootstrap`, `entrypoint`, `lib/runtime-contract.sh`, and `runtime-packages.nix`.
 - When `agentbox run` needs to build the default image, it materializes those embedded files into a temporary readable build context and invokes `podman build` from that temporary directory.
 
