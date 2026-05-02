@@ -11,17 +11,19 @@ use std::collections::BTreeMap;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::git::Git;
-use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
-use crate::runtime::{AttachEndpoint, RuntimeKind};
+use crate::podman::{Podman, PodmanContainerInspect, PodmanPsContainer};
+use crate::runtime::AttachEndpoint;
 use crate::workspace::hash12;
 use crate::{Error, Result};
 
 mod conflict;
 mod endpoint;
 mod labels;
+mod status;
 
 use endpoint::derive_attach_endpoint;
 use labels::SessionLabels;
+use status::{derive_status, mark_duplicate_sessions};
 
 pub(crate) use conflict::{
     classify_create_error, duplicate_sessions_error, existing_session_error,
@@ -35,96 +37,12 @@ pub use labels::{
 };
 
 pub(crate) use labels::{missing_required_label, required_label_value};
+pub use status::{
+    SessionFailure, SessionStatus, failed_session_requires_action_error,
+    session_failure_requires_action_error,
+};
 
 pub const REQUIRED_NIX_CACHE_MOUNT_DESTINATION: &str = "/home/user/.cache/nix";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionStatus {
-    Running,
-    Orphaned,
-    Duplicate,
-    Failed,
-}
-
-impl SessionStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Running => "running",
-            Self::Orphaned => "orphaned",
-            Self::Duplicate => "duplicate",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-impl std::fmt::Display for SessionStatus {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionFailure {
-    MissingRequiredLabels,
-    DriftedGitRootHash,
-    MissingCacheMount,
-    NotRunning,
-    UnsupportedRuntimeLabel,
-    MalformedEndpointLabels,
-    MissingPublishedAttachPort,
-}
-
-impl SessionFailure {
-    pub fn requires_action_error(self, git_root: &Utf8Path, container_name: &str) -> Error {
-        match self {
-            Self::MissingRequiredLabels => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                "is missing required session labels",
-                "repair or recreate it before retrying",
-            ),
-            Self::DriftedGitRootHash => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                "has a drifted `io.agentbox.git_root_hash`",
-                "repair or recreate it before retrying",
-            ),
-            Self::MissingCacheMount => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                &format!(
-                    "is missing required cache mount `{}`",
-                    REQUIRED_NIX_CACHE_MOUNT_DESTINATION
-                ),
-                "recreate the container before retrying",
-            ),
-            Self::NotRunning => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                "is not running",
-                "stop it or recreate it before retrying",
-            ),
-            Self::UnsupportedRuntimeLabel => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                "has an unsupported or malformed `io.agentbox.runtime` label",
-                "repair or recreate it before retrying",
-            ),
-            Self::MalformedEndpointLabels => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                "has missing or inconsistent attach endpoint labels",
-                "repair or recreate it before retrying",
-            ),
-            Self::MissingPublishedAttachPort => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                "has no published attach endpoint port",
-                "repair or recreate it before retrying",
-            ),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionRecord {
@@ -149,23 +67,6 @@ pub struct SessionRecord {
 pub struct SessionGroup {
     pub canonical_git_root: Utf8PathBuf,
     pub sessions: Vec<SessionRecord>,
-}
-
-pub fn failed_session_requires_action_error(
-    git_root: &Utf8Path,
-    session: &SessionRecord,
-) -> Option<Error> {
-    session.failure.map(|failure| {
-        session_failure_requires_action_error(git_root, &session.container_name, failure)
-    })
-}
-
-pub fn session_failure_requires_action_error(
-    git_root: &Utf8Path,
-    container_name: &str,
-    failure: SessionFailure,
-) -> Error {
-    failure.requires_action_error(git_root, container_name)
 }
 
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
@@ -341,155 +242,6 @@ fn build_session_record(
     }
 }
 
-fn derive_status(
-    session_labels: &SessionLabels,
-    attach_endpoint: Option<&AttachEndpoint>,
-    running: bool,
-    mounts: &[PodmanContainerMount],
-    git: &Git,
-) -> (SessionStatus, Option<SessionFailure>) {
-    if !session_labels.has_required_values() {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::MissingRequiredLabels),
-        );
-    }
-
-    if !session_labels.hash_matches_root() {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::DriftedGitRootHash),
-        );
-    }
-
-    let runtime = match session_labels
-        .runtime
-        .as_deref()
-        .and_then(|runtime| runtime.parse::<RuntimeKind>().ok())
-    {
-        Some(runtime) => runtime,
-        None => {
-            return (
-                SessionStatus::Failed,
-                Some(SessionFailure::UnsupportedRuntimeLabel),
-            );
-        }
-    };
-
-    let adapter = runtime.adapter();
-    let _parsed_container_port = match session_labels
-        .container_port
-        .as_deref()
-        .and_then(|port| port.parse::<u16>().ok())
-    {
-        Some(port) if port == adapter.container_port() => port,
-        _ => {
-            return (
-                SessionStatus::Failed,
-                Some(SessionFailure::MalformedEndpointLabels),
-            );
-        }
-    };
-
-    if session_labels.attach_scheme.as_deref() != Some(adapter.attach_scheme())
-        || session_labels.container_listen_ip.as_deref() != Some(adapter.container_listen_ip())
-    {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::MalformedEndpointLabels),
-        );
-    }
-
-    if attach_endpoint.is_none() {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::MissingPublishedAttachPort),
-        );
-    }
-
-    if !has_required_mount(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::MissingCacheMount),
-        );
-    }
-
-    let canonical_git_root = session_labels
-        .canonical_git_root
-        .as_deref()
-        .expect("validated above");
-    if !running {
-        return (SessionStatus::Failed, Some(SessionFailure::NotRunning));
-    }
-
-    if git_root_is_orphaned(canonical_git_root, git) {
-        return (SessionStatus::Orphaned, None);
-    }
-
-    (SessionStatus::Running, None)
-}
-
-fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<SessionRecord> {
-    let mut group_sizes = BTreeMap::<Utf8PathBuf, usize>::new();
-
-    for session in &sessions {
-        if session.status == SessionStatus::Failed {
-            continue;
-        }
-
-        if let Some(root) = &session.canonical_git_root {
-            *group_sizes.entry(root.clone()).or_default() += 1;
-        }
-    }
-
-    for session in &mut sessions {
-        if session.status == SessionStatus::Failed {
-            continue;
-        }
-
-        if session
-            .canonical_git_root
-            .as_ref()
-            .and_then(|root| group_sizes.get(root))
-            .is_some_and(|count| *count > 1)
-        {
-            session.status = SessionStatus::Duplicate;
-        }
-    }
-
-    sessions
-}
-
 fn ps_candidate_is_managed(container: &PodmanPsContainer) -> bool {
     required_label_value(&container.labels, LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE)
-}
-
-fn has_required_mount(mounts: &[PodmanContainerMount], destination: &str) -> bool {
-    mounts.iter().any(|mount| mount.destination == destination)
-}
-
-fn git_root_is_orphaned(git_root: &Utf8Path, git: &Git) -> bool {
-    let canonical_git_root = match canonicalize_utf8(git_root) {
-        Some(canonical_git_root) if canonical_git_root == git_root => canonical_git_root,
-        _ => return true,
-    };
-
-    if !canonical_git_root.as_std_path().is_dir() {
-        return true;
-    }
-
-    let git_marker = canonical_git_root.join(".git");
-    if git_marker.is_dir() || git_marker.is_file() {
-        return false;
-    }
-
-    match git.rev_parse_show_toplevel(&canonical_git_root) {
-        Ok(resolved_git_root) => canonicalize_utf8(&resolved_git_root)
-            .is_none_or(|resolved_git_root| resolved_git_root != canonical_git_root),
-        Err(_) => true,
-    }
-}
-
-fn canonicalize_utf8(path: &Utf8Path) -> Option<Utf8PathBuf> {
-    Utf8PathBuf::from_path_buf(std::fs::canonicalize(path.as_std_path()).ok()?).ok()
 }
