@@ -115,43 +115,53 @@ impl Podman {
         workdir: Option<&str>,
     ) -> Result<()> {
         let mut command = self.runner.command("podman")?;
-        command.arg("run");
-        command.arg("--detach");
-        command.arg("--rm");
-        command.arg("--rmi");
-        command.args(["--name", container_name]);
-        if let Some(workdir) = workdir {
-            command.args(["--workdir", workdir]);
-        }
-
-        for (name, value) in &spec.labels {
-            command.arg("--label");
-            command.arg(format!("{name}={value}"));
-        }
-
-        for mount in &spec.mounts {
-            command.arg("--mount");
-            command.arg(render_mount(mount));
-        }
-
-        for (name, value) in &spec.default_env {
-            command.arg("--env");
-            command.arg(format!("{name}={value}"));
-        }
-
-        if !spec.network_enabled {
-            command.arg("--network=none");
-        }
-
-        for port in &spec.published_ports {
-            command.arg("--publish");
-            command.arg(port);
-        }
-
-        command.arg(&spec.image);
-        command.args(&spec.command);
+        command.args(run_detached_args(container_name, spec, workdir));
         run_command(&mut command).map(|_| ())
     }
+}
+
+fn run_detached_args(
+    container_name: &str,
+    spec: &RuntimeCreateSpec,
+    workdir: Option<&str>,
+) -> Vec<String> {
+    let mut args = strings(["run", "--detach", "--rm", "--rmi", "--name"]);
+    args.push(container_name.to_string());
+
+    if let Some(workdir) = workdir {
+        args.extend(strings(["--workdir", workdir]));
+    }
+
+    for (name, value) in &spec.labels {
+        args.extend(strings(["--label"]));
+        args.push(format!("{name}={value}"));
+    }
+
+    for mount in &spec.mounts {
+        args.extend(strings(["--mount"]));
+        args.push(render_mount(mount));
+    }
+
+    for (name, value) in &spec.default_env {
+        args.extend(strings(["--env"]));
+        args.push(format!("{name}={value}"));
+    }
+
+    if !spec.network_enabled {
+        args.extend(strings(["--network=none"]));
+    }
+
+    for port in &spec.published_ports {
+        args.extend(strings(["--publish", port]));
+    }
+
+    args.push(spec.image.clone());
+    args.extend(spec.command.iter().cloned());
+    args
+}
+
+fn strings<const N: usize>(values: [&str; N]) -> Vec<String> {
+    values.into_iter().map(str::to_string).collect()
 }
 
 fn render_mount(mount: &RuntimeMount) -> String {
@@ -164,4 +174,65 @@ fn render_mount(mount: &RuntimeMount) -> String {
         options.push("ro".to_string());
     }
     options.join(",")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    #[test]
+    fn run_detached_args_are_stable_and_complete() {
+        let spec = RuntimeCreateSpec {
+            image: "localhost/agentbox-opencode:local".to_string(),
+            labels: BTreeMap::from([
+                ("io.agentbox.managed".to_string(), "true".to_string()),
+                ("io.agentbox.runtime".to_string(), "opencode".to_string()),
+            ]),
+            mounts: vec![
+                RuntimeMount::read_only_bind("/workspace", "/workspace"),
+                RuntimeMount::volume("agentbox-cache", "/home/user/.cache/nix"),
+            ],
+            command: strings(["opencode", "serve", "--port", "4096"]),
+            default_env: BTreeMap::from([(
+                "NIX_CONFIG".to_string(),
+                "sandbox = false".to_string(),
+            )]),
+            network_enabled: false,
+            published_ports: vec!["127.0.0.1::4096".to_string()],
+        };
+
+        assert_eq!(
+            run_detached_args("agentbox-demo", &spec, Some("/workspace")),
+            strings([
+                "run",
+                "--detach",
+                "--rm",
+                "--rmi",
+                "--name",
+                "agentbox-demo",
+                "--workdir",
+                "/workspace",
+                "--label",
+                "io.agentbox.managed=true",
+                "--label",
+                "io.agentbox.runtime=opencode",
+                "--mount",
+                "type=bind,src=/workspace,dst=/workspace,ro",
+                "--mount",
+                "type=volume,src=agentbox-cache,dst=/home/user/.cache/nix",
+                "--env",
+                "NIX_CONFIG=sandbox = false",
+                "--network=none",
+                "--publish",
+                "127.0.0.1::4096",
+                "localhost/agentbox-opencode:local",
+                "opencode",
+                "serve",
+                "--port",
+                "4096",
+            ])
+        );
+    }
 }
