@@ -6,7 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
@@ -21,9 +20,9 @@ use crate::runtime::opencode::OpencodeRuntime;
 use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
 use crate::session::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    REQUIRED_LABEL_NAMES, REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionRecord, SessionStatus,
+    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionRecord, SessionStatus,
     discover_attach_endpoint_from_inspect, discover_sessions_for_git_root,
-    failed_session_requires_action_error,
+    failed_session_requires_action_error, missing_required_label, required_label_value,
 };
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
@@ -245,19 +244,6 @@ fn inspect_container_name(inspect: &PodmanContainerInspect, fallback: &str) -> S
     required_label_value(&inspect.config.labels, LABEL_LOGICAL_NAME)
         .unwrap_or(fallback)
         .to_string()
-}
-
-fn required_label_value<'a>(labels: &'a BTreeMap<String, String>, name: &str) -> Option<&'a str> {
-    labels
-        .get(name)
-        .map(String::as_str)
-        .filter(|value| !value.trim().is_empty())
-}
-
-fn missing_required_label(labels: &BTreeMap<String, String>) -> bool {
-    REQUIRED_LABEL_NAMES
-        .iter()
-        .any(|name| required_label_value(labels, name).is_none())
 }
 
 fn has_required_mount(mounts: &[PodmanContainerMount], destination: &str) -> bool {

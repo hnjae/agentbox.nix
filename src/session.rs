@@ -16,32 +16,18 @@ use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeKind};
 use crate::workspace::hash12;
 use crate::{Error, Result};
 
-pub const LABEL_MANAGED: &str = "io.agentbox.managed";
-pub const LABEL_SCHEMA: &str = "io.agentbox.schema";
-pub const LABEL_GIT_ROOT: &str = "io.agentbox.git_root";
-pub const LABEL_GIT_ROOT_HASH: &str = "io.agentbox.git_root_hash";
-pub const LABEL_RUNTIME: &str = "io.agentbox.runtime";
-pub const LABEL_IMAGE: &str = "io.agentbox.image";
-pub const LABEL_LOGICAL_NAME: &str = "io.agentbox.logical_name";
-pub const LABEL_ATTACH_SCHEME: &str = "io.agentbox.attach_scheme";
-pub const LABEL_CONTAINER_PORT: &str = "io.agentbox.container_port";
-pub const LABEL_CONTAINER_LISTEN_IP: &str = "io.agentbox.container_listen_ip";
+mod labels;
 
-pub const REQUIRED_LABEL_NAMES: [&str; 10] = [
-    LABEL_MANAGED,
-    LABEL_SCHEMA,
-    LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH,
-    LABEL_RUNTIME,
-    LABEL_IMAGE,
-    LABEL_LOGICAL_NAME,
-    LABEL_ATTACH_SCHEME,
-    LABEL_CONTAINER_PORT,
-    LABEL_CONTAINER_LISTEN_IP,
-];
+use labels::SessionLabels;
 
-pub const LABEL_MANAGED_VALUE: &str = "true";
-pub const LABEL_SCHEMA_VALUE: &str = "1";
+pub use labels::{
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_LABEL_NAMES,
+};
+
+pub(crate) use labels::{missing_required_label, required_label_value};
+
 pub const REQUIRED_NIX_CACHE_MOUNT_DESTINATION: &str = "/home/user/.cache/nix";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,59 +160,6 @@ pub fn session_failure_requires_action_error(
     failure.requires_action_error(git_root, container_name)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SessionLabels {
-    managed: Option<String>,
-    schema: Option<String>,
-    canonical_git_root: Option<Utf8PathBuf>,
-    git_root_hash: Option<String>,
-    runtime: Option<String>,
-    image: Option<String>,
-    logical_name: Option<String>,
-    attach_scheme: Option<String>,
-    container_port: Option<String>,
-    container_listen_ip: Option<String>,
-}
-
-impl SessionLabels {
-    fn from_map(labels: &BTreeMap<String, String>) -> Self {
-        Self {
-            managed: required_label_value(labels, LABEL_MANAGED),
-            schema: required_label_value(labels, LABEL_SCHEMA),
-            canonical_git_root: required_label_value(labels, LABEL_GIT_ROOT).map(Utf8PathBuf::from),
-            git_root_hash: required_label_value(labels, LABEL_GIT_ROOT_HASH),
-            runtime: required_label_value(labels, LABEL_RUNTIME),
-            image: required_label_value(labels, LABEL_IMAGE),
-            logical_name: required_label_value(labels, LABEL_LOGICAL_NAME),
-            attach_scheme: required_label_value(labels, LABEL_ATTACH_SCHEME),
-            container_port: required_label_value(labels, LABEL_CONTAINER_PORT),
-            container_listen_ip: required_label_value(labels, LABEL_CONTAINER_LISTEN_IP),
-        }
-    }
-
-    fn has_required_values(&self) -> bool {
-        self.managed.as_deref() == Some(LABEL_MANAGED_VALUE)
-            && self.schema.as_deref() == Some(LABEL_SCHEMA_VALUE)
-            && self.canonical_git_root.is_some()
-            && self.git_root_hash.is_some()
-            && self.runtime.is_some()
-            && self.image.is_some()
-            && self.logical_name.is_some()
-            && self.attach_scheme.is_some()
-            && self.container_port.is_some()
-            && self.container_listen_ip.is_some()
-    }
-
-    fn hash_matches_root(&self) -> bool {
-        self.canonical_git_root
-            .as_deref()
-            .zip(self.git_root_hash.as_deref())
-            .is_some_and(|(git_root, stored_hash)| {
-                stored_hash == hash12(git_root.as_str().as_bytes())
-            })
-    }
-}
-
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
     discover_managed_sessions_from_ps_with_git(
@@ -303,7 +236,10 @@ fn discover_sessions_for_git_root_from_ps_with_git(
     for container in containers
         .into_iter()
         .filter(ps_candidate_is_managed)
-        .filter(|container| container.labels.get(LABEL_GIT_ROOT_HASH) == Some(&target_hash))
+        .filter(|container| {
+            required_label_value(&container.labels, LABEL_GIT_ROOT_HASH)
+                == Some(target_hash.as_str())
+        })
     {
         let inspect = inspect_container(&container.id)?;
         let record = build_session_record(container, inspect, git);
@@ -521,9 +457,9 @@ pub fn discover_attach_endpoint_from_inspect(
 ) -> Result<AttachEndpoint> {
     let labels = &inspect.config.labels;
     derive_attach_endpoint(
-        required_label_value(labels, LABEL_RUNTIME).as_deref(),
-        required_label_value(labels, LABEL_ATTACH_SCHEME).as_deref(),
-        required_label_value(labels, LABEL_CONTAINER_PORT).as_deref(),
+        required_label_value(labels, LABEL_RUNTIME),
+        required_label_value(labels, LABEL_ATTACH_SCHEME),
+        required_label_value(labels, LABEL_CONTAINER_PORT),
         inspect,
     )
 }
@@ -597,14 +533,7 @@ fn derive_attach_endpoint(
 }
 
 fn ps_candidate_is_managed(container: &PodmanPsContainer) -> bool {
-    container.labels.get(LABEL_MANAGED) == Some(&LABEL_MANAGED_VALUE.to_string())
-}
-
-fn required_label_value(labels: &BTreeMap<String, String>, name: &str) -> Option<String> {
-    labels
-        .get(name)
-        .cloned()
-        .filter(|value| !value.trim().is_empty())
+    required_label_value(&container.labels, LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE)
 }
 
 fn has_required_mount(mounts: &[PodmanContainerMount], destination: &str) -> bool {
