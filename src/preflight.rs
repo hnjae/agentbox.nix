@@ -179,6 +179,15 @@ pub fn direnv_applies_to_target(target_directory: &Utf8Path, git_root: &Utf8Path
     envrc_applies_within_git_root(target_directory, git_root)
 }
 
+pub fn required_host_mount_destinations() -> [&'static str; 4] {
+    [
+        NIX_STORE_DESTINATION,
+        NIX_CLIENT_DESTINATION,
+        ETC_NIX_DESTINATION,
+        ETC_STATIC_NIX_DESTINATION,
+    ]
+}
+
 fn resolve_nix_client_source() -> Option<Utf8PathBuf> {
     if std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some() {
         return Some(Utf8PathBuf::from("/usr/bin/nix"));

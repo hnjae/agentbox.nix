@@ -8,11 +8,11 @@
 
 use agentbox::preflight::{
     ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION,
-    PreflightSnapshot, check_host_prerequisites_with_snapshot,
+    PreflightSnapshot, check_host_prerequisites_with_snapshot, required_host_mount_destinations,
 };
-use agentbox::runtime::opencode::{
-    DEFAULT_IMAGE, embedded_default_image_paths, materialize_default_image_context,
-    required_host_mount_destinations,
+use agentbox::runtime::default_image::{
+    OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE, embedded_default_image_paths,
+    materialize_default_image_context,
 };
 use agentbox::runtime::{AttachEndpoint, RuntimeKind, RuntimeMountKind};
 use agentbox::session::{

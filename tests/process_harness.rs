@@ -10,7 +10,7 @@ use agentbox::direnv::Direnv;
 use agentbox::git::Git;
 use agentbox::podman::Podman;
 use agentbox::process::ProcessRunner;
-use agentbox::runtime::opencode::DEFAULT_IMAGE;
+use agentbox::runtime::default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE;
 use camino::Utf8Path;
 use std::fs;
 

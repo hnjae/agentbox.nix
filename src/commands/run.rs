@@ -13,7 +13,7 @@ use crate::cli::RunArgs;
 use crate::lock::lock_workspace;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites;
-use crate::runtime::opencode::materialize_default_image_context;
+use crate::runtime::default_image::materialize_default_image_context;
 use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
 use crate::session::{
     classify_create_error, discover_attach_endpoint_from_inspect, discover_sessions_for_git_root,

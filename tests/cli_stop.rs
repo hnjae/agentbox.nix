@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use agentbox::runtime::opencode::DEFAULT_IMAGE;
+use agentbox::runtime::default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE;
 use agentbox::session::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,

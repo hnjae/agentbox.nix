@@ -11,12 +11,10 @@ use std::fs;
 use camino::{Utf8Path, Utf8PathBuf};
 use tempfile::TempDir;
 
-use crate::preflight::{
-    ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION,
-};
 use crate::{Error, Result};
 
-pub const DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
+pub const OPENCODE_DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
+pub const CODEX_DEFAULT_IMAGE: &str = "localhost/agentbox-codex:local";
 
 const EMBEDDED_DEFAULT_IMAGE_FILES: &[EmbeddedDefaultImageFile] = &[
     EmbeddedDefaultImageFile {
@@ -76,15 +74,6 @@ impl DefaultImageBuildContext {
     pub fn containerfile(&self) -> Utf8PathBuf {
         self.root.join("Containerfile")
     }
-}
-
-pub fn required_host_mount_destinations() -> [&'static str; 4] {
-    [
-        NIX_STORE_DESTINATION,
-        NIX_CLIENT_DESTINATION,
-        ETC_NIX_DESTINATION,
-        ETC_STATIC_NIX_DESTINATION,
-    ]
 }
 
 pub fn embedded_default_image_paths() -> &'static [&'static str] {

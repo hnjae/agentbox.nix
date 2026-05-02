@@ -21,7 +21,7 @@ use crate::session::{
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-pub mod opencode;
+pub mod default_image;
 mod profile;
 
 pub const DEFAULT_HOST_ATTACH_IP: &str = "127.0.0.1";
