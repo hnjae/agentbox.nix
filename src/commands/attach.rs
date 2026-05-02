@@ -16,14 +16,12 @@ use crate::process::{ProcessRunner, format_status, run_command_status};
 use crate::runtime::RuntimeKind;
 use crate::session::{
     SessionFailure, SessionRecord, SessionStatus, discover_sessions_for_git_root,
-    session_failure_requires_action_error,
+    duplicate_sessions_error, session_failure_requires_action_error,
 };
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
-use super::session_selection::{
-    SingleSession, duplicate_sessions_error, run_command_hint, select_single_session,
-};
+use super::session_selection::{run_command_hint, select_single_session};
 
 pub fn run(args: DirectoryArgs) -> Result<()> {
     let workspace = resolve_workspace_identity(&args.directory)?;
@@ -32,11 +30,10 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
 
     let podman = Podman::new();
     let sessions = discover_sessions_for_git_root(&podman, workspace.canonical_git_root.as_ref())?;
-    let session = match select_single_session(&sessions) {
-        SingleSession::Missing => return Err(no_session_error(&workspace)),
-        SingleSession::Found(session) => validate_attachable_session(&workspace, session)?,
-        SingleSession::Duplicate => return Err(duplicate_sessions_error(&workspace)),
+    let Some(session) = select_single_session(&sessions, &workspace)? else {
+        return Err(no_session_error(&workspace));
     };
+    let session = validate_attachable_session(&workspace, session)?;
 
     let process_runner = ProcessRunner::new();
     let runtime = session

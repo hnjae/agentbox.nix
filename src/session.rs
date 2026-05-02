@@ -21,7 +21,9 @@ mod labels;
 
 use labels::SessionLabels;
 
-pub(crate) use conflict::{classify_create_error, existing_session_error};
+pub(crate) use conflict::{
+    classify_create_error, duplicate_sessions_error, existing_session_error,
+};
 
 pub use labels::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,

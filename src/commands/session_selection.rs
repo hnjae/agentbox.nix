@@ -1,24 +1,17 @@
-use crate::Error;
+use crate::Result;
 use crate::runtime::RuntimeKind;
-use crate::session::SessionRecord;
+use crate::session::{SessionRecord, duplicate_sessions_error};
 use crate::workspace::WorkspaceIdentity;
 
-pub(crate) enum SingleSession<'a> {
-    Missing,
-    Found(&'a SessionRecord),
-    Duplicate,
-}
-
-pub(crate) fn select_single_session(sessions: &[SessionRecord]) -> SingleSession<'_> {
+pub(crate) fn select_single_session<'a>(
+    sessions: &'a [SessionRecord],
+    workspace: &WorkspaceIdentity,
+) -> Result<Option<&'a SessionRecord>> {
     match sessions {
-        [] => SingleSession::Missing,
-        [session] => SingleSession::Found(session),
-        _ => SingleSession::Duplicate,
+        [] => Ok(None),
+        [session] => Ok(Some(session)),
+        _ => Err(duplicate_sessions_error(workspace)),
     }
-}
-
-pub(crate) fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
-    Error::duplicate_managed_sessions(workspace.canonical_git_root.as_ref())
 }
 
 pub(crate) fn run_command_hint(runtime: Option<&str>, workspace: &WorkspaceIdentity) -> String {

@@ -25,7 +25,7 @@ use crate::session::{
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
-use super::session_selection::{SingleSession, duplicate_sessions_error, select_single_session};
+use super::session_selection::select_single_session;
 
 pub fn run(args: RunArgs) -> Result<()> {
     let workspace = resolve_workspace_identity(&args.directory)?;
@@ -40,14 +40,8 @@ pub fn run(args: RunArgs) -> Result<()> {
 
     let podman = Podman::new();
     let sessions = discover_sessions_for_git_root(&podman, workspace.canonical_git_root.as_ref())?;
-    match select_single_session(&sessions) {
-        SingleSession::Missing => {}
-        SingleSession::Found(session) => {
-            return Err(existing_session_error(&podman, &workspace, session));
-        }
-        SingleSession::Duplicate => {
-            return Err(duplicate_sessions_error(&workspace));
-        }
+    if let Some(session) = select_single_session(&sessions, &workspace)? {
+        return Err(existing_session_error(&podman, &workspace, session));
     }
 
     ensure_default_runtime_image(&podman, runtime, &workspace)?;
