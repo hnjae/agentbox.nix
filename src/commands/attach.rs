@@ -15,8 +15,8 @@ use crate::preflight::direnv_applies_to_target;
 use crate::process::{ProcessRunner, run_command_status};
 use crate::runtime::RuntimeKind;
 use crate::session::{
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionRecord, SessionStatus,
-    discover_sessions_for_git_root,
+    SessionFailure, SessionRecord, SessionStatus, discover_sessions_for_git_root,
+    session_failure_requires_action_error,
 };
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
@@ -76,51 +76,21 @@ fn validate_attachable_session<'a>(
 
     match session.status {
         SessionStatus::Running => Ok(session),
-        SessionStatus::Orphaned => Err(Error::msg(format!(
-            "managed session `{}` for `{}` is orphaned after the repository moved; remove or recreate it before retrying",
-            session.container_name, workspace.canonical_git_root,
-        ))),
+        SessionStatus::Orphaned => Err(Error::orphaned_managed_session(
+            workspace.canonical_git_root.as_ref(),
+            &session.container_name,
+        )),
         SessionStatus::Failed => Err(match session.failure {
-            Some(SessionFailure::MissingRequiredLabels) => Error::managed_session_requires_action(
-                workspace.canonical_git_root.as_ref(),
-                &session.container_name,
-                "is missing required session labels",
-                "repair or recreate it before retrying",
-            ),
-            Some(SessionFailure::DriftedGitRootHash) => Error::managed_session_requires_action(
-                workspace.canonical_git_root.as_ref(),
-                &session.container_name,
-                "has a drifted `io.agentbox.git_root_hash`",
-                "repair or recreate it before retrying",
-            ),
-            Some(SessionFailure::MissingCacheMount) => Error::managed_session_requires_action(
-                workspace.canonical_git_root.as_ref(),
-                &session.container_name,
-                &format!(
-                    "is missing required cache mount `{}`",
-                    REQUIRED_NIX_CACHE_MOUNT_DESTINATION
-                ),
-                "recreate the container before retrying",
-            ),
             Some(SessionFailure::NotRunning) => not_running_session_error(workspace, session),
-            Some(SessionFailure::UnsupportedRuntimeLabel) => {
-                unsupported_runtime_label_error(workspace, session)
-            }
-            Some(SessionFailure::MalformedEndpointLabels) => {
-                missing_endpoint_error(workspace, session)
-            }
-            Some(SessionFailure::MissingPublishedAttachPort) => {
-                Error::managed_session_requires_action(
-                    workspace.canonical_git_root.as_ref(),
-                    &session.container_name,
-                    "has no published attach endpoint port",
-                    "repair or recreate it before retrying",
-                )
-            }
-            None => Error::msg(format!(
-                "managed session `{}` for `{}` is in a failed state; repair or recreate it before retrying",
-                session.container_name, workspace.canonical_git_root,
-            )),
+            Some(failure) => session_failure_requires_action_error(
+                workspace.canonical_git_root.as_ref(),
+                &session.container_name,
+                failure,
+            ),
+            None => Error::failed_managed_session(
+                workspace.canonical_git_root.as_ref(),
+                &session.container_name,
+            ),
         }),
         SessionStatus::Duplicate => Err(duplicate_sessions_error(workspace)),
     }
@@ -135,10 +105,7 @@ fn no_session_error(workspace: &WorkspaceIdentity) -> Error {
 }
 
 fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
-    Error::msg(format!(
-        "duplicate managed sessions exist for `{}`; remove extras before retrying",
-        workspace.canonical_git_root
-    ))
+    Error::duplicate_managed_sessions(workspace.canonical_git_root.as_ref())
 }
 
 fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {

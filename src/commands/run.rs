@@ -21,8 +21,9 @@ use crate::runtime::opencode::OpencodeRuntime;
 use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
 use crate::session::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    REQUIRED_LABEL_NAMES, REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionRecord,
-    SessionStatus, discover_attach_endpoint_from_inspect, discover_sessions_for_git_root,
+    REQUIRED_LABEL_NAMES, REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionRecord, SessionStatus,
+    discover_attach_endpoint_from_inspect, discover_sessions_for_git_root,
+    failed_session_requires_action_error,
 };
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
@@ -116,72 +117,30 @@ fn existing_session_error(
 
     match session.status {
         SessionStatus::Running => running_existing_session_error(workspace, session),
-        SessionStatus::Orphaned => Error::msg(format!(
-            "managed session `{}` for `{}` is orphaned after the repository moved; remove or recreate it before retrying",
-            session.container_name, workspace.canonical_git_root,
-        )),
-        SessionStatus::Failed => failed_session_error(workspace, session).unwrap_or_else(|| {
-            podman
-                .inspect_one(&session.container_name)
-                .ok()
-                .and_then(|inspect| {
-                    classify_named_container_conflict(workspace, &session.container_name, &inspect)
+        SessionStatus::Orphaned => Error::orphaned_managed_session(
+            workspace.canonical_git_root.as_ref(),
+            &session.container_name,
+        ),
+        SessionStatus::Failed => {
+            failed_session_requires_action_error(workspace.canonical_git_root.as_ref(), session)
+                .unwrap_or_else(|| {
+                    podman
+                        .inspect_one(&session.container_name)
+                        .ok()
+                        .and_then(|inspect| {
+                            classify_named_container_conflict(
+                                workspace,
+                                &session.container_name,
+                                &inspect,
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            generic_failed_session_error(workspace, &session.container_name)
+                        })
                 })
-                .unwrap_or_else(|| generic_failed_session_error(workspace, &session.container_name))
-        }),
+        }
         SessionStatus::Duplicate => duplicate_sessions_error(workspace),
     }
-}
-
-fn failed_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Option<Error> {
-    let failure = session.failure?;
-    Some(match failure {
-        SessionFailure::MissingRequiredLabels => Error::managed_session_requires_action(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            "is missing required session labels",
-            "repair or recreate it before retrying",
-        ),
-        SessionFailure::DriftedGitRootHash => Error::managed_session_requires_action(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            "has a drifted `io.agentbox.git_root_hash`",
-            "repair or recreate it before retrying",
-        ),
-        SessionFailure::MissingCacheMount => Error::managed_session_requires_action(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            &format!(
-                "is missing required cache mount `{}`",
-                REQUIRED_NIX_CACHE_MOUNT_DESTINATION
-            ),
-            "recreate the container before retrying",
-        ),
-        SessionFailure::NotRunning => Error::managed_session_requires_action(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            "is not running",
-            "stop it or recreate it before retrying",
-        ),
-        SessionFailure::UnsupportedRuntimeLabel => Error::managed_session_requires_action(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            "has an unsupported or malformed `io.agentbox.runtime` label",
-            "repair or recreate it before retrying",
-        ),
-        SessionFailure::MalformedEndpointLabels => Error::managed_session_requires_action(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            "has missing or inconsistent attach endpoint labels",
-            "repair or recreate it before retrying",
-        ),
-        SessionFailure::MissingPublishedAttachPort => Error::managed_session_requires_action(
-            workspace.canonical_git_root.as_ref(),
-            &session.container_name,
-            "has no published attach endpoint port",
-            "repair or recreate it before retrying",
-        ),
-    })
 }
 
 fn classify_create_error(
@@ -269,10 +228,7 @@ fn classify_named_container_conflict(
 }
 
 fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
-    Error::msg(format!(
-        "duplicate managed sessions exist for `{}`; remove extras before retrying",
-        workspace.canonical_git_root
-    ))
+    Error::duplicate_managed_sessions(workspace.canonical_git_root.as_ref())
 }
 
 fn running_existing_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
@@ -286,10 +242,7 @@ fn running_existing_session_error(workspace: &WorkspaceIdentity, session: &Sessi
 }
 
 fn generic_failed_session_error(workspace: &WorkspaceIdentity, container_name: &str) -> Error {
-    Error::msg(format!(
-        "managed session `{}` for `{}` is in a failed state; repair or recreate it before retrying",
-        container_name, workspace.canonical_git_root,
-    ))
+    Error::failed_managed_session(workspace.canonical_git_root.as_ref(), container_name)
 }
 
 fn inspect_container_name(inspect: &PodmanContainerInspect, fallback: &str) -> String {

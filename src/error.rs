@@ -56,6 +56,24 @@ impl Error {
         ))
     }
 
+    pub fn duplicate_managed_sessions(git_root: &Utf8Path) -> Self {
+        Self::msg(format!(
+            "duplicate managed sessions exist for `{git_root}`; remove extras before retrying"
+        ))
+    }
+
+    pub fn orphaned_managed_session(git_root: &Utf8Path, container_name: &str) -> Self {
+        Self::msg(format!(
+            "managed session `{container_name}` for `{git_root}` is orphaned after the repository moved; remove or recreate it before retrying"
+        ))
+    }
+
+    pub fn failed_managed_session(git_root: &Utf8Path, container_name: &str) -> Self {
+        Self::msg(format!(
+            "managed session `{container_name}` for `{git_root}` is in a failed state; repair or recreate it before retrying"
+        ))
+    }
+
     pub fn runtime_command_failed(
         git_root: &Utf8Path,
         container_name: &str,

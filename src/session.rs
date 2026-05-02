@@ -88,6 +88,69 @@ pub struct SessionGroup {
     pub sessions: Vec<SessionRecord>,
 }
 
+pub fn failed_session_requires_action_error(
+    git_root: &Utf8Path,
+    session: &SessionRecord,
+) -> Option<Error> {
+    session.failure.map(|failure| {
+        session_failure_requires_action_error(git_root, &session.container_name, failure)
+    })
+}
+
+pub fn session_failure_requires_action_error(
+    git_root: &Utf8Path,
+    container_name: &str,
+    failure: SessionFailure,
+) -> Error {
+    match failure {
+        SessionFailure::MissingRequiredLabels => Error::managed_session_requires_action(
+            git_root,
+            container_name,
+            "is missing required session labels",
+            "repair or recreate it before retrying",
+        ),
+        SessionFailure::DriftedGitRootHash => Error::managed_session_requires_action(
+            git_root,
+            container_name,
+            "has a drifted `io.agentbox.git_root_hash`",
+            "repair or recreate it before retrying",
+        ),
+        SessionFailure::MissingCacheMount => Error::managed_session_requires_action(
+            git_root,
+            container_name,
+            &format!(
+                "is missing required cache mount `{}`",
+                REQUIRED_NIX_CACHE_MOUNT_DESTINATION
+            ),
+            "recreate the container before retrying",
+        ),
+        SessionFailure::NotRunning => Error::managed_session_requires_action(
+            git_root,
+            container_name,
+            "is not running",
+            "stop it or recreate it before retrying",
+        ),
+        SessionFailure::UnsupportedRuntimeLabel => Error::managed_session_requires_action(
+            git_root,
+            container_name,
+            "has an unsupported or malformed `io.agentbox.runtime` label",
+            "repair or recreate it before retrying",
+        ),
+        SessionFailure::MalformedEndpointLabels => Error::managed_session_requires_action(
+            git_root,
+            container_name,
+            "has missing or inconsistent attach endpoint labels",
+            "repair or recreate it before retrying",
+        ),
+        SessionFailure::MissingPublishedAttachPort => Error::managed_session_requires_action(
+            git_root,
+            container_name,
+            "has no published attach endpoint port",
+            "repair or recreate it before retrying",
+        ),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SessionLabels {
     managed: Option<String>,
