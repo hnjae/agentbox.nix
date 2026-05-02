@@ -16,9 +16,12 @@ use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeKind};
 use crate::workspace::hash12;
 use crate::{Error, Result};
 
+mod conflict;
 mod labels;
 
 use labels::SessionLabels;
+
+pub(crate) use conflict::{classify_create_error, existing_session_error};
 
 pub use labels::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
