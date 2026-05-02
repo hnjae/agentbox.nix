@@ -25,10 +25,43 @@ pub mod opencode;
 
 pub const DEFAULT_HOST_ATTACH_IP: &str = "127.0.0.1";
 
-const OPENCODE_CONTAINER_PORT: u16 = 4096;
-const CODEX_CONTAINER_PORT: u16 = 1455;
 const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
 const CODEX_DEFAULT_IMAGE: &str = "localhost/agentbox-codex:local";
+
+const RUNTIME_PROFILES: &[RuntimeProfile] = &[
+    RuntimeProfile {
+        kind: RuntimeKind::Opencode,
+        name: "opencode",
+        default_image: opencode::DEFAULT_IMAGE,
+        attach_scheme: "http",
+        container_listen_ip: CONTAINER_LISTEN_IP,
+        container_port: 4096,
+        server_command: opencode_server_command,
+        host_client_command: opencode_host_client_command,
+    },
+    RuntimeProfile {
+        kind: RuntimeKind::Codex,
+        name: "codex",
+        default_image: CODEX_DEFAULT_IMAGE,
+        attach_scheme: "ws",
+        container_listen_ip: CONTAINER_LISTEN_IP,
+        container_port: 1455,
+        server_command: codex_server_command,
+        host_client_command: codex_host_client_command,
+    },
+];
+
+#[derive(Debug, Clone, Copy)]
+struct RuntimeProfile {
+    kind: RuntimeKind,
+    name: &'static str,
+    default_image: &'static str,
+    attach_scheme: &'static str,
+    container_listen_ip: &'static str,
+    container_port: u16,
+    server_command: fn(&RuntimeProfile) -> RuntimeCommand,
+    host_client_command: fn(&RuntimeProfile, &AttachEndpoint) -> RuntimeCommand,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeMountKind {
@@ -92,10 +125,7 @@ pub enum RuntimeKind {
 
 impl RuntimeKind {
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Opencode => "opencode",
-            Self::Codex => "codex",
-        }
+        runtime_profile(self).name
     }
 
     pub fn adapter(self) -> RuntimeAdapter {
@@ -113,16 +143,22 @@ impl FromStr for RuntimeKind {
     type Err = Error;
 
     fn from_str(value: &str) -> Result<Self> {
-        match value {
-            "opencode" => Ok(Self::Opencode),
-            "codex" => Ok(Self::Codex),
-            other if other.trim().is_empty() => Err(Error::msg(
+        if value.trim().is_empty() {
+            return Err(Error::msg(
                 "malformed runtime label: `io.agentbox.runtime` is empty",
-            )),
-            other => Err(Error::msg(format!(
-                "unsupported runtime `{other}`; supported runtimes are `opencode` and `codex`"
-            ))),
+            ));
         }
+
+        RUNTIME_PROFILES
+            .iter()
+            .find(|profile| profile.name == value)
+            .map(|profile| profile.kind)
+            .ok_or_else(|| {
+                Error::msg(format!(
+                    "unsupported runtime `{value}`; supported runtimes are {}",
+                    supported_runtime_names()
+                ))
+            })
     }
 }
 
@@ -145,59 +181,29 @@ impl RuntimeAdapter {
     }
 
     pub fn default_image(self) -> &'static str {
-        match self.kind {
-            RuntimeKind::Opencode => opencode::DEFAULT_IMAGE,
-            RuntimeKind::Codex => CODEX_DEFAULT_IMAGE,
-        }
+        self.profile().default_image
     }
 
     pub fn attach_scheme(self) -> &'static str {
-        match self.kind {
-            RuntimeKind::Opencode => "http",
-            RuntimeKind::Codex => "ws",
-        }
+        self.profile().attach_scheme
     }
 
     pub fn container_listen_ip(self) -> &'static str {
-        CONTAINER_LISTEN_IP
+        self.profile().container_listen_ip
     }
 
     pub fn container_port(self) -> u16 {
-        match self.kind {
-            RuntimeKind::Opencode => OPENCODE_CONTAINER_PORT,
-            RuntimeKind::Codex => CODEX_CONTAINER_PORT,
-        }
+        self.profile().container_port
     }
 
     pub fn server_command(self) -> RuntimeCommand {
-        let port = self.container_port().to_string();
-        let argv = match self.kind {
-            RuntimeKind::Opencode => vec![
-                "opencode".to_string(),
-                "serve".to_string(),
-                "--port".to_string(),
-                port,
-            ],
-            RuntimeKind::Codex => vec![
-                "codex".to_string(),
-                "--dangerously-bypass-approvals-and-sandbox".to_string(),
-                "app-server".to_string(),
-                "--listen".to_string(),
-                format!("ws://{}:{port}", self.container_listen_ip()),
-            ],
-        };
-
-        RuntimeCommand { argv }
+        let profile = self.profile();
+        (profile.server_command)(profile)
     }
 
     pub fn host_client_command(self, endpoint: &AttachEndpoint) -> RuntimeCommand {
-        let endpoint = endpoint.to_string();
-        let argv = match self.kind {
-            RuntimeKind::Opencode => vec!["opencode".to_string(), "attach".to_string(), endpoint],
-            RuntimeKind::Codex => vec!["codex".to_string(), "--remote".to_string(), endpoint],
-        };
-
-        RuntimeCommand { argv }
+        let profile = self.profile();
+        (profile.host_client_command)(profile, endpoint)
     }
 
     pub fn create_spec(
@@ -260,5 +266,76 @@ impl RuntimeAdapter {
                 self.container_port()
             )],
         }
+    }
+
+    fn profile(self) -> &'static RuntimeProfile {
+        runtime_profile(self.kind)
+    }
+}
+
+fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
+    RUNTIME_PROFILES
+        .iter()
+        .find(|profile| profile.kind == kind)
+        .expect("every RuntimeKind must have a RuntimeProfile")
+}
+
+fn supported_runtime_names() -> String {
+    RUNTIME_PROFILES
+        .iter()
+        .map(|profile| format!("`{}`", profile.name))
+        .collect::<Vec<_>>()
+        .join(" and ")
+}
+
+fn opencode_server_command(profile: &RuntimeProfile) -> RuntimeCommand {
+    RuntimeCommand {
+        argv: vec![
+            "opencode".to_string(),
+            "serve".to_string(),
+            "--port".to_string(),
+            profile.container_port.to_string(),
+        ],
+    }
+}
+
+fn codex_server_command(profile: &RuntimeProfile) -> RuntimeCommand {
+    RuntimeCommand {
+        argv: vec![
+            "codex".to_string(),
+            "--dangerously-bypass-approvals-and-sandbox".to_string(),
+            "app-server".to_string(),
+            "--listen".to_string(),
+            format!(
+                "{}://{}:{}",
+                profile.attach_scheme, profile.container_listen_ip, profile.container_port
+            ),
+        ],
+    }
+}
+
+fn opencode_host_client_command(
+    _profile: &RuntimeProfile,
+    endpoint: &AttachEndpoint,
+) -> RuntimeCommand {
+    RuntimeCommand {
+        argv: vec![
+            "opencode".to_string(),
+            "attach".to_string(),
+            endpoint.to_string(),
+        ],
+    }
+}
+
+fn codex_host_client_command(
+    _profile: &RuntimeProfile,
+    endpoint: &AttachEndpoint,
+) -> RuntimeCommand {
+    RuntimeCommand {
+        argv: vec![
+            "codex".to_string(),
+            "--remote".to_string(),
+            endpoint.to_string(),
+        ],
     }
 }
