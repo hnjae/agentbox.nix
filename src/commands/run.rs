@@ -27,42 +27,40 @@ use super::session_selection::select_single_session;
 pub fn run(args: RunArgs) -> Result<()> {
     let workspace = resolve_workspace_identity(&args.directory)?;
     let runtime = args.runtime.adapter();
-    let mut workspace_lock = lock_workspace(&workspace)?;
-    let workspace_guard = workspace_lock.guard()?;
+    let endpoint = {
+        let mut workspace_lock = lock_workspace(&workspace)?;
+        let _workspace_guard = workspace_lock.guard()?;
 
-    let preflight = check_host_prerequisites(
-        Some(workspace.canonical_target.as_ref()),
-        Some(workspace.canonical_git_root.as_ref()),
-    )?;
+        let preflight = check_host_prerequisites(
+            Some(workspace.canonical_target.as_ref()),
+            Some(workspace.canonical_git_root.as_ref()),
+        )?;
 
-    let podman = Podman::new();
-    let sessions = discover_sessions_for_git_root(&podman, workspace.canonical_git_root.as_ref())?;
-    if let Some(session) = select_single_session(&sessions, &workspace)? {
-        return Err(existing_session_error(&podman, &workspace, session));
-    }
+        let podman = Podman::new();
+        let sessions =
+            discover_sessions_for_git_root(&podman, workspace.canonical_git_root.as_ref())?;
+        if let Some(session) = select_single_session(&sessions, &workspace)? {
+            return Err(existing_session_error(&podman, &workspace, session));
+        }
 
-    ensure_default_runtime_image(&podman, runtime, &workspace)?;
-    let mut run_spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
-    let server_run = server_runtime_command(
-        runtime,
-        workspace.canonical_target.as_ref(),
-        workspace.canonical_git_root.as_ref(),
-    );
-    run_spec.command = server_run.argv;
+        ensure_default_runtime_image(&podman, runtime, &workspace)?;
+        let mut run_spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
+        let server_run = server_runtime_command(
+            runtime,
+            workspace.canonical_target.as_ref(),
+            workspace.canonical_git_root.as_ref(),
+        );
+        run_spec.command = server_run.argv;
 
-    std::hint::black_box(&workspace_guard);
-
-    let endpoint = podman
-        .run_detached(
-            &workspace.container_name,
-            &run_spec,
-            Some(server_run.workdir.as_str()),
-        )
-        .and_then(|_| wait_for_server_endpoint(&podman, &workspace, runtime))
-        .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))?;
-
-    drop(workspace_guard);
-    drop(workspace_lock);
+        podman
+            .run_detached(
+                &workspace.container_name,
+                &run_spec,
+                Some(server_run.workdir.as_str()),
+            )
+            .and_then(|_| wait_for_server_endpoint(&podman, &workspace, runtime))
+            .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))?
+    };
 
     println!(
         "managed session `{}` is running for `{}` at `{endpoint}`; use `agentbox attach {}` to connect",

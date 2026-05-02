@@ -19,34 +19,33 @@ use crate::{Error, Result};
 
 pub fn run(args: StopArgs) -> Result<()> {
     let git_root = resolve_stop_git_root(&args.directory)?;
-    let mut workspace_lock = lock_git_root(git_root.as_ref())?;
-    let workspace_guard = workspace_lock.guard()?;
-    let podman = Podman::new();
-    let sessions = exact_full_root_matches(
-        discover_sessions_for_git_root(&podman, git_root.as_ref())?,
-        git_root.as_ref(),
-    );
+    let failures = {
+        let mut workspace_lock = lock_git_root(git_root.as_ref())?;
+        let _workspace_guard = workspace_lock.guard()?;
+        let podman = Podman::new();
+        let sessions = exact_full_root_matches(
+            discover_sessions_for_git_root(&podman, git_root.as_ref())?,
+            git_root.as_ref(),
+        );
 
-    if sessions.is_empty() {
-        return Err(Error::msg(format!(
-            "no managed session exists for `{git_root}`"
-        )));
-    }
+        if sessions.is_empty() {
+            return Err(Error::msg(format!(
+                "no managed session exists for `{git_root}`"
+            )));
+        }
 
-    if sessions.len() > 1 && !args.force {
-        return Err(Error::msg(format!(
-            "duplicate managed sessions exist for `{git_root}`; rerun `agentbox stop --force {}` to remove all exact matches",
-            args.directory.display()
-        )));
-    }
+        if sessions.len() > 1 && !args.force {
+            return Err(Error::msg(format!(
+                "duplicate managed sessions exist for `{git_root}`; rerun `agentbox stop --force {}` to remove all exact matches",
+                args.directory.display()
+            )));
+        }
 
-    let failures = sessions
-        .iter()
-        .filter_map(|session| cleanup_managed_container(&podman, session))
-        .collect::<Vec<_>>();
-
-    drop(workspace_guard);
-    drop(workspace_lock);
+        sessions
+            .iter()
+            .filter_map(|session| cleanup_managed_container(&podman, session))
+            .collect::<Vec<_>>()
+    };
 
     if failures.is_empty() {
         Ok(())
