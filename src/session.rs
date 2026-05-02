@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::git::Git;
-use crate::podman::{Podman, PodmanContainerInspect, PodmanPsContainer};
+use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
 use crate::runtime::AttachEndpoint;
 use crate::workspace::hash12;
 use crate::{Error, Result};
@@ -244,4 +244,8 @@ fn build_session_record(
 
 fn ps_candidate_is_managed(container: &PodmanPsContainer) -> bool {
     required_label_value(&container.labels, LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE)
+}
+
+fn has_mount_destination(mounts: &[PodmanContainerMount], destination: &str) -> bool {
+    mounts.iter().any(|mount| mount.destination == destination)
 }

@@ -15,7 +15,10 @@ use crate::git::Git;
 use crate::podman::PodmanContainerMount;
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 
-use super::{REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionRecord, labels::SessionLabels};
+use super::{
+    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionRecord, has_mount_destination,
+    labels::SessionLabels,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionStatus {
@@ -188,7 +191,7 @@ pub(super) fn derive_status(
         );
     }
 
-    if !has_required_mount(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
+    if !has_mount_destination(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
         return (
             SessionStatus::Failed,
             Some(SessionFailure::MissingCacheMount),
@@ -239,10 +242,6 @@ pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<S
     }
 
     sessions
-}
-
-fn has_required_mount(mounts: &[PodmanContainerMount], destination: &str) -> bool {
-    mounts.iter().any(|mount| mount.destination == destination)
 }
 
 fn git_root_is_orphaned(git_root: &Utf8Path, git: &Git) -> bool {

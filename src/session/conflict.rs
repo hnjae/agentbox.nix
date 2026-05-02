@@ -1,12 +1,13 @@
 use crate::Error;
-use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount};
+use crate::podman::{Podman, PodmanContainerInspect};
 use crate::runtime::RuntimeCreateSpec;
 use crate::workspace::WorkspaceIdentity;
 
 use super::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionRecord, SessionStatus,
-    failed_session_requires_action_error, missing_required_label, required_label_value,
+    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionRecord, SessionStatus,
+    failed_session_requires_action_error, has_mount_destination, missing_required_label,
+    required_label_value, session_failure_requires_action_error,
 };
 
 pub(crate) fn existing_session_error(
@@ -78,10 +79,11 @@ fn classify_named_container_conflict(
 
     if managed == Some(LABEL_MANAGED_VALUE) {
         if missing_required_label(labels) {
-            return Some(Error::msg(format!(
-                "managed session `{}` for `{}` is missing required session labels; repair or recreate it before retrying",
-                container_name, workspace.canonical_git_root,
-            )));
+            return Some(failure_conflict_error(
+                workspace,
+                &container_name,
+                SessionFailure::MissingRequiredLabels,
+            ));
         }
 
         if git_root_hash == Some(workspace.hash12.as_str())
@@ -98,19 +100,19 @@ fn classify_named_container_conflict(
 
         if canonical_git_root == Some(workspace.canonical_git_root.as_str()) {
             if git_root_hash != Some(workspace.hash12.as_str()) {
-                return Some(Error::msg(format!(
-                    "managed session `{}` for `{}` has a drifted `io.agentbox.git_root_hash`; repair or recreate it before retrying",
-                    container_name, workspace.canonical_git_root,
-                )));
+                return Some(failure_conflict_error(
+                    workspace,
+                    &container_name,
+                    SessionFailure::DriftedGitRootHash,
+                ));
             }
 
-            if !has_required_mount(&inspect.mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
-                return Some(Error::msg(format!(
-                    "managed session `{}` for `{}` is missing required cache mount `{}`; recreate the container before retrying",
-                    container_name,
-                    workspace.canonical_git_root,
-                    REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
-                )));
+            if !has_mount_destination(&inspect.mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
+                return Some(failure_conflict_error(
+                    workspace,
+                    &container_name,
+                    SessionFailure::MissingCacheMount,
+                ));
             }
 
             return Some(generic_failed_session_error(workspace, &container_name));
@@ -148,12 +150,20 @@ fn generic_failed_session_error(workspace: &WorkspaceIdentity, container_name: &
     Error::failed_managed_session(workspace.canonical_git_root.as_ref(), container_name)
 }
 
+fn failure_conflict_error(
+    workspace: &WorkspaceIdentity,
+    container_name: &str,
+    failure: SessionFailure,
+) -> Error {
+    session_failure_requires_action_error(
+        workspace.canonical_git_root.as_ref(),
+        container_name,
+        failure,
+    )
+}
+
 fn inspect_container_name(inspect: &PodmanContainerInspect, fallback: &str) -> String {
     required_label_value(&inspect.config.labels, LABEL_LOGICAL_NAME)
         .unwrap_or(fallback)
         .to_string()
-}
-
-fn has_required_mount(mounts: &[PodmanContainerMount], destination: &str) -> bool {
-    mounts.iter().any(|mount| mount.destination == destination)
 }
