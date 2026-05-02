@@ -22,46 +22,9 @@ use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 pub mod opencode;
+mod profile;
 
 pub const DEFAULT_HOST_ATTACH_IP: &str = "127.0.0.1";
-
-const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
-const CODEX_DEFAULT_IMAGE: &str = "localhost/agentbox-codex:local";
-
-const RUNTIME_PROFILES: &[RuntimeProfile] = &[
-    RuntimeProfile {
-        kind: RuntimeKind::Opencode,
-        name: "opencode",
-        default_image: opencode::DEFAULT_IMAGE,
-        attach_scheme: "http",
-        container_listen_ip: CONTAINER_LISTEN_IP,
-        container_port: 4096,
-        server_command: opencode_server_command,
-        host_client_command: opencode_host_client_command,
-    },
-    RuntimeProfile {
-        kind: RuntimeKind::Codex,
-        name: "codex",
-        default_image: CODEX_DEFAULT_IMAGE,
-        attach_scheme: "ws",
-        container_listen_ip: CONTAINER_LISTEN_IP,
-        container_port: 1455,
-        server_command: codex_server_command,
-        host_client_command: codex_host_client_command,
-    },
-];
-
-#[derive(Debug, Clone, Copy)]
-struct RuntimeProfile {
-    kind: RuntimeKind,
-    name: &'static str,
-    default_image: &'static str,
-    attach_scheme: &'static str,
-    container_listen_ip: &'static str,
-    container_port: u16,
-    server_command: fn(&RuntimeProfile) -> RuntimeCommand,
-    host_client_command: fn(&RuntimeProfile, &AttachEndpoint) -> RuntimeCommand,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeMountKind {
@@ -119,7 +82,7 @@ pub enum RuntimeKind {
 
 impl RuntimeKind {
     pub fn as_str(self) -> &'static str {
-        runtime_profile(self).name
+        profile::runtime_profile(self).name
     }
 
     pub fn adapter(self) -> RuntimeAdapter {
@@ -143,16 +106,12 @@ impl FromStr for RuntimeKind {
             ));
         }
 
-        RUNTIME_PROFILES
-            .iter()
-            .find(|profile| profile.name == value)
-            .map(|profile| profile.kind)
-            .ok_or_else(|| {
-                Error::msg(format!(
-                    "unsupported runtime `{value}`; supported runtimes are {}",
-                    supported_runtime_names()
-                ))
-            })
+        profile::runtime_kind_from_name(value).ok_or_else(|| {
+            Error::msg(format!(
+                "unsupported runtime `{value}`; supported runtimes are {}",
+                profile::supported_runtime_names()
+            ))
+        })
     }
 }
 
@@ -262,74 +221,7 @@ impl RuntimeAdapter {
         }
     }
 
-    fn profile(self) -> &'static RuntimeProfile {
-        runtime_profile(self.kind)
-    }
-}
-
-fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
-    RUNTIME_PROFILES
-        .iter()
-        .find(|profile| profile.kind == kind)
-        .expect("every RuntimeKind must have a RuntimeProfile")
-}
-
-fn supported_runtime_names() -> String {
-    RUNTIME_PROFILES
-        .iter()
-        .map(|profile| format!("`{}`", profile.name))
-        .collect::<Vec<_>>()
-        .join(" and ")
-}
-
-fn opencode_server_command(profile: &RuntimeProfile) -> RuntimeCommand {
-    RuntimeCommand {
-        argv: vec![
-            "opencode".to_string(),
-            "serve".to_string(),
-            "--port".to_string(),
-            profile.container_port.to_string(),
-        ],
-    }
-}
-
-fn codex_server_command(profile: &RuntimeProfile) -> RuntimeCommand {
-    RuntimeCommand {
-        argv: vec![
-            "codex".to_string(),
-            "--dangerously-bypass-approvals-and-sandbox".to_string(),
-            "app-server".to_string(),
-            "--listen".to_string(),
-            format!(
-                "{}://{}:{}",
-                profile.attach_scheme, profile.container_listen_ip, profile.container_port
-            ),
-        ],
-    }
-}
-
-fn opencode_host_client_command(
-    _profile: &RuntimeProfile,
-    endpoint: &AttachEndpoint,
-) -> RuntimeCommand {
-    RuntimeCommand {
-        argv: vec![
-            "opencode".to_string(),
-            "attach".to_string(),
-            endpoint.to_string(),
-        ],
-    }
-}
-
-fn codex_host_client_command(
-    _profile: &RuntimeProfile,
-    endpoint: &AttachEndpoint,
-) -> RuntimeCommand {
-    RuntimeCommand {
-        argv: vec![
-            "codex".to_string(),
-            "--remote".to_string(),
-            endpoint.to_string(),
-        ],
+    fn profile(self) -> &'static profile::RuntimeProfile {
+        profile::runtime_profile(self.kind)
     }
 }
