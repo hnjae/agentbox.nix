@@ -274,6 +274,14 @@ impl Podman {
             .map(|_| ())
     }
 
+    pub fn stop_ignore(&self, container_name: &str) -> Result<()> {
+        self.runner
+            .capture("podman", |command| {
+                command.args(["stop", "--ignore", container_name]);
+            })
+            .map(|_| ())
+    }
+
     pub fn run_detached(
         &self,
         container_name: &str,

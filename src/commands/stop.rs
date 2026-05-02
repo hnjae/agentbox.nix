@@ -13,7 +13,6 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::cli::StopArgs;
 use crate::lock::lock_git_root;
 use crate::podman::Podman;
-use crate::process::{ProcessRunner, run_command};
 use crate::session::{SessionRecord, discover_sessions_for_git_root};
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
@@ -41,10 +40,9 @@ pub fn run(args: StopArgs) -> Result<()> {
         )));
     }
 
-    let process_runner = ProcessRunner::new();
     let failures = sessions
         .iter()
-        .filter_map(|session| cleanup_managed_container(&podman, &process_runner, session))
+        .filter_map(|session| cleanup_managed_container(&podman, session))
         .collect::<Vec<_>>();
 
     drop(workspace_guard);
@@ -86,12 +84,8 @@ fn exact_full_root_matches(
         .collect()
 }
 
-fn cleanup_managed_container(
-    podman: &Podman,
-    process_runner: &ProcessRunner,
-    session: &SessionRecord,
-) -> Option<CleanupFailure> {
-    let stop_error = podman_stop(process_runner, &session.container_name).err();
+fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
+    let stop_error = podman.stop_ignore(&session.container_name).err();
 
     match container_exists(podman, &session.container_name) {
         Ok(false) => None,
@@ -106,12 +100,6 @@ fn cleanup_managed_container(
             verification_error: Some(error.to_string()),
         }),
     }
-}
-
-fn podman_stop(process_runner: &ProcessRunner, container_name: &str) -> Result<()> {
-    let mut command = process_runner.command("podman")?;
-    command.args(["stop", "--ignore", container_name]);
-    run_command(&mut command).map(|_| ())
 }
 
 fn container_exists(podman: &Podman, container_name: &str) -> Result<bool> {

@@ -223,3 +223,17 @@ fn podman_build_image_uses_containerfile_and_context_arguments() {
         .build_image(DEFAULT_IMAGE, containerfile.as_ref(), context.as_ref())
         .unwrap();
 }
+
+#[test]
+fn podman_stop_ignore_uses_the_adapter_runner() {
+    let fake_bins = support::FakeBinDir::new();
+    fake_bins.install_exact_response(
+        "podman",
+        &["stop", "--ignore", "agentbox-demo"],
+        "agentbox-demo\n",
+    );
+
+    Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .stop_ignore("agentbox-demo")
+        .unwrap();
+}
