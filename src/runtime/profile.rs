@@ -6,7 +6,12 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use super::{AttachEndpoint, RuntimeCommand, RuntimeKind, default_image};
+use crate::Result;
+
+use super::{
+    AttachEndpoint, RuntimeCommand, RuntimeKind,
+    default_image::{self, DefaultImageBuildContext},
+};
 
 const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
 
@@ -15,6 +20,7 @@ const RUNTIME_PROFILES: &[RuntimeProfile] = &[
         kind: RuntimeKind::Opencode,
         name: "opencode",
         default_image: default_image::OPENCODE_DEFAULT_IMAGE,
+        materialize_default_image_context: default_image::materialize_default_image_context,
         attach_scheme: "http",
         container_listen_ip: CONTAINER_LISTEN_IP,
         container_port: 4096,
@@ -25,6 +31,7 @@ const RUNTIME_PROFILES: &[RuntimeProfile] = &[
         kind: RuntimeKind::Codex,
         name: "codex",
         default_image: default_image::CODEX_DEFAULT_IMAGE,
+        materialize_default_image_context: default_image::materialize_default_image_context,
         attach_scheme: "ws",
         container_listen_ip: CONTAINER_LISTEN_IP,
         container_port: 1455,
@@ -38,6 +45,7 @@ pub(super) struct RuntimeProfile {
     pub(super) kind: RuntimeKind,
     pub(super) name: &'static str,
     pub(super) default_image: &'static str,
+    pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
     pub(super) attach_scheme: &'static str,
     pub(super) container_listen_ip: &'static str,
     pub(super) container_port: u16,

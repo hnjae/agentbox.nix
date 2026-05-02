@@ -11,7 +11,7 @@ use agentbox::preflight::{
     PreflightSnapshot, check_host_prerequisites_with_snapshot, required_host_mount_destinations,
 };
 use agentbox::runtime::default_image::{
-    OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE, embedded_default_image_paths,
+    CODEX_DEFAULT_IMAGE, OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE, embedded_default_image_paths,
     materialize_default_image_context,
 };
 use agentbox::runtime::{AttachEndpoint, RuntimeKind, RuntimeMountKind};
@@ -193,6 +193,18 @@ fn runtime_adapters_render_host_client_commands() {
             "--remote".to_string(),
             "ws://127.0.0.1:49153".to_string(),
         ]
+    );
+}
+
+#[test]
+fn runtime_adapters_own_default_image_references() {
+    assert_eq!(
+        RuntimeKind::Opencode.adapter().default_image(),
+        DEFAULT_IMAGE
+    );
+    assert_eq!(
+        RuntimeKind::Codex.adapter().default_image(),
+        CODEX_DEFAULT_IMAGE
     );
 }
 

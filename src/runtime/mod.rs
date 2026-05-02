@@ -12,6 +12,8 @@ use std::str::FromStr;
 
 use clap::ValueEnum;
 
+use default_image::DefaultImageBuildContext;
+
 use crate::preflight::NIX_CACHE_DESTINATION;
 use crate::session::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
@@ -135,6 +137,11 @@ impl RuntimeAdapter {
 
     pub fn default_image(self) -> &'static str {
         self.profile().default_image
+    }
+
+    pub fn materialize_default_image_context(self) -> Result<DefaultImageBuildContext> {
+        let profile = self.profile();
+        (profile.materialize_default_image_context)()
     }
 
     pub fn attach_scheme(self) -> &'static str {
