@@ -78,12 +78,6 @@ pub struct RuntimeMount {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuntimeExecSpec {
-    pub argv: Vec<String>,
-    pub detached: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeCommand {
     pub argv: Vec<String>,
 }

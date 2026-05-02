@@ -16,7 +16,7 @@ use crate::direnv::wrap_exec_if_envrc_applies;
 use crate::lock::lock_workspace;
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount};
 use crate::preflight::check_host_prerequisites;
-use crate::runtime::opencode::OpencodeRuntime;
+use crate::runtime::opencode::materialize_default_image_context;
 use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
 use crate::session::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
@@ -92,7 +92,7 @@ fn ensure_default_runtime_image(
         return Ok(());
     }
 
-    let context = OpencodeRuntime::new().default_image_context()?;
+    let context = materialize_default_image_context()?;
     let containerfile = context.containerfile();
     podman
         .build_image(default_image, containerfile.as_ref(), context.root())

@@ -13,13 +13,9 @@ use tempfile::TempDir;
 
 use crate::preflight::{
     ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION,
-    PreflightReport,
 };
-use crate::runtime::{RuntimeAdapter, RuntimeCreateSpec, RuntimeExecSpec, RuntimeKind};
-use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-pub const RUNTIME_NAME: &str = "opencode";
 pub const DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
 
 const EMBEDDED_DEFAULT_IMAGE_FILES: &[EmbeddedDefaultImageFile] = &[
@@ -60,9 +56,6 @@ const EMBEDDED_DEFAULT_IMAGE_FILES: &[EmbeddedDefaultImageFile] = &[
     },
 ];
 
-#[derive(Debug, Clone, Default)]
-pub struct OpencodeRuntime;
-
 #[derive(Debug)]
 struct EmbeddedDefaultImageFile {
     relative_path: &'static str,
@@ -82,34 +75,6 @@ impl DefaultImageBuildContext {
 
     pub fn containerfile(&self) -> Utf8PathBuf {
         self.root.join("Containerfile")
-    }
-}
-
-impl OpencodeRuntime {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn create_spec(
-        &self,
-        workspace: &WorkspaceIdentity,
-        preflight: &PreflightReport,
-    ) -> RuntimeCreateSpec {
-        RuntimeAdapter::new(RuntimeKind::Opencode)
-            .create_spec(workspace, &preflight.host_nix_mounts)
-    }
-
-    pub fn foreground_command(&self) -> RuntimeExecSpec {
-        RuntimeExecSpec {
-            argv: RuntimeAdapter::new(RuntimeKind::Opencode)
-                .server_command()
-                .argv,
-            detached: false,
-        }
-    }
-
-    pub fn default_image_context(&self) -> Result<DefaultImageBuildContext> {
-        materialize_default_image_context()
     }
 }
 

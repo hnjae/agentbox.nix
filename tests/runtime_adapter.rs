@@ -11,8 +11,8 @@ use agentbox::preflight::{
     PreflightSnapshot, check_host_prerequisites_with_snapshot,
 };
 use agentbox::runtime::opencode::{
-    DEFAULT_IMAGE, OpencodeRuntime, RUNTIME_NAME, embedded_default_image_paths,
-    materialize_default_image_context, required_host_mount_destinations,
+    DEFAULT_IMAGE, embedded_default_image_paths, materialize_default_image_context,
+    required_host_mount_destinations,
 };
 use agentbox::runtime::{AttachEndpoint, RuntimeKind, RuntimeMountKind};
 use agentbox::session::{
@@ -51,8 +51,8 @@ fn opencode_create_spec_matches_mvp_contract() {
     )
     .unwrap();
 
-    let runtime = OpencodeRuntime::new();
-    let spec = runtime.create_spec(&workspace, &preflight);
+    let runtime = RuntimeKind::Opencode.adapter();
+    let spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
 
     assert_eq!(spec.image, DEFAULT_IMAGE);
     assert_eq!(
@@ -72,8 +72,8 @@ fn opencode_create_spec_matches_mvp_contract() {
         Some(&workspace.hash12)
     );
     assert_eq!(
-        spec.labels.get(LABEL_RUNTIME),
-        Some(&RUNTIME_NAME.to_string())
+        spec.labels.get(LABEL_RUNTIME).map(String::as_str),
+        Some(RuntimeKind::Opencode.as_str())
     );
     assert_eq!(
         spec.labels.get(LABEL_IMAGE),
@@ -143,7 +143,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     );
 
     assert_eq!(
-        runtime.foreground_command().argv,
+        runtime.server_command().argv,
         vec![
             "opencode".to_string(),
             "serve".to_string(),
@@ -151,7 +151,6 @@ fn opencode_create_spec_matches_mvp_contract() {
             "4096".to_string()
         ]
     );
-    assert!(!runtime.foreground_command().detached);
 }
 
 #[test]
