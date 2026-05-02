@@ -6,24 +6,21 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use agentbox::lock::lock_path_in_state_dir;
-use agentbox::runtime::default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE;
-use agentbox::session::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
-};
 use agentbox::workspace::resolve_workspace_identity;
 use assert_cmd::Command as AssertCommand;
 use assert_cmd::cargo::cargo_bin;
-use serde_json::{Value, json};
 
 #[path = "support/mod.rs"]
 mod support;
+
+use support::{
+    managed_inspect_fixture, managed_ps_entry, opencode_managed_labels as managed_labels,
+    ps_fixture,
+};
 
 #[test]
 fn attach_to_a_running_session_attaches_to_container_stdio() {
@@ -44,6 +41,7 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
         &managed_inspect_fixture(
             &workspace.container_name,
             workspace.canonical_git_root.as_str(),
+            true,
             true,
             managed_labels(
                 workspace.canonical_git_root.as_str(),
@@ -97,6 +95,7 @@ fn attach_to_a_stopped_session_reports_the_running_only_model() {
             &workspace.container_name,
             workspace.canonical_git_root.as_str(),
             false,
+            true,
             managed_labels(
                 workspace.canonical_git_root.as_str(),
                 &workspace.hash12,
@@ -237,114 +236,6 @@ fn operation_names(lines: &[String]) -> Vec<&str> {
         .iter()
         .map(|line| line.split_whitespace().next().unwrap())
         .collect()
-}
-
-fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
-    json!({
-        "Id": id,
-        "Image": DEFAULT_IMAGE,
-        "Command": ["opencode"],
-        "Created": 1713681300,
-        "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
-        "Names": [name],
-        "Ports": [],
-        "Status": "Up 2 minutes",
-        "State": "running",
-        "Labels": {
-            LABEL_MANAGED: LABEL_MANAGED_VALUE,
-            LABEL_GIT_ROOT_HASH: git_root_hash,
-        },
-        "Mounts": [],
-        "Networks": ["podman"],
-        "Namespaces": null,
-    })
-}
-
-fn ps_fixture(entries: Vec<Value>) -> String {
-    serde_json::to_string(&entries).unwrap()
-}
-
-fn managed_labels(
-    git_root: &str,
-    git_root_hash: &str,
-    logical_name: &str,
-) -> BTreeMap<String, String> {
-    BTreeMap::from([
-        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
-        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
-        (LABEL_GIT_ROOT.to_string(), git_root.to_string()),
-        (LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string()),
-        (LABEL_RUNTIME.to_string(), "opencode".to_string()),
-        (LABEL_IMAGE.to_string(), DEFAULT_IMAGE.to_string()),
-        (LABEL_LOGICAL_NAME.to_string(), logical_name.to_string()),
-        (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
-        (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
-        (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
-    ])
-}
-
-fn managed_inspect_fixture(
-    container_name: &str,
-    git_root: &str,
-    running: bool,
-    labels: BTreeMap<String, String>,
-) -> String {
-    serde_json::to_string(&vec![json!({
-        "Id": container_name,
-        "Created": "2026-04-21T10:15:00.000000000Z",
-        "Path": "/usr/bin/opencode",
-        "Args": [],
-        "State": {
-            "Status": if running { "running" } else { "exited" },
-            "Running": running,
-            "ExitCode": if running { 0 } else { 137 },
-            "Pid": if running { 4321 } else { 0 },
-            "StartedAt": "2026-04-21T10:15:01.000000000Z",
-            "FinishedAt": null,
-            "Health": null,
-        },
-        "ImageName": DEFAULT_IMAGE,
-        "Config": {
-            "User": "user",
-            "Env": [],
-            "Cmd": ["opencode"],
-            "WorkingDir": git_root,
-            "Labels": labels,
-            "Entrypoint": ["/entrypoint"],
-            "StopSignal": "SIGTERM",
-        },
-        "HostConfig": {
-            "AutoRemove": false,
-            "NetworkMode": "bridge",
-            "Privileged": false,
-        },
-        "Mounts": [
-            {
-                "Type": "bind",
-                "Source": git_root,
-                "Destination": git_root,
-                "RW": true,
-            },
-            {
-                "Type": "volume",
-                "Source": container_name,
-                "Destination": REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
-                "RW": true,
-            }
-        ],
-        "NetworkSettings": {
-            "Networks": {},
-            "Ports": {
-                "4096/tcp": [
-                    {
-                        "HostIp": "127.0.0.1",
-                        "HostPort": "49152"
-                    }
-                ]
-            },
-        },
-    })])
-    .unwrap()
 }
 
 fn write_executable(path: PathBuf, content: &str) {

@@ -14,4 +14,8 @@ mod podman_fixtures;
 
 pub use fake_bins::FakeBinDir;
 pub use git_repo::{temp_git_repo, tempdir_outside_git};
-pub use podman_fixtures::{podman_inspect_fixture, podman_ps_fixture};
+pub use podman_fixtures::{
+    cached_managed_inspect_fixture, managed_inspect_fixture, managed_labels,
+    managed_labels_for_image, managed_ps_entry, opencode_managed_labels, podman_inspect_fixture,
+    podman_ps_fixture, ps_fixture, running_managed_inspect_fixture,
+};
