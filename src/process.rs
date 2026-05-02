@@ -92,14 +92,10 @@ pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {
     let stderr = String::from_utf8(output.stderr)?;
 
     if !output.status.success() {
-        let detail = stderr
-            .trim()
-            .to_string()
-            .pipe_if_empty(|| stdout.trim().to_string())
-            .pipe_if_empty(|| "no output".to_string());
         return Err(Error::msg(format!(
             "`{description}` exited with {}: {detail}",
-            format_status(output.status)
+            format_status(output.status),
+            detail = output_detail(&stdout, &stderr),
         )));
     }
 
@@ -141,19 +137,17 @@ fn shell_quote(value: &OsStr) -> String {
     }
 }
 
-fn format_status(status: ExitStatus) -> String {
+pub fn format_status(status: ExitStatus) -> String {
     match status.code() {
         Some(code) => format!("exit status {code}"),
         None => "signal".to_string(),
     }
 }
 
-trait StringPipe: Sized {
-    fn pipe_if_empty(self, fallback: impl FnOnce() -> Self) -> Self;
-}
-
-impl StringPipe for String {
-    fn pipe_if_empty(self, fallback: impl FnOnce() -> Self) -> Self {
-        if self.is_empty() { fallback() } else { self }
-    }
+fn output_detail(stdout: &str, stderr: &str) -> String {
+    [stderr.trim(), stdout.trim()]
+        .into_iter()
+        .find(|detail| !detail.is_empty())
+        .unwrap_or("no output")
+        .to_string()
 }

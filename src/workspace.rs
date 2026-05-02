@@ -139,7 +139,7 @@ fn git_root_for(directory: &Utf8Path) -> Result<Utf8PathBuf> {
     }
 
     let root = String::from_utf8(output.stdout)?.trim().to_owned();
-    Utf8PathBuf::from(root).pipe(Ok)
+    Ok(Utf8PathBuf::from(root))
 }
 
 fn git_root_from_marker(directory: &Utf8Path) -> Option<Utf8PathBuf> {
@@ -168,11 +168,3 @@ fn escape_root(path: &str) -> String {
         })
         .collect()
 }
-
-trait Pipe: Sized {
-    fn pipe<T>(self, f: impl FnOnce(Self) -> T) -> T {
-        f(self)
-    }
-}
-
-impl<T> Pipe for T {}

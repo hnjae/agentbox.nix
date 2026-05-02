@@ -12,7 +12,7 @@ use crate::cli::DirectoryArgs;
 use crate::direnv::wrap_exec_if_envrc_applies;
 use crate::lock::lock_workspace;
 use crate::podman::Podman;
-use crate::process::{ProcessRunner, run_command_status};
+use crate::process::{ProcessRunner, format_status, run_command_status};
 use crate::runtime::RuntimeKind;
 use crate::session::{
     SessionFailure, SessionRecord, SessionStatus, discover_sessions_for_git_root,
@@ -176,10 +176,7 @@ fn run_host_client(
         Err(Error::msg(format!(
             "`{}` exited with {}",
             argv.join(" "),
-            status
-                .code()
-                .map(|code| format!("exit status {code}"))
-                .unwrap_or_else(|| "signal".to_string())
+            format_status(status)
         )))
     }
 }

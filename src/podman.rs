@@ -12,7 +12,7 @@ use camino::Utf8Path;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::process::{ProcessRunner, run_command};
+use crate::process::{ProcessRunner, format_status, run_command};
 use crate::runtime::{RuntimeCreateSpec, RuntimeMount, RuntimeMountKind};
 use crate::{Error, Result};
 
@@ -247,11 +247,9 @@ impl Podman {
         match status.code() {
             Some(0) => Ok(true),
             Some(1) => Ok(false),
-            Some(code) => Err(Error::msg(format!(
-                "`podman image exists {image}` exited with exit status {code}"
-            ))),
-            None => Err(Error::msg(format!(
-                "`podman image exists {image}` exited with signal"
+            _ => Err(Error::msg(format!(
+                "`podman image exists {image}` exited with {}",
+                format_status(status),
             ))),
         }
     }
@@ -361,17 +359,6 @@ where
         Some(StringOrVec::Vec(values)) => Some(values),
         None => None,
     })
-}
-
-#[allow(dead_code)]
-fn deserialize_option_vec<'de, D, T>(
-    deserializer: D,
-) -> std::result::Result<Option<Vec<T>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Option::<Vec<T>>::deserialize(deserializer)
 }
 
 fn deserialize_option_string_or_number<'de, D>(
