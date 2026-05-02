@@ -13,5 +13,5 @@ mod git_repo;
 mod podman_fixtures;
 
 pub use fake_bins::FakeBinDir;
-pub use git_repo::temp_git_repo;
+pub use git_repo::{temp_git_repo, tempdir_outside_git};
 pub use podman_fixtures::{podman_inspect_fixture, podman_ps_fixture};

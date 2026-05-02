@@ -88,6 +88,59 @@ pub struct SessionGroup {
     pub sessions: Vec<SessionRecord>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SessionLabels {
+    managed: Option<String>,
+    schema: Option<String>,
+    canonical_git_root: Option<Utf8PathBuf>,
+    git_root_hash: Option<String>,
+    runtime: Option<String>,
+    image: Option<String>,
+    logical_name: Option<String>,
+    attach_scheme: Option<String>,
+    container_port: Option<String>,
+    container_listen_ip: Option<String>,
+}
+
+impl SessionLabels {
+    fn from_map(labels: &BTreeMap<String, String>) -> Self {
+        Self {
+            managed: required_label_value(labels, LABEL_MANAGED),
+            schema: required_label_value(labels, LABEL_SCHEMA),
+            canonical_git_root: required_label_value(labels, LABEL_GIT_ROOT).map(Utf8PathBuf::from),
+            git_root_hash: required_label_value(labels, LABEL_GIT_ROOT_HASH),
+            runtime: required_label_value(labels, LABEL_RUNTIME),
+            image: required_label_value(labels, LABEL_IMAGE),
+            logical_name: required_label_value(labels, LABEL_LOGICAL_NAME),
+            attach_scheme: required_label_value(labels, LABEL_ATTACH_SCHEME),
+            container_port: required_label_value(labels, LABEL_CONTAINER_PORT),
+            container_listen_ip: required_label_value(labels, LABEL_CONTAINER_LISTEN_IP),
+        }
+    }
+
+    fn has_required_values(&self) -> bool {
+        self.managed.as_deref() == Some(LABEL_MANAGED_VALUE)
+            && self.schema.as_deref() == Some(LABEL_SCHEMA_VALUE)
+            && self.canonical_git_root.is_some()
+            && self.git_root_hash.is_some()
+            && self.runtime.is_some()
+            && self.image.is_some()
+            && self.logical_name.is_some()
+            && self.attach_scheme.is_some()
+            && self.container_port.is_some()
+            && self.container_listen_ip.is_some()
+    }
+
+    fn hash_matches_root(&self) -> bool {
+        self.canonical_git_root
+            .as_deref()
+            .zip(self.git_root_hash.as_deref())
+            .is_some_and(|(git_root, stored_hash)| {
+                stored_hash == hash12(git_root.as_str().as_bytes())
+            })
+    }
+}
+
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
     discover_managed_sessions_from_ps_with_git(
@@ -222,35 +275,17 @@ fn build_session_record(
         .cloned()
         .unwrap_or_else(|| container.id.clone());
 
-    let managed = required_label_value(labels, LABEL_MANAGED);
-    let schema = required_label_value(labels, LABEL_SCHEMA);
-    let canonical_git_root = required_label_value(labels, LABEL_GIT_ROOT).map(Utf8PathBuf::from);
-    let git_root_hash = required_label_value(labels, LABEL_GIT_ROOT_HASH);
-    let runtime = required_label_value(labels, LABEL_RUNTIME);
-    let image = required_label_value(labels, LABEL_IMAGE);
-    let logical_name = required_label_value(labels, LABEL_LOGICAL_NAME);
-    let attach_scheme = required_label_value(labels, LABEL_ATTACH_SCHEME);
-    let container_port = required_label_value(labels, LABEL_CONTAINER_PORT);
-    let container_listen_ip = required_label_value(labels, LABEL_CONTAINER_LISTEN_IP);
+    let session_labels = SessionLabels::from_map(labels);
     let attach_endpoint = derive_attach_endpoint(
-        runtime.as_deref(),
-        attach_scheme.as_deref(),
-        container_port.as_deref(),
+        session_labels.runtime.as_deref(),
+        session_labels.attach_scheme.as_deref(),
+        session_labels.container_port.as_deref(),
         &inspect,
     )
     .ok();
 
     let (status, failure) = derive_status(
-        &managed,
-        &schema,
-        canonical_git_root.as_deref(),
-        git_root_hash.as_deref(),
-        runtime.as_deref(),
-        image.as_deref(),
-        logical_name.as_deref(),
-        attach_scheme.as_deref(),
-        container_port.as_deref(),
-        container_listen_ip.as_deref(),
+        &session_labels,
         attach_endpoint.as_ref(),
         inspect.state.running,
         &inspect.mounts,
@@ -260,69 +295,48 @@ fn build_session_record(
     SessionRecord {
         container_id: container.id,
         container_name,
-        managed,
-        schema,
-        canonical_git_root,
-        git_root_hash,
-        runtime,
-        image,
-        logical_name,
-        attach_scheme,
-        container_port,
-        container_listen_ip,
+        managed: session_labels.managed,
+        schema: session_labels.schema,
+        canonical_git_root: session_labels.canonical_git_root,
+        git_root_hash: session_labels.git_root_hash,
+        runtime: session_labels.runtime,
+        image: session_labels.image,
+        logical_name: session_labels.logical_name,
+        attach_scheme: session_labels.attach_scheme,
+        container_port: session_labels.container_port,
+        container_listen_ip: session_labels.container_listen_ip,
         attach_endpoint,
         failure,
         status,
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn derive_status(
-    managed: &Option<String>,
-    schema: &Option<String>,
-    canonical_git_root: Option<&Utf8Path>,
-    git_root_hash: Option<&str>,
-    runtime: Option<&str>,
-    image: Option<&str>,
-    logical_name: Option<&str>,
-    attach_scheme: Option<&str>,
-    container_port: Option<&str>,
-    container_listen_ip: Option<&str>,
+    session_labels: &SessionLabels,
     attach_endpoint: Option<&AttachEndpoint>,
     running: bool,
     mounts: &[PodmanContainerMount],
     git: &Git,
 ) -> (SessionStatus, Option<SessionFailure>) {
-    let labels_are_valid = managed.as_deref() == Some(LABEL_MANAGED_VALUE)
-        && schema.as_deref() == Some(LABEL_SCHEMA_VALUE)
-        && canonical_git_root.is_some()
-        && git_root_hash.is_some()
-        && runtime.is_some()
-        && image.is_some()
-        && logical_name.is_some()
-        && attach_scheme.is_some()
-        && container_port.is_some()
-        && container_listen_ip.is_some();
-
-    let hash_matches_root = canonical_git_root
-        .zip(git_root_hash)
-        .is_some_and(|(git_root, stored_hash)| stored_hash == hash12(git_root.as_str().as_bytes()));
-
-    if !labels_are_valid {
+    if !session_labels.has_required_values() {
         return (
             SessionStatus::Failed,
             Some(SessionFailure::MissingRequiredLabels),
         );
     }
 
-    if !hash_matches_root {
+    if !session_labels.hash_matches_root() {
         return (
             SessionStatus::Failed,
             Some(SessionFailure::DriftedGitRootHash),
         );
     }
 
-    let runtime = match runtime.and_then(|runtime| runtime.parse::<RuntimeKind>().ok()) {
+    let runtime = match session_labels
+        .runtime
+        .as_deref()
+        .and_then(|runtime| runtime.parse::<RuntimeKind>().ok())
+    {
         Some(runtime) => runtime,
         None => {
             return (
@@ -333,7 +347,11 @@ fn derive_status(
     };
 
     let adapter = runtime.adapter();
-    let _parsed_container_port = match container_port.and_then(|port| port.parse::<u16>().ok()) {
+    let _parsed_container_port = match session_labels
+        .container_port
+        .as_deref()
+        .and_then(|port| port.parse::<u16>().ok())
+    {
         Some(port) if port == adapter.container_port() => port,
         _ => {
             return (
@@ -343,8 +361,8 @@ fn derive_status(
         }
     };
 
-    if attach_scheme != Some(adapter.attach_scheme())
-        || container_listen_ip != Some(adapter.container_listen_ip())
+    if session_labels.attach_scheme.as_deref() != Some(adapter.attach_scheme())
+        || session_labels.container_listen_ip.as_deref() != Some(adapter.container_listen_ip())
     {
         return (
             SessionStatus::Failed,
@@ -366,7 +384,10 @@ fn derive_status(
         );
     }
 
-    let canonical_git_root = canonical_git_root.expect("validated above");
+    let canonical_git_root = session_labels
+        .canonical_git_root
+        .as_deref()
+        .expect("validated above");
     if !running {
         return (SessionStatus::Failed, Some(SessionFailure::NotRunning));
     }

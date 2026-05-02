@@ -34,7 +34,7 @@ fn required_error_cases_are_actionable() {
 }
 
 fn workspace_identity_errors_are_actionable() {
-    let non_git = tempfile::tempdir().unwrap();
+    let non_git = support::tempdir_outside_git();
     let error = resolve_workspace_identity(non_git.path()).unwrap_err();
     let message = error.to_string();
     assert!(
