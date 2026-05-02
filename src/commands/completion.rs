@@ -50,7 +50,7 @@ pub fn live_roots_output() -> Result<String> {
                 "{}\t{}\t{}\t{}",
                 root,
                 session.runtime.as_deref().unwrap_or("-"),
-                status_label(session.status),
+                session.status.as_str(),
                 session.container_name,
             ));
         }
@@ -95,15 +95,6 @@ end
 complete -c agentbox -f -a "(__agentbox_completion_roots)"
 "#
     .to_string()
-}
-
-fn status_label(status: crate::session::SessionStatus) -> &'static str {
-    match status {
-        crate::session::SessionStatus::Running => "running",
-        crate::session::SessionStatus::Orphaned => "orphaned",
-        crate::session::SessionStatus::Duplicate => "duplicate",
-        crate::session::SessionStatus::Failed => "failed",
-    }
 }
 
 fn installed_asset_command() -> clap::Command {

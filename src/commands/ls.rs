@@ -2,7 +2,7 @@ use comfy_table::{Cell, Table, presets::UTF8_FULL};
 
 use crate::error::Result;
 use crate::podman::Podman;
-use crate::session::{SessionRecord, SessionStatus, discover_managed_sessions};
+use crate::session::{SessionRecord, discover_managed_sessions};
 
 pub fn run() -> Result<()> {
     let podman = Podman::new();
@@ -38,19 +38,10 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
                     .map_or("-", |root| root.as_str()),
             ),
             Cell::new(session.runtime.as_deref().unwrap_or("-")),
-            Cell::new(status_label(session.status)),
+            Cell::new(session.status.as_str()),
             Cell::new(session.container_name),
         ]);
     }
 
     table.to_string()
-}
-
-fn status_label(status: SessionStatus) -> &'static str {
-    match status {
-        SessionStatus::Running => "running",
-        SessionStatus::Orphaned => "orphaned",
-        SessionStatus::Duplicate => "duplicate",
-        SessionStatus::Failed => "failed",
-    }
 }
