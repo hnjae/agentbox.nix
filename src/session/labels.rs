@@ -98,18 +98,19 @@ impl SessionLabels {
             .and_then(|runtime| runtime.parse::<RuntimeKind>().ok())
             .ok_or(SessionFailure::UnsupportedRuntimeLabel)?;
         let adapter = runtime.adapter();
+        let attach = adapter.attach_spec();
 
         let container_port = self
             .container_port
             .as_deref()
             .and_then(|port| port.parse::<u16>().ok())
             .ok_or(SessionFailure::MalformedEndpointLabels)?;
-        if container_port != adapter.container_port() {
+        if container_port != attach.container_port {
             return Err(SessionFailure::MalformedEndpointLabels);
         }
 
-        if self.attach_scheme.as_deref() != Some(adapter.attach_scheme())
-            || self.container_listen_ip.as_deref() != Some(adapter.container_listen_ip())
+        if self.attach_scheme.as_deref() != Some(attach.scheme)
+            || self.container_listen_ip.as_deref() != Some(attach.container_listen_ip)
         {
             return Err(SessionFailure::MalformedEndpointLabels);
         }

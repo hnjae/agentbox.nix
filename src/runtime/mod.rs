@@ -108,6 +108,26 @@ impl fmt::Display for AttachEndpoint {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeAttachSpec {
+    pub scheme: &'static str,
+    pub container_listen_ip: &'static str,
+    pub container_port: u16,
+}
+
+impl RuntimeAttachSpec {
+    pub fn container_listen_endpoint(self) -> String {
+        format!(
+            "{}://{}:{}",
+            self.scheme, self.container_listen_ip, self.container_port
+        )
+    }
+
+    pub fn published_port(self, host_ip: &str) -> String {
+        format!("{host_ip}::{}", self.container_port)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 #[value(rename_all = "kebab-case")]
 pub enum RuntimeKind {
@@ -181,16 +201,20 @@ impl RuntimeAdapter {
         (profile.materialize_default_image_context)()
     }
 
+    pub fn attach_spec(self) -> RuntimeAttachSpec {
+        self.profile().attach
+    }
+
     pub fn attach_scheme(self) -> &'static str {
-        self.profile().attach_scheme
+        self.attach_spec().scheme
     }
 
     pub fn container_listen_ip(self) -> &'static str {
-        self.profile().container_listen_ip
+        self.attach_spec().container_listen_ip
     }
 
     pub fn container_port(self) -> u16 {
-        self.profile().container_port
+        self.attach_spec().container_port
     }
 
     pub fn server_command(self) -> RuntimeCommand {
@@ -209,13 +233,14 @@ impl RuntimeAdapter {
         host_nix_mounts: &[RuntimeMount],
     ) -> RuntimeCreateSpec {
         let image = self.default_image().to_string();
+        let attach = self.attach_spec();
         let labels = managed_session_labels(
             workspace,
             &image,
             self.name(),
-            self.attach_scheme(),
-            self.container_port(),
-            self.container_listen_ip(),
+            attach.scheme,
+            attach.container_port,
+            attach.container_listen_ip,
         );
 
         let mut mounts = vec![RuntimeMount::bind(
@@ -235,11 +260,7 @@ impl RuntimeAdapter {
             command: self.server_command().argv,
             default_env: BTreeMap::new(),
             network_enabled: true,
-            published_ports: vec![format!(
-                "{}::{}",
-                DEFAULT_HOST_ATTACH_IP,
-                self.container_port()
-            )],
+            published_ports: vec![attach.published_port(DEFAULT_HOST_ATTACH_IP)],
         }
     }
 

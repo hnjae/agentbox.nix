@@ -9,7 +9,7 @@
 use crate::Result;
 
 use super::{
-    AttachEndpoint, RuntimeCommand, RuntimeKind,
+    AttachEndpoint, RuntimeAttachSpec, RuntimeCommand, RuntimeKind,
     default_image::{self, DefaultImageBuildContext},
 };
 
@@ -21,9 +21,11 @@ const RUNTIME_PROFILES: &[RuntimeProfile] = &[
         name: "opencode",
         default_image: default_image::OPENCODE_DEFAULT_IMAGE,
         materialize_default_image_context: default_image::materialize_default_image_context,
-        attach_scheme: "http",
-        container_listen_ip: CONTAINER_LISTEN_IP,
-        container_port: 4096,
+        attach: RuntimeAttachSpec {
+            scheme: "http",
+            container_listen_ip: CONTAINER_LISTEN_IP,
+            container_port: 4096,
+        },
         server_command: opencode_server_command,
         host_client_command: opencode_host_client_command,
     },
@@ -32,9 +34,11 @@ const RUNTIME_PROFILES: &[RuntimeProfile] = &[
         name: "codex",
         default_image: default_image::CODEX_DEFAULT_IMAGE,
         materialize_default_image_context: default_image::materialize_default_image_context,
-        attach_scheme: "ws",
-        container_listen_ip: CONTAINER_LISTEN_IP,
-        container_port: 1455,
+        attach: RuntimeAttachSpec {
+            scheme: "ws",
+            container_listen_ip: CONTAINER_LISTEN_IP,
+            container_port: 1455,
+        },
         server_command: codex_server_command,
         host_client_command: codex_host_client_command,
     },
@@ -46,9 +50,7 @@ pub(super) struct RuntimeProfile {
     pub(super) name: &'static str,
     pub(super) default_image: &'static str,
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
-    pub(super) attach_scheme: &'static str,
-    pub(super) container_listen_ip: &'static str,
-    pub(super) container_port: u16,
+    pub(super) attach: RuntimeAttachSpec,
     pub(super) server_command: fn(&RuntimeProfile) -> RuntimeCommand,
     pub(super) host_client_command: fn(&RuntimeProfile, &AttachEndpoint) -> RuntimeCommand,
 }
@@ -95,7 +97,7 @@ fn opencode_server_command(profile: &RuntimeProfile) -> RuntimeCommand {
             "opencode".to_string(),
             "serve".to_string(),
             "--port".to_string(),
-            profile.container_port.to_string(),
+            profile.attach.container_port.to_string(),
         ],
     }
 }
@@ -107,10 +109,7 @@ fn codex_server_command(profile: &RuntimeProfile) -> RuntimeCommand {
             "--dangerously-bypass-approvals-and-sandbox".to_string(),
             "app-server".to_string(),
             "--listen".to_string(),
-            format!(
-                "{}://{}:{}",
-                profile.attach_scheme, profile.container_listen_ip, profile.container_port
-            ),
+            profile.attach.container_listen_endpoint(),
         ],
     }
 }

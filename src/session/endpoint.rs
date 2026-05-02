@@ -34,12 +34,13 @@ pub(super) fn derive_attach_endpoint(
         .ok_or_else(|| Error::msg("missing required label `io.agentbox.runtime`"))?
         .parse::<RuntimeKind>()?;
     let adapter = runtime.adapter();
+    let attach = adapter.attach_spec();
     let attach_scheme = attach_scheme
         .ok_or_else(|| Error::msg("missing required label `io.agentbox.attach_scheme`"))?;
-    if attach_scheme != adapter.attach_scheme() {
+    if attach_scheme != attach.scheme {
         return Err(Error::msg(format!(
             "managed session has attach scheme `{attach_scheme}` but runtime `{runtime}` requires `{}`",
-            adapter.attach_scheme(),
+            attach.scheme,
         )));
     }
 
@@ -52,10 +53,10 @@ pub(super) fn derive_attach_endpoint(
             ))
         })?;
 
-    if container_port != adapter.container_port() {
+    if container_port != attach.container_port {
         return Err(Error::msg(format!(
             "managed session publishes container port `{container_port}` but runtime `{runtime}` requires `{}`",
-            adapter.container_port(),
+            attach.container_port,
         )));
     }
 
