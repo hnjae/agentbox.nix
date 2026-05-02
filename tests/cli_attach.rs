@@ -18,8 +18,9 @@ use assert_cmd::cargo::cargo_bin;
 mod support;
 
 use support::{
-    managed_inspect_fixture, managed_ps_entry, opencode_managed_labels as managed_labels,
-    ps_fixture,
+    fake_git_script, managed_inspect_fixture, managed_ps_entry,
+    opencode_managed_labels as managed_labels, operation_names, path_with_prepend, ps_fixture,
+    read_log_lines, write_executable,
 };
 
 #[test]
@@ -180,7 +181,7 @@ fn install_harness(repo_root: &Path, include_direnv: bool) -> Harness {
     let original_path = std::env::var("PATH").unwrap();
 
     fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
-    write_executable(fake_bin.path().join("git"), &fake_git_script());
+    write_executable(fake_bin.path().join("git"), fake_git_script());
     write_executable(fake_bin.path().join("podman"), &fake_podman_script());
     write_executable(fake_bin.path().join("opencode"), &fake_opencode_script());
     if include_direnv {
@@ -199,7 +200,7 @@ fn install_harness(repo_root: &Path, include_direnv: bool) -> Harness {
 
 impl Harness {
     fn path_env(&self) -> String {
-        format!("{}:{}", self.fake_bin.path().display(), self.original_path)
+        path_with_prepend(self.fake_bin.path(), &self.original_path)
     }
 
     fn path_env_with_direnv(&self) -> String {
@@ -219,35 +220,11 @@ impl Harness {
     }
 
     fn read_log(&self) -> Vec<String> {
-        match fs::read_to_string(&self.log_path) {
-            Ok(contents) => contents.lines().map(|line| line.to_string()).collect(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(error) => panic!("failed to read podman log: {error}"),
-        }
+        read_log_lines(&self.log_path)
     }
 
     fn lock_probe(&self) -> &Path {
         &self.lock_probe_path
-    }
-}
-
-fn operation_names(lines: &[String]) -> Vec<&str> {
-    lines
-        .iter()
-        .map(|line| line.split_whitespace().next().unwrap())
-        .collect()
-}
-
-fn write_executable(path: PathBuf, content: &str) {
-    fs::write(&path, content).unwrap();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
     }
 }
 
@@ -319,28 +296,4 @@ lock_state() {
 printf 'opencode lock=%s args=%s cwd=%s\n' "$(lock_state)" "$*" "$(pwd)" >> "$log_path"
 "#
     .to_string()
-}
-
-fn fake_git_script() -> String {
-    r#"#!/bin/sh
-set -eu
-
-if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--show-toplevel" ]; then
-    dir=$2
-    while [ "$dir" != "/" ]; do
-        if [ -d "$dir/.git" ]; then
-            printf '%s\n' "$dir"
-            exit 0
-        fi
-        dir=$(dirname "$dir")
-    done
-
-    printf 'fatal: not a git repository (or any of the parent directories): .git\n' >&2
-    exit 128
-fi
-
-printf 'unsupported git invocation: %s\n' "$*" >&2
-exit 1
-"#
-    .to_owned()
 }

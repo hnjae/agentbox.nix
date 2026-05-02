@@ -7,7 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use agentbox::preflight::{PreflightSnapshot, check_host_prerequisites_with_snapshot};
 use agentbox::session::{LABEL_RUNTIME, REQUIRED_NIX_CACHE_MOUNT_DESTINATION};
@@ -18,7 +18,10 @@ use camino::Utf8Path;
 #[path = "support/mod.rs"]
 mod support;
 
-use support::{managed_inspect_fixture, managed_labels, managed_ps_entry, ps_fixture};
+use support::{
+    managed_inspect_fixture, managed_labels, managed_ps_entry, path_with_prepend, ps_fixture,
+    write_executable,
+};
 
 #[test]
 fn required_error_cases_are_actionable() {
@@ -390,7 +393,7 @@ impl Harness {
     }
 
     fn path_env(&self) -> String {
-        format!("{}:{}", self.fake_bin.path().display(), self.original_path)
+        path_with_prepend(self.fake_bin.path(), &self.original_path)
     }
 
     fn write_ps(&self, json: &str) {
@@ -434,19 +437,6 @@ impl Harness {
             .arg("attach")
             .arg(target);
         command.assert()
-    }
-}
-
-fn write_executable(path: PathBuf, content: &str) {
-    fs::write(&path, content).unwrap();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
     }
 }
 

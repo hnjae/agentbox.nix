@@ -17,8 +17,9 @@ use assert_cmd::Command as AssertCommand;
 mod support;
 
 use support::{
-    managed_labels, managed_ps_entry, ps_fixture,
-    running_managed_inspect_fixture as managed_inspect_fixture,
+    fake_git_script, managed_labels, managed_ps_entry, operation_names, path_with_prepend,
+    ps_fixture, read_log_lines, running_managed_inspect_fixture as managed_inspect_fixture,
+    write_executable,
 };
 
 #[test]
@@ -374,7 +375,7 @@ fn install_harness() -> Harness {
 
     fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
     fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
-    write_executable(fake_bin.path().join("git"), &fake_git_script());
+    write_executable(fake_bin.path().join("git"), fake_git_script());
     write_executable(fake_bin.path().join("podman"), &fake_podman_script());
 
     Harness {
@@ -388,7 +389,7 @@ fn install_harness() -> Harness {
 
 impl Harness {
     fn path_env(&self) -> String {
-        format!("{}:{}", self.fake_bin.path().display(), self.original_path)
+        path_with_prepend(self.fake_bin.path(), &self.original_path)
     }
 
     fn write_ps(&self, json: &str) {
@@ -413,11 +414,7 @@ impl Harness {
     }
 
     fn read_log(&self) -> Vec<String> {
-        match fs::read_to_string(&self.log_path) {
-            Ok(contents) => contents.lines().map(|line| line.to_string()).collect(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(error) => panic!("failed to read podman log: {error}"),
-        }
+        read_log_lines(&self.log_path)
     }
 }
 
@@ -436,26 +433,6 @@ fn run_command(
         .args(extra_args)
         .arg(target);
     command.assert()
-}
-
-fn operation_names(lines: &[String]) -> Vec<&str> {
-    lines
-        .iter()
-        .map(|line| line.split_whitespace().next().unwrap())
-        .collect()
-}
-
-fn write_executable(path: PathBuf, content: &str) {
-    fs::write(&path, content).unwrap();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
-    }
 }
 
 fn fake_podman_script() -> String {
@@ -513,30 +490,6 @@ case "$cmd" in
     exit 97
     ;;
 esac
-"#
-    .to_string()
-}
-
-fn fake_git_script() -> String {
-    r#"#!/bin/sh
-set -eu
-
-if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--show-toplevel" ]; then
-    dir=$2
-    while [ "$dir" != "/" ]; do
-        if [ -d "$dir/.git" ]; then
-            printf '%s\n' "$dir"
-            exit 0
-        fi
-        dir=$(dirname "$dir")
-    done
-
-    printf 'fatal: not a git repository (or any of the parent directories): .git\n' >&2
-    exit 128
-fi
-
-printf 'unsupported git invocation: %s\n' "$*" >&2
-exit 1
 "#
     .to_string()
 }

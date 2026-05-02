@@ -57,19 +57,65 @@ impl FakeBinDir {
     ) -> PathBuf {
         let path = self.dir.path().join(name);
         let script = render_program(name, expected_args, stdout, stderr, exit_code);
-        fs::write(&path, script).unwrap();
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            let mut permissions = fs::metadata(&path).unwrap().permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&path, permissions).unwrap();
-        }
-
+        write_executable(&path, &script);
         path
     }
+}
+
+pub fn write_executable(path: impl AsRef<Path>, content: &str) {
+    let path = path.as_ref();
+    fs::write(path, content).unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+}
+
+pub fn path_with_prepend(prepend: &Path, original_path: &str) -> String {
+    format!("{}:{original_path}", prepend.display())
+}
+
+pub fn read_log_lines(path: &Path) -> Vec<String> {
+    match fs::read_to_string(path) {
+        Ok(contents) => contents.lines().map(|line| line.to_string()).collect(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => panic!("failed to read log `{}`: {error}", path.display()),
+    }
+}
+
+pub fn operation_names(lines: &[String]) -> Vec<&str> {
+    lines
+        .iter()
+        .map(|line| line.split_whitespace().next().unwrap())
+        .collect()
+}
+
+pub fn fake_git_script() -> &'static str {
+    r#"#!/bin/sh
+set -eu
+
+if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--show-toplevel" ]; then
+    dir=$2
+    while [ "$dir" != "/" ]; do
+        if [ -d "$dir/.git" ]; then
+            printf '%s\n' "$dir"
+            exit 0
+        fi
+        dir=$(dirname "$dir")
+    done
+
+    printf 'fatal: not a git repository (or any of the parent directories): .git\n' >&2
+    exit 128
+fi
+
+printf 'unsupported git invocation: %s\n' "$*" >&2
+exit 1
+"#
 }
 
 fn render_program(

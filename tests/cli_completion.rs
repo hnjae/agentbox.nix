@@ -7,7 +7,6 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
-use std::path::PathBuf;
 
 use assert_cmd::Command as AssertCommand;
 
@@ -19,6 +18,8 @@ use agentbox::session::{
 
 #[path = "support/mod.rs"]
 mod support;
+
+use support::{path_with_prepend, write_executable};
 
 #[test]
 fn helper_returns_live_roots_with_runtime_and_status_metadata() {
@@ -226,18 +227,7 @@ struct Harness {
 
 impl Harness {
     fn path_env(&self) -> String {
-        format!("{}:{}", self.fake_bin.path().display(), self.original_path)
-    }
-}
-
-fn write_executable(path: PathBuf, contents: &str) {
-    fs::write(&path, contents).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
+        path_with_prepend(self.fake_bin.path(), &self.original_path)
     }
 }
 

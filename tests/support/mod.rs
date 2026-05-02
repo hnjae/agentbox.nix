@@ -12,7 +12,10 @@ mod fake_bins;
 mod git_repo;
 mod podman_fixtures;
 
-pub use fake_bins::FakeBinDir;
+pub use fake_bins::{
+    FakeBinDir, fake_git_script, operation_names, path_with_prepend, read_log_lines,
+    write_executable,
+};
 pub use git_repo::{temp_git_repo, tempdir_outside_git};
 pub use podman_fixtures::{
     cached_managed_inspect_fixture, managed_inspect_fixture, managed_labels,

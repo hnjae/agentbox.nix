@@ -17,8 +17,8 @@ use assert_cmd::Command as AssertCommand;
 mod support;
 
 use support::{
-    cached_managed_inspect_fixture as managed_inspect_fixture, managed_ps_entry,
-    opencode_managed_labels as managed_labels, ps_fixture,
+    cached_managed_inspect_fixture as managed_inspect_fixture, fake_git_script, managed_ps_entry,
+    opencode_managed_labels as managed_labels, path_with_prepend, ps_fixture, write_executable,
 };
 
 #[test]
@@ -172,7 +172,7 @@ impl Harness {
 
         fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
-        write_executable(fake_bin.path().join("git"), &fake_git_script());
+        write_executable(fake_bin.path().join("git"), fake_git_script());
         write_executable(fake_bin.path().join("podman"), &fake_podman_script());
         write_executable(fake_bin.path().join("opencode"), "#!/bin/sh\nexit 0\n");
 
@@ -185,7 +185,7 @@ impl Harness {
     }
 
     fn path_env(&self) -> String {
-        format!("{}:{}", self.fake_bin.path().display(), self.original_path)
+        path_with_prepend(self.fake_bin.path(), &self.original_path)
     }
 
     fn write_ps(&self, json: &str) {
@@ -275,19 +275,6 @@ fn collect_files(root: &Path, current: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-fn write_executable(path: PathBuf, content: &str) {
-    fs::write(&path, content).unwrap();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
-    }
-}
-
 fn fake_podman_script() -> String {
     r#"#!/bin/sh
 set -eu
@@ -338,30 +325,6 @@ case "$1" in
     exit 97
     ;;
 esac
-"#
-    .to_string()
-}
-
-fn fake_git_script() -> String {
-    r#"#!/bin/sh
-set -eu
-
-if [ "$1" = "-C" ] && [ "$3" = "rev-parse" ] && [ "$4" = "--show-toplevel" ]; then
-    dir=$2
-    while [ "$dir" != "/" ]; do
-        if [ -d "$dir/.git" ]; then
-            printf '%s\n' "$dir"
-            exit 0
-        fi
-        dir=$(dirname "$dir")
-    done
-
-    printf 'fatal: not a git repository (or any of the parent directories): .git\n' >&2
-    exit 128
-fi
-
-printf 'unsupported git invocation: %s\n' "$*" >&2
-exit 1
 "#
     .to_string()
 }
