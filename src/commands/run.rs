@@ -28,6 +28,8 @@ use crate::session::{
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
+use super::session_selection::{SingleSession, duplicate_sessions_error, select_single_session};
+
 pub fn run(args: RunArgs) -> Result<()> {
     let workspace = resolve_workspace_identity(&args.directory)?;
     let runtime = args.runtime.adapter();
@@ -41,12 +43,12 @@ pub fn run(args: RunArgs) -> Result<()> {
 
     let podman = Podman::new();
     let sessions = discover_sessions_for_git_root(&podman, workspace.canonical_git_root.as_ref())?;
-    match sessions.as_slice() {
-        [] => {}
-        [session] => {
+    match select_single_session(&sessions) {
+        SingleSession::Missing => {}
+        SingleSession::Found(session) => {
             return Err(existing_session_error(&podman, &workspace, session));
         }
-        _ => {
+        SingleSession::Duplicate => {
             return Err(duplicate_sessions_error(&workspace));
         }
     }
@@ -223,10 +225,6 @@ fn classify_named_container_conflict(
         "container name `{}` is already in use by a different container; remove or rename that container before retrying `{}`",
         workspace.container_name, workspace.canonical_git_root,
     )))
-}
-
-fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
-    Error::duplicate_managed_sessions(workspace.canonical_git_root.as_ref())
 }
 
 fn running_existing_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {

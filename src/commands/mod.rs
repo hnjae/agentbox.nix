@@ -13,6 +13,7 @@ pub mod attach;
 pub mod completion;
 pub mod ls;
 pub mod run;
+mod session_selection;
 pub mod stop;
 
 pub fn dispatch(command: Command) -> Result<()> {

@@ -21,6 +21,10 @@ use crate::session::{
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
+use super::session_selection::{
+    SingleSession, duplicate_sessions_error, run_command_hint, select_single_session,
+};
+
 pub fn run(args: DirectoryArgs) -> Result<()> {
     let workspace = resolve_workspace_identity(&args.directory)?;
     let mut workspace_lock = lock_workspace(&workspace)?;
@@ -28,10 +32,10 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
 
     let podman = Podman::new();
     let sessions = discover_sessions_for_git_root(&podman, workspace.canonical_git_root.as_ref())?;
-    let session = match sessions.as_slice() {
-        [] => return Err(no_session_error(&workspace)),
-        [session] => validate_attachable_session(&workspace, session)?,
-        _ => return Err(duplicate_sessions_error(&workspace)),
+    let session = match select_single_session(&sessions) {
+        SingleSession::Missing => return Err(no_session_error(&workspace)),
+        SingleSession::Found(session) => validate_attachable_session(&workspace, session)?,
+        SingleSession::Duplicate => return Err(duplicate_sessions_error(&workspace)),
     };
 
     let process_runner = ProcessRunner::new();
@@ -104,10 +108,6 @@ fn no_session_error(workspace: &WorkspaceIdentity) -> Error {
     ))
 }
 
-fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
-    Error::duplicate_managed_sessions(workspace.canonical_git_root.as_ref())
-}
-
 fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
     Error::msg(format!(
         "managed session `{}` for `{}` is not running; rerun `{}` to start a new session or `agentbox stop {}` to remove the leftover container",
@@ -116,16 +116,6 @@ fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRec
         run_command_hint(session.runtime.as_deref(), workspace),
         workspace.requested_target,
     ))
-}
-
-fn run_command_hint(runtime: Option<&str>, workspace: &WorkspaceIdentity) -> String {
-    let runtime = runtime
-        .filter(|runtime| runtime.parse::<RuntimeKind>().is_ok())
-        .unwrap_or("<opencode|codex>");
-    format!(
-        "agentbox run --runtime {runtime} {}",
-        workspace.requested_target
-    )
 }
 
 fn unsupported_runtime_label_error(
