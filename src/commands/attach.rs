@@ -9,7 +9,6 @@
 use std::process::Stdio;
 
 use crate::cli::DirectoryArgs;
-use crate::direnv::wrap_exec_if_envrc_applies;
 use crate::lock::lock_workspace;
 use crate::podman::Podman;
 use crate::process::{ProcessRunner, format_status, run_command_status};
@@ -21,6 +20,7 @@ use crate::session::{
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
+use super::runtime_command::{RuntimeInvocation, host_client_runtime_command};
 use super::session_selection::{run_command_hint, select_single_session};
 
 pub fn run(args: DirectoryArgs) -> Result<()> {
@@ -47,12 +47,12 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
         .attach_endpoint
         .as_ref()
         .ok_or_else(|| missing_endpoint_error(&workspace, session))?;
-    let client = host_client_spec(runtime.host_client_command(endpoint).argv, &workspace);
+    let client = host_client_runtime_command(runtime, endpoint, &workspace);
     let retry_run_command = run_command_hint(Some(runtime.name()), &workspace);
 
     std::hint::black_box(&workspace_guard);
 
-    run_host_client(&process_runner, &client.argv, &workspace).map_err(|error| {
+    run_host_client(&process_runner, &client).map_err(|error| {
         Error::msg(format!(
             "failed to attach to managed session `{}` for `{}`: {error}. If the session already exited, rerun `{}` or remove the leftover container with `agentbox stop {}`.",
             session.container_name,
@@ -136,32 +136,15 @@ fn missing_endpoint_error(workspace: &WorkspaceIdentity, session: &SessionRecord
     )
 }
 
-struct HostClientSpec {
-    argv: Vec<String>,
-}
-
-fn host_client_spec(base_argv: Vec<String>, workspace: &WorkspaceIdentity) -> HostClientSpec {
-    let argv = wrap_exec_if_envrc_applies(
-        base_argv,
-        workspace.canonical_target.as_ref(),
-        workspace.canonical_git_root.as_ref(),
-    );
-
-    HostClientSpec { argv }
-}
-
-fn run_host_client(
-    process_runner: &ProcessRunner,
-    argv: &[String],
-    workspace: &WorkspaceIdentity,
-) -> Result<()> {
+fn run_host_client(process_runner: &ProcessRunner, client: &RuntimeInvocation) -> Result<()> {
+    let argv = &client.argv;
     let Some((program, args)) = argv.split_first() else {
         return Err(Error::msg("runtime host client command is empty"));
     };
 
     let mut command = process_runner.command(program)?;
     command.args(args);
-    command.current_dir(workspace.canonical_target.as_std_path());
+    command.current_dir(client.workdir.as_std_path());
     command.stdin(Stdio::inherit());
     command.stdout(Stdio::inherit());
     command.stderr(Stdio::inherit());

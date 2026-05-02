@@ -13,6 +13,7 @@ pub mod attach;
 pub mod completion;
 pub mod ls;
 pub mod run;
+mod runtime_command;
 mod session_selection;
 pub mod stop;
 

@@ -9,10 +9,7 @@
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
-use camino::Utf8Path;
-
 use crate::cli::RunArgs;
-use crate::direnv::wrap_exec_if_envrc_applies;
 use crate::lock::lock_workspace;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites;
@@ -25,6 +22,7 @@ use crate::session::{
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
+use super::runtime_command::server_runtime_command;
 use super::session_selection::select_single_session;
 
 pub fn run(args: RunArgs) -> Result<()> {
@@ -46,8 +44,8 @@ pub fn run(args: RunArgs) -> Result<()> {
 
     ensure_default_runtime_image(&podman, runtime, &workspace)?;
     let mut run_spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
-    let server_run = server_run_spec(
-        &runtime,
+    let server_run = server_runtime_command(
+        runtime,
         workspace.canonical_target.as_ref(),
         workspace.canonical_git_root.as_ref(),
     );
@@ -59,7 +57,7 @@ pub fn run(args: RunArgs) -> Result<()> {
         .run_detached(
             &workspace.container_name,
             &run_spec,
-            server_run.workdir.as_deref(),
+            Some(server_run.workdir.as_str()),
         )
         .and_then(|_| wait_for_server_endpoint(&podman, &workspace, runtime))
         .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))?;
@@ -95,23 +93,6 @@ fn ensure_default_runtime_image(
                 context.root(),
             ))
         })
-}
-
-pub(crate) struct RuntimeCommandSpec {
-    pub(crate) argv: Vec<String>,
-    pub(crate) workdir: Option<String>,
-}
-
-pub(crate) fn server_run_spec(
-    runtime: &RuntimeAdapter,
-    target: &Utf8Path,
-    git_root: &Utf8Path,
-) -> RuntimeCommandSpec {
-    let base = runtime.server_command();
-    let workdir = Some(target.to_string());
-    let argv = wrap_exec_if_envrc_applies(base.argv, target, git_root);
-
-    RuntimeCommandSpec { argv, workdir }
 }
 
 fn classify_run_error(
