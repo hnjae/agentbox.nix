@@ -9,9 +9,9 @@
 use std::process::Stdio;
 
 use crate::cli::DirectoryArgs;
+use crate::direnv::wrap_exec_if_envrc_applies;
 use crate::lock::lock_workspace;
 use crate::podman::Podman;
-use crate::preflight::direnv_applies_to_target;
 use crate::process::{ProcessRunner, run_command_status};
 use crate::runtime::RuntimeKind;
 use crate::session::{
@@ -154,16 +154,13 @@ struct HostClientSpec {
 }
 
 fn host_client_spec(base_argv: Vec<String>, workspace: &WorkspaceIdentity) -> HostClientSpec {
-    if direnv_applies_to_target(
+    let argv = wrap_exec_if_envrc_applies(
+        base_argv,
         workspace.canonical_target.as_ref(),
         workspace.canonical_git_root.as_ref(),
-    ) {
-        let mut argv = vec!["direnv".to_string(), "exec".to_string(), ".".to_string()];
-        argv.extend(base_argv);
-        HostClientSpec { argv }
-    } else {
-        HostClientSpec { argv: base_argv }
-    }
+    );
+
+    HostClientSpec { argv }
 }
 
 fn run_host_client(

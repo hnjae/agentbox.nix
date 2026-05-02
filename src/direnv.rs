@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use camino::Utf8Path;
 use serde::Deserialize;
 
+use crate::preflight::direnv_applies_to_target;
 use crate::process::ProcessRunner;
 use crate::{Error, Result};
 
@@ -44,4 +45,19 @@ impl Direnv {
         serde_json::from_str(&output.stdout)
             .map_err(|error| Error::msg(format!("failed to parse `direnv export json`: {error}")))
     }
+}
+
+pub fn wrap_exec_if_envrc_applies(
+    argv: Vec<String>,
+    target_directory: &Utf8Path,
+    git_root: &Utf8Path,
+) -> Vec<String> {
+    if !direnv_applies_to_target(target_directory, git_root) {
+        return argv;
+    }
+
+    let mut wrapped = Vec::with_capacity(argv.len() + 3);
+    wrapped.extend(["direnv".to_string(), "exec".to_string(), ".".to_string()]);
+    wrapped.extend(argv);
+    wrapped
 }

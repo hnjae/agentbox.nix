@@ -13,9 +13,10 @@ use std::time::{Duration, Instant};
 use camino::Utf8Path;
 
 use crate::cli::RunArgs;
+use crate::direnv::wrap_exec_if_envrc_applies;
 use crate::lock::lock_workspace;
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount};
-use crate::preflight::{check_host_prerequisites, direnv_applies_to_target};
+use crate::preflight::check_host_prerequisites;
 use crate::process::{ProcessRunner, run_command};
 use crate::runtime::opencode::OpencodeRuntime;
 use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
@@ -280,17 +281,9 @@ pub(crate) fn server_run_spec(
 ) -> RuntimeCommandSpec {
     let base = runtime.server_command();
     let workdir = Some(target.to_string());
+    let argv = wrap_exec_if_envrc_applies(base.argv, target, git_root);
 
-    if direnv_applies_to_target(target, git_root) {
-        let mut argv = vec!["direnv".to_string(), "exec".to_string(), ".".to_string()];
-        argv.extend(base.argv);
-        RuntimeCommandSpec { argv, workdir }
-    } else {
-        RuntimeCommandSpec {
-            argv: base.argv,
-            workdir,
-        }
-    }
+    RuntimeCommandSpec { argv, workdir }
 }
 
 fn classify_run_error(
