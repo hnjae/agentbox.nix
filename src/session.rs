@@ -12,18 +12,21 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::git::Git;
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
-use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeKind};
+use crate::runtime::{AttachEndpoint, RuntimeKind};
 use crate::workspace::hash12;
 use crate::{Error, Result};
 
 mod conflict;
+mod endpoint;
 mod labels;
 
+use endpoint::derive_attach_endpoint;
 use labels::SessionLabels;
 
 pub(crate) use conflict::{
     classify_create_error, duplicate_sessions_error, existing_session_error,
 };
+pub use endpoint::discover_attach_endpoint_from_inspect;
 
 pub use labels::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
@@ -455,86 +458,6 @@ fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<SessionRecor
     }
 
     sessions
-}
-
-pub fn discover_attach_endpoint_from_inspect(
-    inspect: &PodmanContainerInspect,
-) -> Result<AttachEndpoint> {
-    let labels = &inspect.config.labels;
-    derive_attach_endpoint(
-        required_label_value(labels, LABEL_RUNTIME),
-        required_label_value(labels, LABEL_ATTACH_SCHEME),
-        required_label_value(labels, LABEL_CONTAINER_PORT),
-        inspect,
-    )
-}
-
-fn derive_attach_endpoint(
-    runtime: Option<&str>,
-    attach_scheme: Option<&str>,
-    container_port: Option<&str>,
-    inspect: &PodmanContainerInspect,
-) -> Result<AttachEndpoint> {
-    let runtime = runtime
-        .ok_or_else(|| Error::msg("missing required label `io.agentbox.runtime`"))?
-        .parse::<RuntimeKind>()?;
-    let adapter = runtime.adapter();
-    let attach_scheme = attach_scheme
-        .ok_or_else(|| Error::msg("missing required label `io.agentbox.attach_scheme`"))?;
-    if attach_scheme != adapter.attach_scheme() {
-        return Err(Error::msg(format!(
-            "managed session has attach scheme `{attach_scheme}` but runtime `{runtime}` requires `{}`",
-            adapter.attach_scheme(),
-        )));
-    }
-
-    let container_port = container_port
-        .ok_or_else(|| Error::msg("missing required label `io.agentbox.container_port`"))?
-        .parse::<u16>()
-        .map_err(|error| {
-            Error::msg(format!(
-                "malformed `io.agentbox.container_port` label: {error}"
-            ))
-        })?;
-
-    if container_port != adapter.container_port() {
-        return Err(Error::msg(format!(
-            "managed session publishes container port `{container_port}` but runtime `{runtime}` requires `{}`",
-            adapter.container_port(),
-        )));
-    }
-
-    let port_key = format!("{container_port}/tcp");
-    let binding = inspect
-        .network_settings
-        .ports
-        .get(&port_key)
-        .and_then(|bindings| bindings.as_ref())
-        .and_then(|bindings| bindings.iter().find(|binding| binding.host_port.is_some()))
-        .ok_or_else(|| {
-            Error::msg(format!(
-                "managed session has no published attach port for `{port_key}`"
-            ))
-        })?;
-
-    let host_port = binding
-        .host_port
-        .as_deref()
-        .ok_or_else(|| Error::msg(format!("missing host port for `{port_key}`")))?
-        .parse::<u16>()
-        .map_err(|error| Error::msg(format!("malformed published host port: {error}")))?;
-    let host_ip = binding
-        .host_ip
-        .as_deref()
-        .filter(|host_ip| !host_ip.trim().is_empty())
-        .unwrap_or(DEFAULT_HOST_ATTACH_IP)
-        .to_string();
-
-    Ok(AttachEndpoint {
-        scheme: attach_scheme.to_string(),
-        host_ip,
-        host_port,
-    })
 }
 
 fn ps_candidate_is_managed(container: &PodmanPsContainer) -> bool {
