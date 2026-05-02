@@ -19,6 +19,7 @@ pub mod direnv;
 pub mod error;
 pub mod git;
 pub mod lock;
+mod metadata;
 pub mod podman;
 pub mod preflight;
 pub mod process;

@@ -14,12 +14,8 @@ use clap::ValueEnum;
 
 use default_image::DefaultImageBuildContext;
 
+use crate::metadata::managed_session_labels;
 use crate::preflight::NIX_CACHE_DESTINATION;
-use crate::session::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
@@ -209,31 +205,13 @@ impl RuntimeAdapter {
         host_nix_mounts: &[RuntimeMount],
     ) -> RuntimeCreateSpec {
         let image = self.default_image().to_string();
-        let mut labels = BTreeMap::new();
-        labels.insert(LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string());
-        labels.insert(LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string());
-        labels.insert(
-            LABEL_GIT_ROOT.to_string(),
-            workspace.canonical_git_root.to_string(),
-        );
-        labels.insert(LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone());
-        labels.insert(LABEL_RUNTIME.to_string(), self.name().to_string());
-        labels.insert(LABEL_IMAGE.to_string(), image.clone());
-        labels.insert(
-            LABEL_LOGICAL_NAME.to_string(),
-            workspace.container_name.clone(),
-        );
-        labels.insert(
-            LABEL_ATTACH_SCHEME.to_string(),
-            self.attach_scheme().to_string(),
-        );
-        labels.insert(
-            LABEL_CONTAINER_PORT.to_string(),
-            self.container_port().to_string(),
-        );
-        labels.insert(
-            LABEL_CONTAINER_LISTEN_IP.to_string(),
-            self.container_listen_ip().to_string(),
+        let labels = managed_session_labels(
+            workspace,
+            &image,
+            self.name(),
+            self.attach_scheme(),
+            self.container_port(),
+            self.container_listen_ip(),
         );
 
         let mut mounts = vec![RuntimeMount::bind(

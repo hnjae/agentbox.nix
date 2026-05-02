@@ -30,13 +30,13 @@ pub(crate) use conflict::{
 };
 pub use endpoint::discover_attach_endpoint_from_inspect;
 
-pub use labels::{
+pub use crate::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
     LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_LABEL_NAMES,
 };
 
-pub(crate) use labels::{missing_required_label, required_label_value};
+pub(crate) use crate::metadata::{missing_required_label, required_label_value};
 pub use status::{
     SessionFailure, SessionStatus, failed_session_requires_action_error,
     session_failure_requires_action_error,

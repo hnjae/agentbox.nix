@@ -8,6 +8,7 @@
 
 use camino::Utf8Path;
 
+use crate::metadata::managed_label_filter;
 use crate::process::{ProcessRunner, format_status, run_command};
 use crate::runtime::{RuntimeCreateSpec, RuntimeMount};
 use crate::{Error, Result};
@@ -37,14 +38,9 @@ impl Podman {
 
     pub fn ps(&self) -> Result<Vec<PodmanPsContainer>> {
         let output = self.runner.capture("podman", |command| {
-            command.args([
-                "ps",
-                "--all",
-                "--filter",
-                "label=io.agentbox.managed=true",
-                "--format",
-                "json",
-            ]);
+            command.args(["ps", "--all", "--filter"]);
+            command.arg(managed_label_filter());
+            command.args(["--format", "json"]);
         })?;
 
         parse_json("`podman ps --all --format json`", &output.stdout)
