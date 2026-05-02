@@ -6,7 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 
 use std::collections::BTreeMap;
 
@@ -15,7 +15,10 @@ use crate::metadata::{
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
     LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, required_label_string, required_label_value,
 };
+use crate::runtime::RuntimeKind;
 use crate::workspace::hash12;
+
+use super::status::SessionFailure;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SessionLabels {
@@ -29,6 +32,17 @@ pub(super) struct SessionLabels {
     pub(super) attach_scheme: Option<String>,
     pub(super) container_port: Option<String>,
     pub(super) container_listen_ip: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ValidSessionLabels {
+    canonical_git_root: Utf8PathBuf,
+}
+
+impl ValidSessionLabels {
+    pub(super) fn canonical_git_root(&self) -> &Utf8Path {
+        &self.canonical_git_root
+    }
 }
 
 impl SessionLabels {
@@ -67,5 +81,41 @@ impl SessionLabels {
             .is_some_and(|(git_root, stored_hash)| {
                 stored_hash == hash12(git_root.as_str().as_bytes())
             })
+    }
+
+    pub(super) fn validate(&self) -> std::result::Result<ValidSessionLabels, SessionFailure> {
+        if !self.has_required_values() {
+            return Err(SessionFailure::MissingRequiredLabels);
+        }
+
+        if !self.hash_matches_root() {
+            return Err(SessionFailure::DriftedGitRootHash);
+        }
+
+        let runtime = self
+            .runtime
+            .as_deref()
+            .and_then(|runtime| runtime.parse::<RuntimeKind>().ok())
+            .ok_or(SessionFailure::UnsupportedRuntimeLabel)?;
+        let adapter = runtime.adapter();
+
+        let container_port = self
+            .container_port
+            .as_deref()
+            .and_then(|port| port.parse::<u16>().ok())
+            .ok_or(SessionFailure::MalformedEndpointLabels)?;
+        if container_port != adapter.container_port() {
+            return Err(SessionFailure::MalformedEndpointLabels);
+        }
+
+        if self.attach_scheme.as_deref() != Some(adapter.attach_scheme())
+            || self.container_listen_ip.as_deref() != Some(adapter.container_listen_ip())
+        {
+            return Err(SessionFailure::MalformedEndpointLabels);
+        }
+
+        Ok(ValidSessionLabels {
+            canonical_git_root: self.canonical_git_root.clone().expect("validated above"),
+        })
     }
 }

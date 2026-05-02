@@ -17,8 +17,8 @@ use agentbox::session::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
     LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
-    SessionStatus, discover_managed_sessions_from_ps, discover_sessions_for_git_root_from_ps,
-    group_sessions_by_git_root,
+    SessionFailure, SessionStatus, discover_managed_sessions_from_ps,
+    discover_sessions_for_git_root_from_ps, group_sessions_by_git_root,
 };
 use agentbox::workspace::hash12;
 use camino::Utf8Path;
@@ -75,6 +75,60 @@ fn missing_cache_mount_marks_failed() {
         discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
 
     assert_eq!(sessions[0].status, SessionStatus::Failed);
+}
+
+#[test]
+fn unsupported_runtime_label_records_specific_failure() {
+    let repo = git_repo::temp_git_repo();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let (ps, mut inspect) = managed_container("unknown-runtime", root, true, true);
+    inspect
+        .config
+        .labels
+        .insert(LABEL_RUNTIME.to_string(), "future-runtime".to_string());
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert_eq!(
+        sessions[0].failure,
+        Some(SessionFailure::UnsupportedRuntimeLabel)
+    );
+}
+
+#[test]
+fn malformed_endpoint_labels_record_specific_failure() {
+    let repo = git_repo::temp_git_repo();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let (ps, mut inspect) = managed_container("bad-endpoint-label", root, true, true);
+    inspect
+        .config
+        .labels
+        .insert(LABEL_CONTAINER_PORT.to_string(), "4097".to_string());
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert_eq!(
+        sessions[0].failure,
+        Some(SessionFailure::MalformedEndpointLabels)
+    );
+}
+
+#[test]
+fn missing_published_attach_port_records_specific_failure() {
+    let repo = git_repo::temp_git_repo();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let (ps, mut inspect) = managed_container("missing-port", root, true, true);
+    inspect.network_settings.ports.clear();
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert_eq!(
+        sessions[0].failure,
+        Some(SessionFailure::MissingPublishedAttachPort)
+    );
 }
 
 #[test]

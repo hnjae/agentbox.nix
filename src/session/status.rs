@@ -13,7 +13,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::Error;
 use crate::git::Git;
 use crate::podman::PodmanContainerMount;
-use crate::runtime::{AttachEndpoint, RuntimeKind};
+use crate::runtime::AttachEndpoint;
 
 use super::{
     REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionRecord, has_mount_destination,
@@ -132,57 +132,10 @@ pub(super) fn derive_status(
     mounts: &[PodmanContainerMount],
     git: &Git,
 ) -> (SessionStatus, Option<SessionFailure>) {
-    if !session_labels.has_required_values() {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::MissingRequiredLabels),
-        );
-    }
-
-    if !session_labels.hash_matches_root() {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::DriftedGitRootHash),
-        );
-    }
-
-    let runtime = match session_labels
-        .runtime
-        .as_deref()
-        .and_then(|runtime| runtime.parse::<RuntimeKind>().ok())
-    {
-        Some(runtime) => runtime,
-        None => {
-            return (
-                SessionStatus::Failed,
-                Some(SessionFailure::UnsupportedRuntimeLabel),
-            );
-        }
+    let valid_labels = match session_labels.validate() {
+        Ok(valid_labels) => valid_labels,
+        Err(failure) => return (SessionStatus::Failed, Some(failure)),
     };
-
-    let adapter = runtime.adapter();
-    let _parsed_container_port = match session_labels
-        .container_port
-        .as_deref()
-        .and_then(|port| port.parse::<u16>().ok())
-    {
-        Some(port) if port == adapter.container_port() => port,
-        _ => {
-            return (
-                SessionStatus::Failed,
-                Some(SessionFailure::MalformedEndpointLabels),
-            );
-        }
-    };
-
-    if session_labels.attach_scheme.as_deref() != Some(adapter.attach_scheme())
-        || session_labels.container_listen_ip.as_deref() != Some(adapter.container_listen_ip())
-    {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::MalformedEndpointLabels),
-        );
-    }
 
     if attach_endpoint.is_none() {
         return (
@@ -198,10 +151,7 @@ pub(super) fn derive_status(
         );
     }
 
-    let canonical_git_root = session_labels
-        .canonical_git_root
-        .as_deref()
-        .expect("validated above");
+    let canonical_git_root = valid_labels.canonical_git_root();
     if !running {
         return (SessionStatus::Failed, Some(SessionFailure::NotRunning));
     }
