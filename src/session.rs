@@ -71,9 +71,10 @@ pub struct SessionGroup {
 
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
-    discover_managed_sessions_from_ps_with_git(
+    discover_sessions_from_ps_with_git(
         podman.ps()?,
-        |container| podman.inspect_one(container),
+        SessionDiscoveryScope::All,
+        |container_id| podman.inspect_one(container_id),
         &git,
     )
 }
@@ -83,26 +84,12 @@ pub fn discover_managed_sessions_from_ps(
     mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
 ) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
-    discover_managed_sessions_from_ps_with_git(
+    discover_sessions_from_ps_with_git(
         containers,
-        |container| inspect_container(container),
+        SessionDiscoveryScope::All,
+        |container_id| inspect_container(container_id),
         &git,
     )
-}
-
-fn discover_managed_sessions_from_ps_with_git(
-    containers: Vec<PodmanPsContainer>,
-    mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
-    git: &Git,
-) -> Result<Vec<SessionRecord>> {
-    let mut sessions = Vec::new();
-
-    for container in containers.into_iter().filter(ps_candidate_is_managed) {
-        let inspect = inspect_container(&container.id)?;
-        sessions.push(build_session_record(container, inspect, git));
-    }
-
-    Ok(mark_duplicate_sessions(sessions))
 }
 
 pub fn discover_sessions_for_git_root(
@@ -110,10 +97,10 @@ pub fn discover_sessions_for_git_root(
     git_root: &Utf8Path,
 ) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
-    discover_sessions_for_git_root_from_ps_with_git(
+    discover_sessions_from_ps_with_git(
         podman.ps()?,
-        git_root,
-        |container| podman.inspect_one(container),
+        SessionDiscoveryScope::GitRoot(git_root),
+        |container_id| podman.inspect_one(container_id),
         &git,
     )
 }
@@ -124,52 +111,80 @@ pub fn discover_sessions_for_git_root_from_ps(
     mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
 ) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
-    discover_sessions_for_git_root_from_ps_with_git(
+    discover_sessions_from_ps_with_git(
         containers,
-        git_root,
-        |container| inspect_container(container),
+        SessionDiscoveryScope::GitRoot(git_root),
+        |container_id| inspect_container(container_id),
         &git,
     )
 }
 
-fn discover_sessions_for_git_root_from_ps_with_git(
+enum SessionDiscoveryScope<'a> {
+    All,
+    GitRoot(&'a Utf8Path),
+}
+
+fn discover_sessions_from_ps_with_git(
     containers: Vec<PodmanPsContainer>,
-    git_root: &Utf8Path,
+    scope: SessionDiscoveryScope<'_>,
     mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
     git: &Git,
 ) -> Result<Vec<SessionRecord>> {
-    let target_hash = hash12(git_root.as_str().as_bytes());
-    let mut matches = Vec::new();
+    let target_hash = match scope {
+        SessionDiscoveryScope::All => None,
+        SessionDiscoveryScope::GitRoot(git_root) => Some(hash12(git_root.as_str().as_bytes())),
+    };
+    let mut sessions = Vec::new();
     let mut mismatched_roots = Vec::new();
 
-    for container in containers
-        .into_iter()
-        .filter(ps_candidate_is_managed)
-        .filter(|container| {
-            required_label_value(&container.labels, LABEL_GIT_ROOT_HASH)
-                == Some(target_hash.as_str())
-        })
-    {
+    for container in containers.into_iter().filter(ps_candidate_is_managed) {
+        if target_hash.as_deref().is_some_and(|target_hash| {
+            required_label_value(&container.labels, LABEL_GIT_ROOT_HASH) != Some(target_hash)
+        }) {
+            continue;
+        }
+
         let inspect = inspect_container(&container.id)?;
         let record = build_session_record(container, inspect, git);
 
-        match record.canonical_git_root.as_deref() {
-            Some(root) if root == git_root => matches.push(record),
-            Some(root) => mismatched_roots.push(root.to_string()),
-            None => matches.push(record),
+        match scope {
+            SessionDiscoveryScope::All => sessions.push(record),
+            SessionDiscoveryScope::GitRoot(git_root) => collect_git_root_scoped_session(
+                record,
+                git_root,
+                &mut sessions,
+                &mut mismatched_roots,
+            ),
         }
     }
 
-    if !mismatched_roots.is_empty() {
-        mismatched_roots.sort();
-        mismatched_roots.dedup();
-        return Err(Error::msg(format!(
-            "hash12 prefilter for `{git_root}` matched different full git roots: {}",
-            mismatched_roots.join(", ")
-        )));
+    match scope {
+        SessionDiscoveryScope::All => {}
+        SessionDiscoveryScope::GitRoot(git_root) if !mismatched_roots.is_empty() => {
+            mismatched_roots.sort();
+            mismatched_roots.dedup();
+            return Err(Error::msg(format!(
+                "hash12 prefilter for `{git_root}` matched different full git roots: {}",
+                mismatched_roots.join(", ")
+            )));
+        }
+        SessionDiscoveryScope::GitRoot(_) => {}
     }
 
-    Ok(mark_duplicate_sessions(matches))
+    Ok(mark_duplicate_sessions(sessions))
+}
+
+fn collect_git_root_scoped_session(
+    record: SessionRecord,
+    git_root: &Utf8Path,
+    matches: &mut Vec<SessionRecord>,
+    mismatched_roots: &mut Vec<String>,
+) {
+    match record.canonical_git_root.as_deref() {
+        Some(root) if root == git_root => matches.push(record),
+        Some(root) => mismatched_roots.push(root.to_string()),
+        None => matches.push(record),
+    }
 }
 
 pub fn group_sessions_by_git_root(sessions: &[SessionRecord]) -> Vec<SessionGroup> {
