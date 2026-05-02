@@ -10,7 +10,7 @@ use std::fs;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::runtime::{RuntimeMount, RuntimeMountKind};
+use crate::runtime::RuntimeMount;
 use crate::{Error, Result};
 
 pub const NIX_DAEMON_SOCKET_PATH: &str = "/nix/var/nix/daemon-socket/socket";
@@ -144,32 +144,24 @@ pub fn check_host_prerequisites_with_snapshot(
         ));
     }
 
-    let mut host_nix_mounts = vec![RuntimeMount {
-        kind: RuntimeMountKind::Bind,
-        source: NIX_STORE_DESTINATION.to_string(),
-        destination: NIX_STORE_DESTINATION.to_string(),
-        read_only: true,
-    }];
-    host_nix_mounts.push(RuntimeMount {
-        kind: RuntimeMountKind::Bind,
-        source: nix_client_source.to_string(),
-        destination: NIX_CLIENT_DESTINATION.to_string(),
-        read_only: true,
-    });
-    host_nix_mounts.push(RuntimeMount {
-        kind: RuntimeMountKind::Bind,
-        source: ETC_NIX_DESTINATION.to_string(),
-        destination: ETC_NIX_DESTINATION.to_string(),
-        read_only: true,
-    });
+    let mut host_nix_mounts = vec![RuntimeMount::read_only_bind(
+        NIX_STORE_DESTINATION,
+        NIX_STORE_DESTINATION,
+    )];
+    host_nix_mounts.push(RuntimeMount::read_only_bind(
+        nix_client_source.to_string(),
+        NIX_CLIENT_DESTINATION,
+    ));
+    host_nix_mounts.push(RuntimeMount::read_only_bind(
+        ETC_NIX_DESTINATION,
+        ETC_NIX_DESTINATION,
+    ));
 
     if snapshot.needs_static_nix_mount {
-        host_nix_mounts.push(RuntimeMount {
-            kind: RuntimeMountKind::Bind,
-            source: ETC_STATIC_NIX_DESTINATION.to_string(),
-            destination: ETC_STATIC_NIX_DESTINATION.to_string(),
-            read_only: true,
-        });
+        host_nix_mounts.push(RuntimeMount::read_only_bind(
+            ETC_STATIC_NIX_DESTINATION,
+            ETC_STATIC_NIX_DESTINATION,
+        ));
     }
 
     Ok(PreflightReport { host_nix_mounts })

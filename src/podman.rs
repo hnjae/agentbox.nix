@@ -9,7 +9,7 @@
 use camino::Utf8Path;
 
 use crate::process::{ProcessRunner, format_status, run_command};
-use crate::runtime::{RuntimeCreateSpec, RuntimeMount, RuntimeMountKind};
+use crate::runtime::{RuntimeCreateSpec, RuntimeMount};
 use crate::{Error, Result};
 
 mod model;
@@ -159,12 +159,8 @@ impl Podman {
 }
 
 fn render_mount(mount: &RuntimeMount) -> String {
-    let kind = match mount.kind {
-        RuntimeMountKind::Bind => "bind",
-        RuntimeMountKind::Volume => "volume",
-    };
     let mut options = vec![
-        format!("type={kind}"),
+        format!("type={}", mount.kind.podman_type()),
         format!("src={}", mount.source),
         format!("dst={}", mount.destination),
     ];

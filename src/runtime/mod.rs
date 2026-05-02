@@ -28,10 +28,19 @@ mod profile;
 
 pub const DEFAULT_HOST_ATTACH_IP: &str = "127.0.0.1";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeMountKind {
     Bind,
     Volume,
+}
+
+impl RuntimeMountKind {
+    pub(crate) fn podman_type(self) -> &'static str {
+        match self {
+            Self::Bind => "bind",
+            Self::Volume => "volume",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +49,34 @@ pub struct RuntimeMount {
     pub source: String,
     pub destination: String,
     pub read_only: bool,
+}
+
+impl RuntimeMount {
+    pub fn bind(source: impl Into<String>, destination: impl Into<String>) -> Self {
+        Self::new(RuntimeMountKind::Bind, source, destination, false)
+    }
+
+    pub fn read_only_bind(source: impl Into<String>, destination: impl Into<String>) -> Self {
+        Self::new(RuntimeMountKind::Bind, source, destination, true)
+    }
+
+    pub fn volume(source: impl Into<String>, destination: impl Into<String>) -> Self {
+        Self::new(RuntimeMountKind::Volume, source, destination, false)
+    }
+
+    fn new(
+        kind: RuntimeMountKind,
+        source: impl Into<String>,
+        destination: impl Into<String>,
+        read_only: bool,
+    ) -> Self {
+        Self {
+            kind,
+            source: source.into(),
+            destination: destination.into(),
+            read_only,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,18 +236,14 @@ impl RuntimeAdapter {
             self.container_listen_ip().to_string(),
         );
 
-        let mut mounts = vec![RuntimeMount {
-            kind: RuntimeMountKind::Bind,
-            source: workspace.canonical_git_root.to_string(),
-            destination: workspace.canonical_git_root.to_string(),
-            read_only: false,
-        }];
-        mounts.push(RuntimeMount {
-            kind: RuntimeMountKind::Volume,
-            source: workspace.container_name.clone(),
-            destination: NIX_CACHE_DESTINATION.to_string(),
-            read_only: false,
-        });
+        let mut mounts = vec![RuntimeMount::bind(
+            workspace.canonical_git_root.to_string(),
+            workspace.canonical_git_root.to_string(),
+        )];
+        mounts.push(RuntimeMount::volume(
+            workspace.container_name.clone(),
+            NIX_CACHE_DESTINATION,
+        ));
         mounts.extend(host_nix_mounts.iter().cloned());
 
         RuntimeCreateSpec {
