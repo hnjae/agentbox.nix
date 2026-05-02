@@ -6,14 +6,13 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::io::ErrorKind;
 use std::path::Path;
-use std::process::Command;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
+use crate::git::{Git, GitRootError};
 
 const CONTAINER_PREFIX: &str = "agentbox-";
 const MAX_CONTAINER_NAME_LEN: usize = 63;
@@ -30,8 +29,15 @@ pub struct WorkspaceIdentity {
 }
 
 pub fn resolve_workspace_identity(directory: impl AsRef<Path>) -> Result<WorkspaceIdentity> {
+    resolve_workspace_identity_with_git(directory, &Git::new())
+}
+
+pub fn resolve_workspace_identity_with_git(
+    directory: impl AsRef<Path>,
+    git: &Git,
+) -> Result<WorkspaceIdentity> {
     let requested_target = absolute_path(directory.as_ref())?;
-    let git_root = git_root_for(&requested_target)?;
+    let git_root = git_root_for(&requested_target, git)?;
     let canonical_git_root = canonicalize_utf8(&git_root)?;
     let canonical_target = canonicalize_utf8(&requested_target)?;
 
@@ -102,44 +108,14 @@ fn canonicalize_utf8(path: &Utf8Path) -> Result<Utf8PathBuf> {
         .map_err(|path| Error::msg(format!("non-utf8 path: {path:?}")))
 }
 
-fn git_root_for(directory: &Utf8Path) -> Result<Utf8PathBuf> {
-    let output = match Command::new("git")
-        .arg("-C")
-        .arg(directory.as_str())
-        .arg("rev-parse")
-        .arg("--show-toplevel")
-        .output()
-    {
-        Ok(output) => output,
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            return git_root_from_marker(directory).ok_or_else(|| Error::non_git_target(directory));
+fn git_root_for(directory: &Utf8Path, git: &Git) -> Result<Utf8PathBuf> {
+    match git.resolve_toplevel(directory) {
+        Ok(root) => Ok(root),
+        Err(GitRootError::GitNotFound | GitRootError::NotRepository) => {
+            git_root_from_marker(directory).ok_or_else(|| Error::non_git_target(directory))
         }
-        Err(error) => {
-            return Err(Error::msg(format!(
-                "failed to run `git -C {directory} rev-parse --show-toplevel`: {error}"
-            )));
-        }
-    };
-
-    if !output.status.success() {
-        let stderr = String::from_utf8(output.stderr)?;
-        let detail = stderr.trim();
-        if detail.contains("not a git repository") {
-            return git_root_from_marker(directory).ok_or_else(|| Error::non_git_target(directory));
-        }
-
-        return Err(Error::msg(format!(
-            "failed to resolve git root for `{directory}` via `git -C {directory} rev-parse --show-toplevel`: {}. Choose a directory inside a readable git worktree.",
-            if detail.is_empty() {
-                "no output"
-            } else {
-                detail
-            }
-        )));
+        Err(GitRootError::Failed(error)) => Err(error),
     }
-
-    let root = String::from_utf8(output.stdout)?.trim().to_owned();
-    Ok(Utf8PathBuf::from(root))
 }
 
 fn git_root_from_marker(directory: &Utf8Path) -> Option<Utf8PathBuf> {
