@@ -120,6 +120,10 @@ impl RuntimeKind {
         profile::runtime_profile(self).name
     }
 
+    pub fn supported_values_placeholder() -> String {
+        profile::supported_runtime_placeholder()
+    }
+
     pub fn adapter(self) -> RuntimeAdapter {
         RuntimeAdapter { kind: self }
     }

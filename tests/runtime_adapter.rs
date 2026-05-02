@@ -209,6 +209,21 @@ fn runtime_adapters_own_default_image_references() {
 }
 
 #[test]
+fn supported_runtime_strings_are_derived_from_profiles() {
+    assert_eq!(
+        RuntimeKind::supported_values_placeholder(),
+        "<opencode|codex>"
+    );
+
+    let error = "future-runtime".parse::<RuntimeKind>().unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("supported runtimes are `opencode` and `codex`")
+    );
+}
+
+#[test]
 fn preflight_missing_nix_conf_reports_exact_message() {
     let error = check_host_prerequisites_with_snapshot(
         &PreflightSnapshot {

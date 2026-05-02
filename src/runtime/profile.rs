@@ -68,11 +68,25 @@ pub(super) fn runtime_kind_from_name(value: &str) -> Option<RuntimeKind> {
 }
 
 pub(super) fn supported_runtime_names() -> String {
+    backticked_runtime_names().join(" and ")
+}
+
+pub(super) fn supported_runtime_placeholder() -> String {
+    format!("<{}>", runtime_names().join("|"))
+}
+
+fn runtime_names() -> Vec<&'static str> {
     RUNTIME_PROFILES
         .iter()
-        .map(|profile| format!("`{}`", profile.name))
+        .map(|profile| profile.name)
+        .collect()
+}
+
+fn backticked_runtime_names() -> Vec<String> {
+    runtime_names()
+        .iter()
+        .map(|name| format!("`{name}`"))
         .collect::<Vec<_>>()
-        .join(" and ")
 }
 
 fn opencode_server_command(profile: &RuntimeProfile) -> RuntimeCommand {

@@ -17,7 +17,8 @@ pub(crate) fn select_single_session<'a>(
 pub(crate) fn run_command_hint(runtime: Option<&str>, workspace: &WorkspaceIdentity) -> String {
     let runtime = runtime
         .filter(|runtime| runtime.parse::<RuntimeKind>().is_ok())
-        .unwrap_or("<opencode|codex>");
+        .map(str::to_string)
+        .unwrap_or_else(RuntimeKind::supported_values_placeholder);
     format!(
         "agentbox run --runtime {runtime} {}",
         workspace.requested_target
