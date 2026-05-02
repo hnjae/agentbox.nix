@@ -12,7 +12,8 @@ use camino::Utf8Path;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use crate::process::ProcessRunner;
+use crate::process::{ProcessRunner, run_command};
+use crate::runtime::{RuntimeCreateSpec, RuntimeMount, RuntimeMountKind};
 use crate::{Error, Result};
 
 #[derive(Debug, Clone, Default)]
@@ -274,6 +275,67 @@ impl Podman {
             })
             .map(|_| ())
     }
+
+    pub fn run_detached(
+        &self,
+        container_name: &str,
+        spec: &RuntimeCreateSpec,
+        workdir: Option<&str>,
+    ) -> Result<()> {
+        let mut command = self.runner.command("podman")?;
+        command.arg("run");
+        command.arg("--detach");
+        command.arg("--rm");
+        command.arg("--rmi");
+        command.args(["--name", container_name]);
+        if let Some(workdir) = workdir {
+            command.args(["--workdir", workdir]);
+        }
+
+        for (name, value) in &spec.labels {
+            command.arg("--label");
+            command.arg(format!("{name}={value}"));
+        }
+
+        for mount in &spec.mounts {
+            command.arg("--mount");
+            command.arg(render_mount(mount));
+        }
+
+        for (name, value) in &spec.default_env {
+            command.arg("--env");
+            command.arg(format!("{name}={value}"));
+        }
+
+        if !spec.network_enabled {
+            command.arg("--network=none");
+        }
+
+        for port in &spec.published_ports {
+            command.arg("--publish");
+            command.arg(port);
+        }
+
+        command.arg(&spec.image);
+        command.args(&spec.command);
+        run_command(&mut command).map(|_| ())
+    }
+}
+
+fn render_mount(mount: &RuntimeMount) -> String {
+    let kind = match mount.kind {
+        RuntimeMountKind::Bind => "bind",
+        RuntimeMountKind::Volume => "volume",
+    };
+    let mut options = vec![
+        format!("type={kind}"),
+        format!("src={}", mount.source),
+        format!("dst={}", mount.destination),
+    ];
+    if mount.read_only {
+        options.push("ro".to_string());
+    }
+    options.join(",")
 }
 
 fn parse_json<T: DeserializeOwned>(context: &str, input: &str) -> Result<T> {

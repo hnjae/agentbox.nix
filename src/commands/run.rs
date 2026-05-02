@@ -17,7 +17,6 @@ use crate::direnv::wrap_exec_if_envrc_applies;
 use crate::lock::lock_workspace;
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount};
 use crate::preflight::check_host_prerequisites;
-use crate::process::{ProcessRunner, run_command};
 use crate::runtime::opencode::OpencodeRuntime;
 use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
 use crate::session::{
@@ -52,8 +51,7 @@ pub fn run(args: RunArgs) -> Result<()> {
         }
     }
 
-    let process_runner = ProcessRunner::new();
-    ensure_default_runtime_image(&process_runner, runtime, &workspace)?;
+    ensure_default_runtime_image(&podman, runtime, &workspace)?;
     let mut run_spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
     let server_run = server_run_spec(
         &runtime,
@@ -64,14 +62,14 @@ pub fn run(args: RunArgs) -> Result<()> {
 
     std::hint::black_box(&workspace_guard);
 
-    let endpoint = podman_run_detached(
-        &process_runner,
-        &workspace.container_name,
-        &run_spec,
-        server_run.workdir.as_deref(),
-    )
-    .and_then(|_| wait_for_server_endpoint(&podman, &workspace, runtime))
-    .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))?;
+    let endpoint = podman
+        .run_detached(
+            &workspace.container_name,
+            &run_spec,
+            server_run.workdir.as_deref(),
+        )
+        .and_then(|_| wait_for_server_endpoint(&podman, &workspace, runtime))
+        .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))?;
 
     drop(workspace_guard);
     drop(workspace_lock);
@@ -84,11 +82,10 @@ pub fn run(args: RunArgs) -> Result<()> {
 }
 
 fn ensure_default_runtime_image(
-    process_runner: &ProcessRunner,
+    podman: &Podman,
     runtime: RuntimeAdapter,
     workspace: &WorkspaceIdentity,
 ) -> Result<()> {
-    let podman = Podman::with_runner(process_runner.clone());
     let default_image = runtime.default_image();
     if podman.image_exists(default_image)? {
         return Ok(());
@@ -301,51 +298,6 @@ fn classify_run_error(
     classify_create_error(podman, workspace, create_spec, wrapped)
 }
 
-fn podman_run_detached(
-    process_runner: &ProcessRunner,
-    container_name: &str,
-    spec: &RuntimeCreateSpec,
-    workdir: Option<&str>,
-) -> Result<()> {
-    let mut command = process_runner.command("podman")?;
-    command.arg("run");
-    command.arg("--detach");
-    command.arg("--rm");
-    command.arg("--rmi");
-    command.args(["--name", container_name]);
-    if let Some(workdir) = workdir {
-        command.args(["--workdir", workdir]);
-    }
-
-    for (name, value) in &spec.labels {
-        command.arg("--label");
-        command.arg(format!("{name}={value}"));
-    }
-
-    for mount in &spec.mounts {
-        command.arg("--mount");
-        command.arg(render_mount(mount));
-    }
-
-    for (name, value) in &spec.default_env {
-        command.arg("--env");
-        command.arg(format!("{name}={value}"));
-    }
-
-    if !spec.network_enabled {
-        command.arg("--network=none");
-    }
-
-    for port in &spec.published_ports {
-        command.arg("--publish");
-        command.arg(port);
-    }
-
-    command.arg(&spec.image);
-    command.args(&spec.command);
-    run_command(&mut command).map(|_| ())
-}
-
 fn wait_for_server_endpoint(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
@@ -406,20 +358,4 @@ fn readiness_check_succeeded(endpoint: &AttachEndpoint) -> bool {
     addresses
         .into_iter()
         .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(250)).is_ok())
-}
-
-fn render_mount(mount: &crate::runtime::RuntimeMount) -> String {
-    let kind = match mount.kind {
-        crate::runtime::RuntimeMountKind::Bind => "bind",
-        crate::runtime::RuntimeMountKind::Volume => "volume",
-    };
-    let mut options = vec![
-        format!("type={kind}"),
-        format!("src={}", mount.source),
-        format!("dst={}", mount.destination),
-    ];
-    if mount.read_only {
-        options.push("ro".to_string());
-    }
-    options.join(",")
 }
