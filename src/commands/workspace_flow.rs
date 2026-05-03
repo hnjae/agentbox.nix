@@ -56,6 +56,7 @@ impl LockedGitRoot<'_> {
 
 pub(crate) fn with_locked_workspace<T>(
     directory: &Path,
+    verbose: bool,
     operation: impl FnOnce(LockedWorkspace<'_>) -> Result<T>,
 ) -> Result<(WorkspaceIdentity, T)> {
     let workspace = resolve_workspace_identity(directory)?;
@@ -64,7 +65,7 @@ pub(crate) fn with_locked_workspace<T>(
         let _workspace_guard = workspace_lock.guard()?;
         let locked = LockedWorkspace {
             workspace: &workspace,
-            podman: Podman::new(),
+            podman: Podman::new().with_verbose(verbose),
         };
 
         operation(locked)?

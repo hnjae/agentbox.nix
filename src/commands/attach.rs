@@ -25,7 +25,7 @@ use super::session_selection::{run_command_hint, select_single_session};
 use super::workspace_flow::with_locked_workspace;
 
 pub fn run(args: DirectoryArgs) -> Result<()> {
-    with_locked_workspace(&args.directory, |locked| {
+    with_locked_workspace(&args.directory, false, |locked| {
         let workspace = locked.workspace();
         let sessions = locked.discover_sessions()?;
         let Some(session) = select_single_session(&sessions, workspace)? else {

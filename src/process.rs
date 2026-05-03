@@ -131,7 +131,7 @@ impl CommandContext {
     }
 }
 
-fn describe_command(command: &Command) -> String {
+pub fn describe_command(command: &Command) -> String {
     std::iter::once(command.get_program())
         .chain(command.get_args())
         .map(shell_quote)

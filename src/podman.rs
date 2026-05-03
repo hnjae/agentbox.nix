@@ -6,10 +6,14 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::process::Command;
+
 use camino::Utf8Path;
 
 use crate::metadata::managed_label_filter;
-use crate::process::{ProcessRunner, format_status, run_command};
+use crate::process::{
+    ProcessOutput, ProcessRunner, describe_command, format_status, run_command, run_command_status,
+};
 use crate::runtime::RuntimeCreateSpec;
 use crate::{Error, Result};
 
@@ -26,6 +30,7 @@ pub use model::{
 #[derive(Debug, Clone, Default)]
 pub struct Podman {
     runner: ProcessRunner,
+    verbose: bool,
 }
 
 impl Podman {
@@ -34,23 +39,31 @@ impl Podman {
     }
 
     pub fn with_runner(runner: ProcessRunner) -> Self {
-        Self { runner }
+        Self {
+            runner,
+            verbose: false,
+        }
+    }
+
+    pub fn with_verbose(mut self, verbose: bool) -> Self {
+        self.verbose = verbose;
+        self
     }
 
     pub fn ps(&self) -> Result<Vec<PodmanPsContainer>> {
-        let output = self.runner.capture("podman", |command| {
-            command.args(["ps", "--all", "--filter"]);
-            command.arg(managed_label_filter());
-            command.args(["--format", "json"]);
-        })?;
+        let mut command = self.runner.command("podman")?;
+        command.args(["ps", "--all", "--filter"]);
+        command.arg(managed_label_filter());
+        command.args(["--format", "json"]);
+        let output = self.run_quiet(&mut command)?;
 
         parse_json("`podman ps --all --format json`", &output.stdout)
     }
 
     pub fn inspect(&self, name: &str) -> Result<Vec<PodmanContainerInspect>> {
-        let output = self.runner.capture("podman", |command| {
-            command.args(["inspect", name]);
-        })?;
+        let mut command = self.runner.command("podman")?;
+        command.args(["inspect", name]);
+        let output = self.run_quiet(&mut command)?;
 
         parse_json("`podman inspect`", &output.stdout)
     }
@@ -67,9 +80,9 @@ impl Podman {
     }
 
     pub fn image_exists(&self, image: &str) -> Result<bool> {
-        let status = self.runner.status("podman", |command| {
-            command.args(["image", "exists", image]);
-        })?;
+        let mut command = self.runner.command("podman")?;
+        command.args(["image", "exists", image]);
+        let status = self.status(&mut command)?;
 
         match status.code() {
             Some(0) => Ok(true),
@@ -87,26 +100,23 @@ impl Podman {
         containerfile: &Utf8Path,
         context_dir: &Utf8Path,
     ) -> Result<()> {
-        self.runner
-            .capture("podman", |command| {
-                command.args([
-                    "build",
-                    "-t",
-                    image,
-                    "-f",
-                    containerfile.as_str(),
-                    context_dir.as_str(),
-                ]);
-            })
+        let mut command = self.runner.command("podman")?;
+        command.args([
+            "build",
+            "-t",
+            image,
+            "-f",
+            containerfile.as_str(),
+            context_dir.as_str(),
+        ]);
+        self.run_forwarding_output_when_verbose(&mut command)
             .map(|_| ())
     }
 
     pub fn stop_ignore(&self, container_name: &str) -> Result<()> {
-        self.runner
-            .capture("podman", |command| {
-                command.args(["stop", "--ignore", container_name]);
-            })
-            .map(|_| ())
+        let mut command = self.runner.command("podman")?;
+        command.args(["stop", "--ignore", container_name]);
+        self.run_quiet(&mut command).map(|_| ())
     }
 
     pub fn run_detached(
@@ -117,6 +127,48 @@ impl Podman {
     ) -> Result<()> {
         let mut command = self.runner.command("podman")?;
         command.args(run::run_detached_args(container_name, spec, workdir));
-        run_command(&mut command).map(|_| ())
+        self.run_forwarding_output_when_verbose(&mut command)
+            .map(|_| ())
+    }
+
+    fn run_quiet(&self, command: &mut Command) -> Result<ProcessOutput> {
+        self.trace(command);
+        run_command(command)
+    }
+
+    fn run_forwarding_output_when_verbose(&self, command: &mut Command) -> Result<ProcessOutput> {
+        let output = self.run_quiet(command)?;
+        if self.verbose {
+            emit_output(&output);
+        }
+
+        Ok(output)
+    }
+
+    fn status(&self, command: &mut Command) -> Result<std::process::ExitStatus> {
+        self.trace(command);
+        run_command_status(command)
+    }
+
+    fn trace(&self, command: &Command) {
+        if self.verbose {
+            eprintln!("agentbox: running {}", describe_command(command));
+        }
+    }
+}
+
+fn emit_output(output: &ProcessOutput) {
+    emit_stream(&output.stdout);
+    emit_stream(&output.stderr);
+}
+
+fn emit_stream(text: &str) {
+    if text.is_empty() {
+        return;
+    }
+
+    eprint!("{text}");
+    if !text.ends_with('\n') {
+        eprintln!();
     }
 }

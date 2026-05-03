@@ -206,6 +206,41 @@ fn run_skips_build_when_default_image_already_exists_locally() {
 }
 
 #[test]
+fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
+    let repo = support::temp_git_repo();
+    let target = repo.path().join("nested");
+    fs::create_dir(&target).unwrap();
+
+    let workspace = resolve_workspace_identity(&target).unwrap();
+    let harness = install_harness(repo.path());
+    harness.write_inspect(&workspace, DEFAULT_IMAGE);
+    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
+
+    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+    command
+        .env("PATH", harness.path_env())
+        .env("XDG_STATE_HOME", harness.state_home.path())
+        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
+        .env("AGENTBOX_TEST_LOG", &harness.log_path)
+        .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
+        .args(["--verbose", "run", "--runtime", "opencode"])
+        .arg(&target);
+
+    command.assert().success().stderr(
+        predicate::str::contains("agentbox: running podman ps")
+            .and(predicate::str::contains("agentbox: running podman build"))
+            .and(predicate::str::contains("built"))
+            .and(predicate::str::contains("agentbox: running podman run"))
+            .and(predicate::str::contains("started"))
+            .and(predicate::str::contains("agentbox: running podman inspect"))
+            .and(predicate::str::contains(
+                "agentbox: waiting for `opencode` runtime server",
+            )),
+    );
+}
+
+#[test]
 fn run_reports_default_image_build_failures_clearly() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
@@ -532,6 +567,7 @@ case "$1" in
   run)
     shift
     record run "$@"
+    printf 'started\n'
     ;;
   inspect)
     shift

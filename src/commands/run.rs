@@ -22,7 +22,7 @@ use super::workspace_flow::with_locked_workspace;
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let runtime = args.runtime;
     let diagnostics = RunDiagnostics::new(verbose);
-    let (workspace, endpoint) = with_locked_workspace(&args.directory, |locked| {
+    let (workspace, endpoint) = with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
         diagnostics.phase("checking workspace prerequisites");
         let preflight = check_host_prerequisites(
@@ -100,17 +100,14 @@ fn ensure_default_runtime_image(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct RunDiagnostics {
-    verbose: bool,
-}
+struct RunDiagnostics;
 
 impl RunDiagnostics {
-    fn new(verbose: bool) -> Self {
-        Self { verbose }
+    fn new(_verbose: bool) -> Self {
+        Self
     }
 
     fn phase(&self, message: impl AsRef<str>) {
-        let _ = self.verbose;
         eprintln!("agentbox: {}", message.as_ref());
     }
 }
