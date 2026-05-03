@@ -13,6 +13,7 @@ containers.
 The MVP is workspace-centric rather than name-centric:
 
 - `agentbox run --runtime <opencode|codex> <directory>`
+- `agentbox runtime update codex`
 - `agentbox attach <directory>`
 - `agentbox ls`
 - `agentbox stop <directory>`
@@ -29,10 +30,10 @@ directory is used only to identify the workspace once the session exists. For
 `attach`, `<directory>` is a workspace selector, not a request to change the
 running session's working directory.
 
-Managed containers are started with Podman's `--rm` and `--rmi` cleanup flags.
-When the runtime server exits, or when `agentbox stop <directory>` stops it,
-Podman removes the stopped container and removes the image when possible. The
-named runtime cache volume is intentionally left for explicit later cleanup.
+Managed containers are started with Podman's `--rm` cleanup flag. When the
+runtime server exits, or when `agentbox stop <directory>` stops it, Podman
+removes the stopped container. Default runtime images and the named runtime
+cache volume are intentionally left for explicit later cleanup or update.
 
 If a matching managed session already exists for a repository, `run` fails
 clearly instead of reusing, replacing, or changing it.
@@ -56,6 +57,8 @@ Always-required host tools:
 Conditionally required host tools:
 
 - the running session's runtime host client command for `attach`
+- `npm` when `agentbox` must resolve the latest Codex npm package version for
+  initial Codex default image creation or `agentbox runtime update codex`
 - `direnv` when a matching `.envrc` applies to the directory whose environment
   is used by the command: the `run` target directory for server startup, or the
   stored launch directory for `attach`
@@ -75,7 +78,8 @@ Out of scope for the MVP:
 - user-supplied runtime image references
 - generic container orchestration
 - durable runtime state beyond the workspace bind mount, one Podman-managed
-  runtime cache volume, and live managed-container metadata
+  runtime cache volume, Codex host configuration passthrough, Codex runtime
+  image version metadata, and live managed-container metadata
 - a bundled standalone Nix installation inside the runtime image
 - stopped managed containers that remain after the runtime server exits
 
@@ -199,7 +203,7 @@ Expected behavior:
    reusing or replacing it. For a healthy running session, suggest
    `agentbox attach <directory>` or `agentbox stop <directory>`.
 7. If none exists, record the canonical target directory as the session launch
-   directory and start detached `podman run --rm --rmi` with the required labels,
+   directory and start detached `podman run --rm` with the required labels,
    mounts, default runtime image, local-only published attach endpoint, and
    launch-directory working directory.
 8. Start the selected runtime server for the session. If `direnv` applies, the
@@ -234,10 +238,38 @@ Image rules:
 - `run` always uses the selected runtime's default image reference.
 - The default image may be built or reused by `agentbox`; users do not need to
   supply a build context.
+- If the selected runtime is `codex` and the default image is missing, `run`
+  resolves the latest `@openai/codex` npm version, builds the Codex default
+  image with that version, and records the version metadata in agentbox state.
+- If the selected runtime is `codex` and the default image already exists,
+  `run` reuses it without checking the npm registry.
 - `agentbox` records the exact default image reference on the running managed
   container so live discovery can report it while the container exists.
-- Podman owns image removal behavior for `--rmi`; `agentbox` does not perform
-  extra image pruning or monitor later image removal outcomes.
+- Default runtime images are not removed by `stop`; image cleanup and image
+  updates are explicit operator actions.
+
+### `agentbox runtime update codex`
+
+`runtime update codex` refreshes the default Codex runtime image.
+
+Expected behavior:
+
+1. Resolve the latest `@openai/codex` npm package version.
+2. Read the stored Codex runtime image metadata from
+   `$XDG_STATE_HOME/agentbox/runtime/codex.json`, if it exists.
+3. If the local default Codex image exists and the stored installed version is
+   already the latest npm version, skip the rebuild and record the latest check
+   time.
+4. Otherwise, rebuild `localhost/agentbox-codex:local` with the resolved npm
+   version.
+5. Record the installed version, latest seen version, check time, image build
+   time, npm package name, install source, and image reference in agentbox state.
+
+Rules:
+
+- `runtime update` supports `codex` only in the MVP.
+- The update command does not stop, replace, or mutate running sessions.
+- The update command does not write metadata under `~/.codex`.
 
 ### `agentbox attach <directory>`
 
@@ -331,8 +363,7 @@ Expected behavior:
    absent.
 6. If no matching managed session exists, report that no session exists for the
    resolved repository or exact orphan path and exit non-zero.
-7. Rely on Podman's `--rm --rmi` cleanup for container and image removal after
-   the stop.
+7. Rely on Podman's `--rm` cleanup for container removal after the stop.
 8. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
    later by explicit Podman volume cleanup.
 
@@ -380,7 +411,7 @@ Required package output paths:
 - `share/fish/vendor_completions.d/agentbox.fish`
 - `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`,
   `share/man/man1/agentbox-attach.1`, `share/man/man1/agentbox-ls.1`,
-  `share/man/man1/agentbox-stop.1`, and
+  `share/man/man1/agentbox-stop.1`, `share/man/man1/agentbox-runtime.1`, and
   `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the Nix
   fixup phase compresses manual pages
 
@@ -448,10 +479,11 @@ Rules:
   required to persist across container recreation.
 - Standard XDG parent directories under `/home/user`, including `.config`,
   `.cache`, `.local`, and `.local/state`, are writable by the runtime user.
-- Runtime state outside `/home/user/.cache/nix` is ephemeral in the MVP. Users
-  should not expect runtime configuration, login state, shell history, or files
-  written elsewhere under `/home/user` to survive container recreation unless
-  those files are also stored in the workspace bind mount.
+- Runtime state outside `/home/user/.cache/nix` is ephemeral unless a runtime
+  explicitly defines a host passthrough mount. Users should not expect runtime
+  configuration, login state, shell history, or files written elsewhere under
+  `/home/user` to survive container recreation unless those files are also
+  stored in the workspace bind mount or a documented runtime passthrough mount.
 - The runtime cache volume name is identical to the container name for the same
   workspace session.
 - The mounted runtime cache volume stores Nix cache and evaluation artifacts
@@ -465,7 +497,8 @@ Rules:
   `$HOME/.local/state/nix/profile`.
 - If both `XDG_STATE_HOME` and `HOME` are unavailable, the runtime falls back to
   `/home/user/.local/state/nix/profile`.
-- No other subpath under `/home/user` is required to persist in the MVP.
+- No other subpath under `/home/user` is required to persist in the MVP unless
+  it is named by a runtime-specific passthrough rule.
 - `agentbox stop <directory>` does not explicitly delete the runtime cache
   volume.
 - Once no container uses the cache volume, it remains available for explicit
@@ -473,6 +506,24 @@ Rules:
   `podman volume prune --all`.
 - Podman `--rm` removes the managed container, not the named runtime cache
   volume.
+
+### Codex Host Configuration Passthrough
+
+Codex sessions use the invoking host user's Codex configuration directory as
+the runtime Codex home.
+
+Rules:
+
+- For `agentbox run --runtime codex`, the host `${HOME}/.codex` directory is
+  bind-mounted read-write at `/home/user/.codex`.
+- The mount is required so auth refreshes, skills, MCP configuration, plugins,
+  rules, and other Codex user state remain consistent between host and
+  container Codex clients.
+- `run --runtime codex` fails before starting a container if `${HOME}/.codex`
+  is missing, is not a directory, or is not readable and writable by the
+  invoking host user.
+- `agentbox` does not create, migrate, or write files inside `${HOME}/.codex`.
+- OpenCode sessions do not receive the Codex passthrough mount.
 
 ### Direnv
 
@@ -556,6 +607,10 @@ Rules:
 - Runtime profile state lives under `$XDG_STATE_HOME/nix/profile`, with fallback
   to `$HOME/.local/state/nix/profile` or `/home/user/.local/state/nix/profile`
   when needed.
+- The Codex default image installs Codex from npm package `@openai/codex` at
+  the version resolved by `agentbox` for that image build.
+- The OpenCode default image continues to use the runtime package manifest and
+  does not require the Codex npm package.
 - The runtime image provides its own CA bundle. Host SSL trust-store mounts are
   out of scope for the MVP.
 - If a host-attached Nix prerequisite is missing, `run` fails clearly and does
@@ -569,14 +624,15 @@ Valid lifecycle behavior:
 - `attach` discovers an existing running workspace session and runs the runtime
   host client against its published endpoint.
 - `ls` derives session status from live Podman state and host path checks.
-- `stop` stops the container and relies on the container's `--rm --rmi` run
-  options for cleanup.
+- `stop` stops the container and relies on the container's `--rm` run option
+  for container cleanup.
 - Concurrent lifecycle operations for the same canonical git root do not leave
   more than one valid managed session or ambiguous cleanup outcome.
 
-Image lifecycle is tied to the managed session. When the runtime server exits or
-`agentbox stop` stops it, Podman removes the image if no other container
-prevents removal. `agentbox` does not run separate image-pruning commands.
+Default runtime image lifecycle is separate from managed sessions. When the
+runtime server exits or `agentbox stop` stops it, Podman removes the container
+but keeps the default runtime image. Codex image updates happen through
+`agentbox runtime update codex`; `stop` does not remove or rebuild images.
 
 Named runtime cache volume lifecycle remains separate. `agentbox stop` leaves
 the workspace cache volume intact so later sessions can reuse it. Volume
@@ -644,6 +700,8 @@ Required error cases:
 - missing nix-daemon socket at `/nix/var/nix/daemon-socket/socket`
 - missing `/etc/nix` host mount or unreadable `/etc/nix/nix.conf`
 - missing readable `/etc/static/nix` target when `/etc/nix` resolves there
+- missing or unusable host `${HOME}/.codex` for `run --runtime codex`
+- missing host `npm` when a Codex npm version must be resolved
 - unusable runtime profile path under the XDG state or HOME fallback location
 - runtime image setup failure
 - `direnv` unavailable, blocked, or failing when a matching `.envrc` applies
@@ -656,6 +714,8 @@ MVP isolation expectations:
 - separate rootless Podman container per workspace session
 - explicit workspace mount only for the canonical git root
 - host-provided Nix inputs mounted alongside one Podman-managed cache volume
+- Codex sessions receive the invoking host user's `${HOME}/.codex` directory as
+  a read-write passthrough mount
 - one writable Podman-managed named cache volume at `/home/user/.cache/nix`
 - minimal privileges
 - networking enabled only as needed for the runtime server and its local-only
