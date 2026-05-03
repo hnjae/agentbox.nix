@@ -15,7 +15,7 @@ use crate::metadata::{
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
     LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, required_label_string, required_label_value,
 };
-use crate::runtime::RuntimeKind;
+use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::hash12;
 
 use super::status::SessionFailure;
@@ -36,13 +36,23 @@ pub(super) struct SessionLabels {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ValidSessionLabels {
-    canonical_git_root: Utf8PathBuf,
+    required: RequiredSessionLabels,
 }
 
 impl ValidSessionLabels {
     pub(super) fn canonical_git_root(&self) -> &Utf8Path {
-        &self.canonical_git_root
+        &self.required.canonical_git_root
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RequiredSessionLabels {
+    canonical_git_root: Utf8PathBuf,
+    git_root_hash: String,
+    runtime: String,
+    attach_scheme: String,
+    container_port: String,
+    container_listen_ip: String,
 }
 
 impl SessionLabels {
@@ -61,62 +71,83 @@ impl SessionLabels {
         }
     }
 
-    pub(super) fn has_required_values(&self) -> bool {
-        self.managed.as_deref() == Some(LABEL_MANAGED_VALUE)
-            && self.schema.as_deref() == Some(LABEL_SCHEMA_VALUE)
-            && self.canonical_git_root.is_some()
-            && self.git_root_hash.is_some()
-            && self.runtime.is_some()
-            && self.image.is_some()
-            && self.logical_name.is_some()
-            && self.attach_scheme.is_some()
-            && self.container_port.is_some()
-            && self.container_listen_ip.is_some()
-    }
-
-    pub(super) fn hash_matches_root(&self) -> bool {
-        self.canonical_git_root
-            .as_deref()
-            .zip(self.git_root_hash.as_deref())
-            .is_some_and(|(git_root, stored_hash)| {
-                stored_hash == hash12(git_root.as_str().as_bytes())
-            })
-    }
-
     pub(super) fn validate(&self) -> std::result::Result<ValidSessionLabels, SessionFailure> {
-        if !self.has_required_values() {
-            return Err(SessionFailure::MissingRequiredLabels);
-        }
+        let required = RequiredSessionLabels::from_session_labels(self)?;
 
-        if !self.hash_matches_root() {
+        if !required.hash_matches_root() {
             return Err(SessionFailure::DriftedGitRootHash);
         }
 
-        let runtime = self
+        let runtime = required
             .runtime
-            .as_deref()
-            .and_then(|runtime| runtime.parse::<RuntimeKind>().ok())
-            .ok_or(SessionFailure::UnsupportedRuntimeLabel)?;
+            .parse::<RuntimeKind>()
+            .map_err(|_| SessionFailure::UnsupportedRuntimeLabel)?;
         let adapter = runtime.adapter();
-        let attach = adapter.attach_spec();
+        required.validate_attach_labels(adapter.attach_spec())?;
 
-        let container_port = self
-            .container_port
-            .as_deref()
-            .and_then(|port| port.parse::<u16>().ok())
-            .ok_or(SessionFailure::MalformedEndpointLabels)?;
-        if container_port != attach.container_port {
-            return Err(SessionFailure::MalformedEndpointLabels);
+        Ok(ValidSessionLabels { required })
+    }
+}
+
+impl RequiredSessionLabels {
+    fn from_session_labels(labels: &SessionLabels) -> std::result::Result<Self, SessionFailure> {
+        if labels.managed.as_deref() != Some(LABEL_MANAGED_VALUE)
+            || labels.schema.as_deref() != Some(LABEL_SCHEMA_VALUE)
+            || labels.image.is_none()
+            || labels.logical_name.is_none()
+        {
+            return Err(SessionFailure::MissingRequiredLabels);
         }
 
-        if self.attach_scheme.as_deref() != Some(attach.scheme)
-            || self.container_listen_ip.as_deref() != Some(attach.container_listen_ip)
+        let Some(canonical_git_root) = labels.canonical_git_root.clone() else {
+            return Err(SessionFailure::MissingRequiredLabels);
+        };
+        let Some(git_root_hash) = labels.git_root_hash.clone() else {
+            return Err(SessionFailure::MissingRequiredLabels);
+        };
+        let Some(runtime) = labels.runtime.clone() else {
+            return Err(SessionFailure::MissingRequiredLabels);
+        };
+        let Some(attach_scheme) = labels.attach_scheme.clone() else {
+            return Err(SessionFailure::MissingRequiredLabels);
+        };
+        let Some(container_port) = labels.container_port.clone() else {
+            return Err(SessionFailure::MissingRequiredLabels);
+        };
+        let Some(container_listen_ip) = labels.container_listen_ip.clone() else {
+            return Err(SessionFailure::MissingRequiredLabels);
+        };
+
+        Ok(Self {
+            canonical_git_root,
+            git_root_hash,
+            runtime,
+            attach_scheme,
+            container_port,
+            container_listen_ip,
+        })
+    }
+
+    fn hash_matches_root(&self) -> bool {
+        self.git_root_hash == hash12(self.canonical_git_root.as_str().as_bytes())
+    }
+
+    fn validate_attach_labels(
+        &self,
+        attach: RuntimeAttachSpec,
+    ) -> std::result::Result<(), SessionFailure> {
+        let container_port = self
+            .container_port
+            .parse::<u16>()
+            .map_err(|_| SessionFailure::MalformedEndpointLabels)?;
+
+        if container_port != attach.container_port
+            || self.attach_scheme != attach.scheme
+            || self.container_listen_ip != attach.container_listen_ip
         {
             return Err(SessionFailure::MalformedEndpointLabels);
         }
 
-        Ok(ValidSessionLabels {
-            canonical_git_root: self.canonical_git_root.clone().expect("validated above"),
-        })
+        Ok(())
     }
 }
