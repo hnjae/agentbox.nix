@@ -7,19 +7,19 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use camino::Utf8Path;
-use directories::BaseDirs;
-use serde::{Deserialize, Serialize};
 
 use crate::cli::{RuntimeArgs, RuntimeCommand};
 use crate::podman::{Podman, PodmanBuildOptions};
 use crate::process::ProcessRunner;
 use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
+
+mod image_state;
+
+use image_state::{RuntimeImageState, read_runtime_image_state, write_runtime_image_state};
 
 pub fn run(args: RuntimeArgs, verbose: bool) -> Result<()> {
     match args.command {
@@ -140,87 +140,6 @@ fn installed_version_if_known(runtime: RuntimeKind, image: &str) -> Result<Optio
     Ok(read_runtime_image_state(runtime)?
         .filter(|state| state.image == image)
         .map(|state| state.installed_version))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct RuntimeImageState {
-    runtime: String,
-    package: String,
-    install_source: String,
-    image: String,
-    installed_version: String,
-    latest_seen_version: String,
-    latest_checked_at: u64,
-    image_built_at: u64,
-}
-
-impl RuntimeImageState {
-    fn new(
-        runtime: RuntimeKind,
-        version: String,
-        latest_checked_at: u64,
-        image_built_at: u64,
-    ) -> Self {
-        let package = runtime.package_spec();
-        Self {
-            runtime: runtime.as_str().to_string(),
-            package: package.name.to_string(),
-            install_source: package.install_source.to_string(),
-            image: runtime.default_image().to_string(),
-            installed_version: version.clone(),
-            latest_seen_version: version,
-            latest_checked_at,
-            image_built_at,
-        }
-    }
-
-    fn with_latest_check(mut self, latest_version: String, latest_checked_at: u64) -> Self {
-        self.latest_seen_version = latest_version;
-        self.latest_checked_at = latest_checked_at;
-        self
-    }
-}
-
-fn read_runtime_image_state(runtime: RuntimeKind) -> Result<Option<RuntimeImageState>> {
-    let path = runtime_image_state_path(runtime)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let contents = fs::read_to_string(&path)?;
-    serde_json::from_str(&contents).map(Some).map_err(|error| {
-        Error::msg(format!(
-            "failed to parse {runtime} runtime image state `{}`: {error}",
-            path.display()
-        ))
-    })
-}
-
-fn write_runtime_image_state(runtime: RuntimeKind, state: &RuntimeImageState) -> Result<()> {
-    let path = runtime_image_state_path(runtime)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let contents = serde_json::to_string_pretty(state).map_err(|error| {
-        Error::msg(format!(
-            "failed to serialize {runtime} runtime image state: {error}"
-        ))
-    })?;
-    fs::write(path, format!("{contents}\n"))?;
-    Ok(())
-}
-
-fn runtime_image_state_path(runtime: RuntimeKind) -> Result<PathBuf> {
-    let base_dirs =
-        BaseDirs::new().ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
-    let state_dir = base_dirs
-        .state_dir()
-        .ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
-
-    Ok(state_dir
-        .join("agentbox")
-        .join("runtime")
-        .join(format!("{}.json", runtime.as_str())))
 }
 
 fn now_unix_seconds() -> Result<u64> {
