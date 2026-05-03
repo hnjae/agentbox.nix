@@ -8,6 +8,8 @@
 
 use std::process::Stdio;
 
+use camino::Utf8Path;
+
 use crate::cli::DirectoryArgs;
 use crate::process::{ProcessRunner, format_status, run_command_status};
 use crate::runtime::{AttachEndpoint, RuntimeKind};
@@ -34,6 +36,7 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
         let process_runner = ProcessRunner::new();
         let client = attach_session.client_invocation(workspace);
         let retry_run_command = run_command_hint(Some(attach_session.runtime.as_str()), workspace);
+        report_launch_directory_notice(workspace, attach_session.launch_directory);
 
         run_host_client(&process_runner, &client).map_err(|error| {
             Error::msg(format!(
@@ -53,11 +56,17 @@ struct AttachSession<'a> {
     session: &'a SessionRecord,
     runtime: RuntimeKind,
     endpoint: &'a AttachEndpoint,
+    launch_directory: &'a Utf8Path,
 }
 
 impl AttachSession<'_> {
     fn client_invocation(&self, workspace: &WorkspaceIdentity) -> RuntimeInvocation {
-        host_client_runtime_command(self.runtime, self.endpoint, workspace)
+        host_client_runtime_command(
+            self.runtime,
+            self.endpoint,
+            self.launch_directory,
+            workspace.canonical_git_root.as_ref(),
+        )
     }
 }
 
@@ -69,11 +78,13 @@ fn prepare_attach_session<'a>(
 
     let runtime = session_runtime(workspace, session)?;
     let endpoint = session_endpoint(workspace, session)?;
+    let launch_directory = session_launch_directory(workspace, session)?;
 
     Ok(AttachSession {
         session,
         runtime,
         endpoint,
+        launch_directory,
     })
 }
 
@@ -91,6 +102,15 @@ fn session_endpoint<'a>(
         .attach_endpoint
         .as_ref()
         .ok_or_else(|| malformed_endpoint_labels_error(workspace, session))
+}
+
+fn session_launch_directory<'a>(
+    workspace: &WorkspaceIdentity,
+    session: &'a SessionRecord,
+) -> Result<&'a Utf8Path> {
+    session
+        .launch_directory()
+        .ok_or_else(|| malformed_launch_directory_error(workspace, session))
 }
 
 fn unsupported_runtime_label_error(
@@ -112,6 +132,17 @@ fn malformed_endpoint_labels_error(
         workspace.canonical_git_root.as_ref(),
         &session.container_name,
         SessionFailure::MalformedEndpointLabels,
+    )
+}
+
+fn malformed_launch_directory_error(
+    workspace: &WorkspaceIdentity,
+    session: &SessionRecord,
+) -> Error {
+    session_failure_requires_action_error(
+        workspace.canonical_git_root.as_ref(),
+        &session.container_name,
+        SessionFailure::MalformedLaunchDirectory,
     )
 }
 
@@ -157,6 +188,17 @@ fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRec
         run_command_hint(session.runtime(), workspace),
         workspace.requested_target,
     ))
+}
+
+fn report_launch_directory_notice(workspace: &WorkspaceIdentity, launch_directory: &Utf8Path) {
+    if workspace.canonical_target.as_str() == launch_directory.as_str() {
+        return;
+    }
+
+    eprintln!(
+        "agentbox attach: `{}` identified the workspace; using stored launch directory `{}`",
+        workspace.canonical_target, launch_directory,
+    );
 }
 
 fn run_host_client(process_runner: &ProcessRunner, client: &RuntimeInvocation) -> Result<()> {

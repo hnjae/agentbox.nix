@@ -10,6 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use agentbox::lock::lock_path_in_state_dir;
+use agentbox::metadata::LABEL_LAUNCH_DIRECTORY;
 use agentbox::workspace::resolve_workspace_identity;
 use assert_cmd::Command as AssertCommand;
 use assert_cmd::cargo::cargo_bin;
@@ -44,10 +45,13 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
             workspace.canonical_git_root.as_str(),
             true,
             true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                &workspace.container_name,
+            labels_with_launch_directory(
+                managed_labels(
+                    workspace.canonical_git_root.as_str(),
+                    &workspace.hash12,
+                    &workspace.container_name,
+                ),
+                workspace.canonical_target.as_str(),
             ),
         ),
     );
@@ -63,7 +67,7 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
         .arg("attach")
         .arg(&target);
 
-    command.assert().success();
+    command.assert().success().stderr("");
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "inspect", "opencode"]);
@@ -74,6 +78,63 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
     assert!(log[2].contains(&format!("cwd={}", workspace.canonical_target)));
     assert!(!log.iter().any(|line| line.starts_with("create ")));
     assert!(!log.iter().any(|line| line.starts_with("attach ")));
+}
+
+#[test]
+fn attach_uses_stored_launch_directory_when_requesting_another_subdirectory() {
+    let repo = support::temp_git_repo();
+    let launch_target = repo.path().join("launch");
+    let request_target = repo.path().join("request");
+    fs::create_dir(&launch_target).unwrap();
+    fs::create_dir(&request_target).unwrap();
+
+    let launch_workspace = resolve_workspace_identity(&launch_target).unwrap();
+    let request_workspace = resolve_workspace_identity(&request_target).unwrap();
+    let harness = install_harness(repo.path(), false);
+    let lock_path = lock_path_in_state_dir(harness.state_home.path(), &request_workspace.digest64);
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        "running-id",
+        &request_workspace.container_name,
+        &request_workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &managed_inspect_fixture(
+            &request_workspace.container_name,
+            request_workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            labels_with_launch_directory(
+                managed_labels(
+                    request_workspace.canonical_git_root.as_str(),
+                    &request_workspace.hash12,
+                    &request_workspace.container_name,
+                ),
+                launch_workspace.canonical_target.as_str(),
+            ),
+        ),
+    );
+
+    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+    command
+        .env("PATH", harness.path_env_with_direnv())
+        .env("XDG_STATE_HOME", harness.state_home.path())
+        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
+        .env("AGENTBOX_TEST_LOG", &harness.log_path)
+        .env("AGENTBOX_TEST_LOCK_PATH", &lock_path)
+        .env("AGENTBOX_TEST_LOCK_PROBE", harness.lock_probe())
+        .arg("attach")
+        .arg(&request_target);
+
+    command
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("using stored launch directory"));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "opencode"]);
+    assert!(log[2].contains(&format!("cwd={}", launch_workspace.canonical_target)));
+    assert!(!log[2].contains(&format!("cwd={}", request_workspace.canonical_target)));
 }
 
 #[test]
@@ -97,10 +158,13 @@ fn attach_to_a_stopped_session_reports_the_running_only_model() {
             workspace.canonical_git_root.as_str(),
             false,
             true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                &workspace.container_name,
+            labels_with_launch_directory(
+                managed_labels(
+                    workspace.canonical_git_root.as_str(),
+                    &workspace.hash12,
+                    &workspace.container_name,
+                ),
+                workspace.canonical_target.as_str(),
             ),
         ),
     );
@@ -131,6 +195,17 @@ fn attach_to_a_stopped_session_reports_the_running_only_model() {
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "inspect"]);
+}
+
+fn labels_with_launch_directory(
+    mut labels: std::collections::BTreeMap<String, String>,
+    launch_directory: &str,
+) -> std::collections::BTreeMap<String, String> {
+    labels.insert(
+        LABEL_LAUNCH_DIRECTORY.to_string(),
+        launch_directory.to_string(),
+    );
+    labels
 }
 
 #[test]

@@ -28,8 +28,8 @@ pub fn dispatch(command: Command) -> Result<()> {
         Command::Ls => ls::run(),
         Command::Stop(args) => stop::run(args),
         Command::Completion(args) => completion::run(args.shell),
-        Command::CompletionRoots => {
-            print!("{}", completion::live_roots_output()?);
+        Command::CompletionRoots(args) => {
+            print!("{}", completion::live_roots_output(args.command)?);
             Ok(())
         }
         Command::GenerateCompletion(args) => completion::generate_installed(args.shell),

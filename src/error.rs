@@ -70,7 +70,7 @@ impl Error {
 
     pub fn failed_managed_session(git_root: &Utf8Path, container_name: &str) -> Self {
         Self::msg(format!(
-            "managed session `{container_name}` for `{git_root}` is in a failed state; repair or recreate it before retrying"
+            "managed session `{container_name}` for `{git_root}` is in a failed state; clean up or recreate it before retrying"
         ))
     }
 

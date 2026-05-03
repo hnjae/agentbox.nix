@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::metadata::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, REQUIRED_SESSION_LABELS, required_label_value,
+    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, REQUIRED_SESSION_LABELS, required_label_value,
 };
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 
@@ -40,6 +40,10 @@ impl SessionRecord {
 
     pub fn runtime(&self) -> Option<&str> {
         self.metadata.runtime()
+    }
+
+    pub fn launch_directory(&self) -> Option<&Utf8Path> {
+        self.metadata.launch_directory()
     }
 
     pub fn runtime_kind(&self) -> Option<RuntimeKind> {
@@ -79,6 +83,10 @@ impl SessionMetadata {
 
     pub(crate) fn runtime(&self) -> Option<&str> {
         self.label(LABEL_RUNTIME)
+    }
+
+    pub(crate) fn launch_directory(&self) -> Option<&Utf8Path> {
+        self.label(LABEL_LAUNCH_DIRECTORY).map(Utf8Path::new)
     }
 
     pub(crate) fn logical_name_or<'a>(&'a self, fallback: &'a str) -> &'a str {

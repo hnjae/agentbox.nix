@@ -4,8 +4,8 @@ use agentbox::cli::{Cli, Command};
 use agentbox::commands::ls::render_table;
 use agentbox::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::runtime::RuntimeKind;
 use agentbox::session::{SessionMetadata, SessionRecord, SessionStatus};
@@ -44,6 +44,20 @@ fn ls_renders_all_status_rows_in_stable_order() {
 }
 
 #[test]
+fn ls_renders_unknown_for_unrecoverable_failed_fields() {
+    let mut session = session("/workspace/broken", "broken", SessionStatus::Failed);
+    session.metadata = SessionMetadata::from_labels(&BTreeMap::from([
+        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
+        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
+    ]));
+
+    let table = render_table(&[session]);
+
+    assert!(table.contains("unknown"));
+    assert!(table.contains("broken"));
+}
+
+#[test]
 fn ls_has_no_machine_readable_mode() {
     let error = Cli::try_parse_from(["agentbox", "ls", "--json"]).unwrap_err();
 
@@ -75,6 +89,7 @@ fn metadata(root: &str, name: &str) -> SessionMetadata {
         (LABEL_GIT_ROOT_HASH.to_string(), "hash".to_string()),
         (LABEL_RUNTIME.to_string(), "opencode".to_string()),
         (LABEL_IMAGE.to_string(), "image".to_string()),
+        (LABEL_LAUNCH_DIRECTORY.to_string(), root.to_string()),
         (LABEL_LOGICAL_NAME.to_string(), name.to_string()),
         (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
         (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),

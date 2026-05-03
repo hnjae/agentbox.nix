@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::runtime::RuntimeKind;
 
@@ -55,7 +55,7 @@ pub enum Command {
     Completion(CompletionArgs),
 
     #[command(name = "__completion-roots", hide = true)]
-    CompletionRoots,
+    CompletionRoots(CompletionRootsArgs),
     #[command(name = "__generate-completion", hide = true)]
     GenerateCompletion(CompletionArgs),
     #[command(name = "__generate-man", hide = true)]
@@ -65,6 +65,17 @@ pub enum Command {
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct CompletionArgs {
     pub shell: CompletionShell,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct CompletionRootsArgs {
+    pub command: CompletionRootCommand,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CompletionRootCommand {
+    Attach,
+    Stop,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -85,7 +96,7 @@ pub struct DirectoryArgs {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct StopArgs {
-    /// Clean up all duplicate exact matches instead of failing.
+    /// Clean up duplicate or failed exact matches instead of failing.
     #[arg(long)]
     pub force: bool,
 

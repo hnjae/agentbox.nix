@@ -53,7 +53,10 @@ fn no_extra_host_metadata_is_written_beyond_locks() {
             ),
         ),
     );
-    let completion = harness.run_output(&["__completion-roots"]).status.success();
+    let completion = harness
+        .run_output(&["__completion-roots", "stop"])
+        .status
+        .success();
     assert!(completion);
 
     let expected_lock = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
@@ -138,14 +141,14 @@ fn completion_uses_live_discovery_instead_of_cached_files() {
     fs::write(&fake_cache, root_a.to_str().unwrap()).unwrap();
 
     harness.write_live_session("live-a", root_a.to_str().unwrap());
-    let first = harness.run_output(&["__completion-roots"]);
+    let first = harness.run_output(&["__completion-roots", "stop"]);
     assert!(first.status.success());
     let first = String::from_utf8(first.stdout).unwrap();
     assert!(first.contains(root_a.to_str().unwrap()));
     assert!(!first.contains(root_b.to_str().unwrap()));
 
     harness.write_live_session("live-b", root_b.to_str().unwrap());
-    let second = harness.run_output(&["__completion-roots"]);
+    let second = harness.run_output(&["__completion-roots", "stop"]);
     assert!(second.status.success());
     let second = String::from_utf8(second.stdout).unwrap();
     assert!(second.contains(root_b.to_str().unwrap()));

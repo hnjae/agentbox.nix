@@ -11,8 +11,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::Error;
 use crate::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::hash12;
@@ -33,6 +33,7 @@ const REQUIRED_SESSION_IDENTITY_LABELS: &[&str] = &[LABEL_IMAGE, LABEL_LOGICAL_N
 struct RequiredSessionLabels {
     canonical_git_root: Utf8PathBuf,
     git_root_hash: String,
+    launch_directory: Utf8PathBuf,
 }
 
 #[derive(Debug)]
@@ -157,11 +158,15 @@ impl SessionMetadata {
 impl RequiredSessionLabels {
     fn validated(labels: &SessionMetadata) -> RequiredLabelsResult<Self> {
         let required = Self::from_session_labels(labels)?;
-        if required.hash_matches_root() {
-            Ok(required)
-        } else {
-            Err(SessionFailure::DriftedGitRootHash)
+        if !required.hash_matches_root() {
+            return Err(SessionFailure::DriftedGitRootHash);
         }
+
+        if !required.launch_directory_is_valid() {
+            return Err(SessionFailure::MalformedLaunchDirectory);
+        }
+
+        Ok(required)
     }
 
     fn canonical_git_root(&self) -> &Utf8Path {
@@ -179,15 +184,23 @@ impl RequiredSessionLabels {
 
         let canonical_git_root = Utf8PathBuf::from(require_session_label(labels, LABEL_GIT_ROOT)?);
         let git_root_hash = require_session_label(labels, LABEL_GIT_ROOT_HASH)?.to_string();
+        let launch_directory =
+            Utf8PathBuf::from(require_session_label(labels, LABEL_LAUNCH_DIRECTORY)?);
 
         Ok(Self {
             canonical_git_root,
             git_root_hash,
+            launch_directory,
         })
     }
 
     fn hash_matches_root(&self) -> bool {
         self.git_root_hash == hash12(self.canonical_git_root.as_str().as_bytes())
+    }
+
+    fn launch_directory_is_valid(&self) -> bool {
+        self.launch_directory.is_absolute()
+            && self.launch_directory.starts_with(&self.canonical_git_root)
     }
 }
 

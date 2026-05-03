@@ -125,7 +125,7 @@ fn duplicate_sessions_fail_closed() {
 }
 
 #[test]
-fn unsupported_runtime_label_requires_repair_or_recreation() {
+fn unsupported_runtime_label_requires_cleanup_or_recreation() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -158,7 +158,7 @@ fn unsupported_runtime_label_requires_repair_or_recreation() {
             "unsupported or malformed `io.agentbox.runtime` label",
         ))
         .stderr(predicates::str::contains(
-            "repair or recreate it before retrying",
+            "clean up or recreate it before retrying",
         ));
 }
 
@@ -244,7 +244,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
 }
 
 #[test]
-fn failed_session_with_missing_labels_requires_repair_or_recreation() {
+fn failed_session_with_missing_labels_requires_cleanup_or_recreation() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();
@@ -294,7 +294,7 @@ fn failed_session_with_missing_labels_requires_repair_or_recreation() {
         .failure()
         .stderr(predicates::str::contains("missing required session labels"))
         .stderr(predicates::str::contains(
-            "repair or recreate it before retrying",
+            "clean up or recreate it before retrying",
         ));
 
     let log = harness.read_log();

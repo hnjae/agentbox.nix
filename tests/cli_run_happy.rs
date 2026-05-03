@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use agentbox::lock::lock_path_in_state_dir;
 use agentbox::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE};
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
@@ -337,6 +337,10 @@ impl Harness {
             (LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone()),
             (LABEL_RUNTIME.to_string(), runtime.to_string()),
             (LABEL_IMAGE.to_string(), image.to_string()),
+            (
+                LABEL_LAUNCH_DIRECTORY.to_string(),
+                workspace.canonical_target.to_string(),
+            ),
             (
                 LABEL_LOGICAL_NAME.to_string(),
                 workspace.container_name.clone(),

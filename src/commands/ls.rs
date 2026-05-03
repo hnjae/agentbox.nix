@@ -33,9 +33,9 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
             Cell::new(
                 session
                     .canonical_git_root()
-                    .map_or("-", |root| root.as_str()),
+                    .map_or("unknown", |root| root.as_str()),
             ),
-            Cell::new(session.runtime().unwrap_or("-")),
+            Cell::new(session.runtime().unwrap_or("unknown")),
             Cell::new(session.status.as_str()),
             Cell::new(session.container_name),
         ]);

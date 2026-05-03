@@ -51,6 +51,7 @@ pub enum SessionFailure {
     MissingCacheMount,
     NotRunning,
     UnsupportedRuntimeLabel,
+    MalformedLaunchDirectory,
     MalformedEndpointLabels,
     MissingPublishedAttachPort,
 }
@@ -62,13 +63,13 @@ impl SessionFailure {
                 git_root,
                 container_name,
                 "is missing required session labels",
-                "repair or recreate it before retrying",
+                "clean up or recreate it before retrying",
             ),
             Self::DriftedGitRootHash => Error::managed_session_requires_action(
                 git_root,
                 container_name,
                 "has a drifted `io.agentbox.git_root_hash`",
-                "repair or recreate it before retrying",
+                "clean up or recreate it before retrying",
             ),
             Self::MissingCacheMount => Error::managed_session_requires_action(
                 git_root,
@@ -89,19 +90,25 @@ impl SessionFailure {
                 git_root,
                 container_name,
                 "has an unsupported or malformed `io.agentbox.runtime` label",
-                "repair or recreate it before retrying",
+                "clean up or recreate it before retrying",
+            ),
+            Self::MalformedLaunchDirectory => Error::managed_session_requires_action(
+                git_root,
+                container_name,
+                "has a missing or malformed `io.agentbox.launch_directory` label",
+                "clean up or recreate it before retrying",
             ),
             Self::MalformedEndpointLabels => Error::managed_session_requires_action(
                 git_root,
                 container_name,
                 "has missing or inconsistent attach endpoint labels",
-                "repair or recreate it before retrying",
+                "clean up or recreate it before retrying",
             ),
             Self::MissingPublishedAttachPort => Error::managed_session_requires_action(
                 git_root,
                 container_name,
                 "has no published attach endpoint port",
-                "repair or recreate it before retrying",
+                "clean up or recreate it before retrying",
             ),
         }
     }

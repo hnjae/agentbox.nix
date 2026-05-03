@@ -16,6 +16,7 @@ pub const LABEL_GIT_ROOT: &str = "io.agentbox.git_root";
 pub const LABEL_GIT_ROOT_HASH: &str = "io.agentbox.git_root_hash";
 pub const LABEL_RUNTIME: &str = "io.agentbox.runtime";
 pub const LABEL_IMAGE: &str = "io.agentbox.image";
+pub const LABEL_LAUNCH_DIRECTORY: &str = "io.agentbox.launch_directory";
 pub const LABEL_LOGICAL_NAME: &str = "io.agentbox.logical_name";
 pub const LABEL_ATTACH_SCHEME: &str = "io.agentbox.attach_scheme";
 pub const LABEL_CONTAINER_PORT: &str = "io.agentbox.container_port";
@@ -31,6 +32,7 @@ pub const REQUIRED_SESSION_LABELS: &[&str] = &[
     LABEL_GIT_ROOT_HASH,
     LABEL_RUNTIME,
     LABEL_IMAGE,
+    LABEL_LAUNCH_DIRECTORY,
     LABEL_LOGICAL_NAME,
     LABEL_ATTACH_SCHEME,
     LABEL_CONTAINER_PORT,
@@ -59,6 +61,10 @@ pub(crate) fn managed_session_labels(
         (LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone()),
         (LABEL_RUNTIME.to_string(), runtime.to_string()),
         (LABEL_IMAGE.to_string(), image.to_string()),
+        (
+            LABEL_LAUNCH_DIRECTORY.to_string(),
+            workspace.canonical_target.to_string(),
+        ),
         (
             LABEL_LOGICAL_NAME.to_string(),
             workspace.container_name.clone(),

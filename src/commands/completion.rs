@@ -1,10 +1,10 @@
 use clap::CommandFactory;
 
-use crate::cli::{Cli, CompletionShell};
+use crate::cli::{Cli, CompletionRootCommand, CompletionShell};
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
-use crate::session::{SessionRecord, discover_managed_sessions};
+use crate::session::{SessionRecord, SessionStatus, discover_managed_sessions};
 
 pub fn run(shell: CompletionShell) -> Result<()> {
     match shell {
@@ -28,19 +28,24 @@ pub fn generate_manpage() -> Result<()> {
     Ok(())
 }
 
-pub fn live_roots() -> Result<Vec<SessionRecord>> {
+pub fn live_roots(command: CompletionRootCommand) -> Result<Vec<SessionRecord>> {
     let podman = Podman::new();
-    discover_managed_sessions(&podman)
+    let sessions = discover_managed_sessions(&podman)?
+        .into_iter()
+        .filter(|session| completion_candidate_matches(command, session))
+        .collect();
+
+    Ok(sessions)
 }
 
-pub fn live_roots_output() -> Result<String> {
+pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
     let mut lines = Vec::new();
-    for session in live_roots()? {
+    for session in live_roots(command)? {
         if let Some(root) = session.canonical_git_root() {
             lines.push(format!(
                 "{}\t{}\t{}\t{}",
                 root,
-                session.runtime().unwrap_or("-"),
+                session.runtime().unwrap_or("unknown"),
                 session.status.as_str(),
                 session.container_name,
             ));
@@ -49,11 +54,20 @@ pub fn live_roots_output() -> Result<String> {
     Ok(lines.join("\n"))
 }
 
+fn completion_candidate_matches(command: CompletionRootCommand, session: &SessionRecord) -> bool {
+    match command {
+        CompletionRootCommand::Attach => session.status == SessionStatus::Running,
+        CompletionRootCommand::Stop => session.canonical_git_root().is_some(),
+    }
+}
+
 fn bash_script() -> String {
     completion_script(
         r#"_agentbox_completion_roots() {
+    local command
+    command="${1:?missing command}"
     local candidates
-    candidates="$({ agentbox __completion-roots 2>/dev/null; } || true)"
+    candidates="$({ agentbox __completion-roots "$command" 2>/dev/null; } || true)"
     COMPREPLY=( $(compgen -W "$(printf '%s\n' "$candidates" | cut -f1)" -- "${COMP_WORDS[COMP_CWORD]}") )
 }
 
@@ -70,7 +84,7 @@ _agentbox() {
     case "$subcommand" in
         attach)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
-                _agentbox_completion_roots
+                _agentbox_completion_roots attach
             fi
             ;;
         stop)
@@ -78,10 +92,10 @@ _agentbox() {
                 if [[ "$cur" == --* ]]; then
                     COMPREPLY=( $(compgen -W "--force" -- "$cur") )
                 else
-                    _agentbox_completion_roots
+                    _agentbox_completion_roots stop
                 fi
             elif [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[2]}" == "--force" ]]; then
-                _agentbox_completion_roots
+                _agentbox_completion_roots stop
             fi
         ;;
         run)
@@ -109,9 +123,11 @@ fn zsh_script() -> String {
         r#"#compdef agentbox
 
 _agentbox_completion_roots() {
+  local command
+  command="${1:?missing command}"
   local line root runtime status container
   local -a candidates descriptions
-  for line in ${(f)"$({ agentbox __completion-roots 2>/dev/null; } || true)"}; do
+  for line in ${(f)"$({ agentbox __completion-roots "$command" 2>/dev/null; } || true)"}; do
     IFS=$'\t' read -r root runtime status container <<< "$line"
     candidates+=("$root")
     descriptions+=("${runtime} ${status}")
@@ -137,14 +153,14 @@ _agentbox() {
 
   case "$words[2]" in
     attach)
-      (( CURRENT == 3 )) && _agentbox_completion_roots
+      (( CURRENT == 3 )) && _agentbox_completion_roots attach
       ;;
     stop)
       if (( CURRENT == 3 )); then
-        _values 'option' '--force[clean up duplicate exact matches]'
-        _agentbox_completion_roots
+        _values 'option' '--force[clean up duplicate or failed exact matches]'
+        _agentbox_completion_roots stop
       elif (( CURRENT == 4 && "$words[3]" == "--force" )); then
-        _agentbox_completion_roots
+        _agentbox_completion_roots stop
       fi
       ;;
     run)
@@ -178,16 +194,16 @@ fn fish_script() -> String {
     return 1
 end
 
-function __agentbox_completion_roots
-    agentbox __completion-roots 2>/dev/null | while read -l root runtime status container
+function __agentbox_completion_roots --argument-names command
+    agentbox __completion-roots $command 2>/dev/null | while read -l root runtime status container
         printf "%s\t%s %s\n" "$root" "$runtime" "$status"
     end
 end
 
 complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "run attach ls stop completion help"
-complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots)"
-complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate exact matches"
-complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots attach)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate or failed exact matches"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots stop)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 "#,

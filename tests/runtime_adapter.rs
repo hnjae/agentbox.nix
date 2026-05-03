@@ -8,8 +8,8 @@
 
 use agentbox::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::preflight::{
     DirenvPreflightSnapshot, ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION,
@@ -68,6 +68,10 @@ fn opencode_create_spec_matches_mvp_contract() {
     assert_eq!(
         spec.labels.get(LABEL_IMAGE),
         Some(&DEFAULT_IMAGE.to_string())
+    );
+    assert_eq!(
+        spec.labels.get(LABEL_LAUNCH_DIRECTORY),
+        Some(&workspace.canonical_target.to_string())
     );
     assert_eq!(
         spec.labels.get(LABEL_LOGICAL_NAME),

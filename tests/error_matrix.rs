@@ -187,7 +187,7 @@ fn attach_side_drift_errors_are_actionable() {
             workspace.canonical_git_root.as_str(),
         ))
         .stderr(predicates::str::contains(
-            "repair or recreate it before retrying",
+            "clean up or recreate it before retrying",
         ));
 
     let missing_cache = Harness::new();

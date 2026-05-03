@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 
 use agentbox::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
@@ -294,6 +294,7 @@ pub fn managed_labels_for_image(
         (LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string()),
         (LABEL_RUNTIME.to_string(), runtime.to_string()),
         (LABEL_IMAGE.to_string(), image.to_string()),
+        (LABEL_LAUNCH_DIRECTORY.to_string(), git_root.to_string()),
         (LABEL_LOGICAL_NAME.to_string(), logical_name.to_string()),
         (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
         (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),

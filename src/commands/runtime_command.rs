@@ -2,7 +2,6 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::direnv::wrap_exec_if_envrc_applies;
 use crate::runtime::{AttachEndpoint, RuntimeKind};
-use crate::workspace::WorkspaceIdentity;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RuntimeInvocation {
@@ -21,12 +20,13 @@ pub(crate) fn server_runtime_command(
 pub(crate) fn host_client_runtime_command(
     runtime: RuntimeKind,
     endpoint: &AttachEndpoint,
-    workspace: &WorkspaceIdentity,
+    launch_directory: &Utf8Path,
+    git_root: &Utf8Path,
 ) -> RuntimeInvocation {
     runtime_invocation(
         runtime.host_client_command(endpoint).argv,
-        workspace.canonical_target.as_ref(),
-        workspace.canonical_git_root.as_ref(),
+        launch_directory,
+        git_root,
     )
 }
 
