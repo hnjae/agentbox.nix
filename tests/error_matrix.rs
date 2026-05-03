@@ -8,8 +8,9 @@
 
 use std::fs;
 
+use agentbox::metadata::LABEL_RUNTIME;
 use agentbox::preflight::{PreflightSnapshot, check_host_prerequisites_with_snapshot};
-use agentbox::session::{LABEL_RUNTIME, REQUIRED_NIX_CACHE_MOUNT_DESTINATION};
+use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::resolve_workspace_identity;
 use camino::Utf8Path;
 

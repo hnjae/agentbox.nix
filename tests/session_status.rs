@@ -9,16 +9,19 @@
 use std::collections::BTreeMap;
 use std::fs;
 
+use agentbox::metadata::{
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+};
 use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
     PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
 };
 use agentbox::session::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
-    SessionFailure, SessionStatus, discover_managed_sessions_from_ps,
-    discover_sessions_for_git_root_from_ps, group_sessions_by_git_root,
+    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionStatus,
+    discover_managed_sessions_from_ps, discover_sessions_for_git_root_from_ps,
+    group_sessions_by_git_root,
 };
 use agentbox::workspace::hash12;
 use camino::Utf8Path;

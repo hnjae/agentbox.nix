@@ -1,14 +1,16 @@
 use crate::Error;
+use crate::metadata::{
+    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    missing_required_label, required_label_value,
+};
 use crate::podman::{Podman, PodmanContainerInspect};
 use crate::runtime::RuntimeCreateSpec;
 use crate::workspace::WorkspaceIdentity;
 
 use super::mounts::has_mount_destination;
 use super::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
     REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionRecord, SessionStatus,
-    failed_session_requires_action_error, missing_required_label, required_label_value,
-    session_failure_requires_action_error,
+    failed_session_requires_action_error, session_failure_requires_action_error,
 };
 
 pub(crate) fn existing_session_error(

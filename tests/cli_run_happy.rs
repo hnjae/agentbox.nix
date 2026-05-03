@@ -11,12 +11,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use agentbox::lock::lock_path_in_state_dir;
-use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE};
-use agentbox::session::{
+use agentbox::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
+use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE};
+use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use assert_cmd::Command as AssertCommand;
 use assert_cmd::cargo::cargo_bin;

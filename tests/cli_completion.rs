@@ -10,11 +10,11 @@ use std::fs;
 
 use assert_cmd::Command as AssertCommand;
 
-use agentbox::session::{
+use agentbox::metadata::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED,
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
 };
+use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 
 #[path = "support/mod.rs"]
 mod support;

@@ -9,7 +9,8 @@
 use std::fs;
 use std::path::Path;
 
-use agentbox::session::{LABEL_RUNTIME, REQUIRED_NIX_CACHE_MOUNT_DESTINATION};
+use agentbox::metadata::LABEL_RUNTIME;
+use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::{hash12, resolve_workspace_identity};
 
 #[path = "support/mod.rs"]
