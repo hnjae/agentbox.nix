@@ -6,6 +6,9 @@
 
 FROM docker.io/library/debian:stable
 
+ARG AGENTBOX_RUNTIME=opencode
+ARG CODEX_NPM_VERSION=
+
 # hadolint ignore=DL3008,DL3009
 RUN set -eux; \
 	apt-get update; \
@@ -27,6 +30,7 @@ RUN set -eux; \
 	locales \
 	lsof \
 	man-db \
+	npm \
 	pkg-config \
 	procps \
 	psmisc \
@@ -80,6 +84,16 @@ COPY lib/runtime-contract.sh /usr/local/share/libexec/agentbox/lib/runtime-contr
 COPY runtime-packages.nix /usr/local/share/libexec/agentbox/runtime-packages.nix
 
 RUN ln -s /usr/local/share/libexec/agentbox/entrypoint /entrypoint && chmod +x /usr/local/share/libexec/agentbox/bootstrap /usr/local/share/libexec/agentbox/entrypoint /usr/local/share/libexec/agentbox/lib/runtime-contract.sh
+
+RUN set -eu; \
+	install -d /usr/local/share/agentbox; \
+	if [ "$AGENTBOX_RUNTIME" = "codex" ]; then \
+		test -n "$CODEX_NPM_VERSION"; \
+		npm install -g "@openai/codex@$CODEX_NPM_VERSION"; \
+		codex --version > /usr/local/share/agentbox/codex.version; \
+	else \
+		printf '%s\n' 'not-installed' > /usr/local/share/agentbox/codex.version; \
+	fi
 
 USER user
 

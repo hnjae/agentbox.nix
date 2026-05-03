@@ -10,6 +10,7 @@ use std::fs;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use crate::runtime::RuntimeKind;
 use crate::runtime::RuntimeMount;
 use crate::{Error, Result};
 
@@ -19,12 +20,14 @@ pub const NIX_CLIENT_DESTINATION: &str = "/usr/local/bin/nix";
 pub const ETC_NIX_DESTINATION: &str = "/etc/nix";
 pub const ETC_STATIC_NIX_DESTINATION: &str = "/etc/static/nix";
 pub const NIX_CACHE_DESTINATION: &str = "/home/user/.cache/nix";
+pub const CODEX_CONFIG_DESTINATION: &str = "/home/user/.codex";
 
 const NIX_CUSTOM_CONF_PATH: &str = "/etc/nix/nix.custom.conf";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreflightReport {
     pub host_nix_mounts: Vec<RuntimeMount>,
+    pub runtime_mounts: Vec<RuntimeMount>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,12 +41,22 @@ pub struct HostPreflightSnapshot {
     pub has_git: bool,
     pub has_podman: bool,
     pub direnv: DirenvPreflightSnapshot,
+    pub codex: CodexPreflightSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirenvPreflightSnapshot {
     pub required: bool,
     pub available: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexPreflightSnapshot {
+    pub source: Option<Utf8PathBuf>,
+    pub exists: bool,
+    pub is_directory: bool,
+    pub readable: bool,
+    pub writable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,6 +95,7 @@ impl HostPreflightSnapshot {
             has_git: test_fixtures_enabled() || command_exists("git"),
             has_podman: command_exists("podman"),
             direnv: DirenvPreflightSnapshot::detect(target_directory, git_root),
+            codex: CodexPreflightSnapshot::detect(),
         }
     }
 }
@@ -95,6 +109,35 @@ impl DirenvPreflightSnapshot {
                     envrc_applies_within_git_root(target_directory, git_root)
                 }),
             available: command_exists("direnv"),
+        }
+    }
+}
+
+impl CodexPreflightSnapshot {
+    fn detect() -> Self {
+        let source = std::env::var_os("HOME")
+            .and_then(|home| Utf8PathBuf::from_path_buf(std::path::PathBuf::from(home)).ok())
+            .map(|home| home.join(".codex"));
+        let metadata = source
+            .as_ref()
+            .and_then(|path| fs::metadata(path.as_std_path()).ok());
+        let exists = source
+            .as_ref()
+            .is_some_and(|path| symlink_or_path_exists(path));
+        let is_directory = metadata.as_ref().is_some_and(fs::Metadata::is_dir);
+        let readable = source
+            .as_ref()
+            .is_some_and(|path| fs::read_dir(path.as_std_path()).is_ok());
+        let writable = metadata
+            .as_ref()
+            .is_some_and(|metadata| !metadata.permissions().readonly());
+
+        Self {
+            source,
+            exists,
+            is_directory,
+            readable,
+            writable,
         }
     }
 }
@@ -141,19 +184,30 @@ pub fn check_host_prerequisites(
     target_directory: Option<&Utf8Path>,
     git_root: Option<&Utf8Path>,
 ) -> Result<PreflightReport> {
+    check_host_prerequisites_for_runtime(RuntimeKind::Opencode, target_directory, git_root)
+}
+
+pub fn check_host_prerequisites_for_runtime(
+    runtime: RuntimeKind,
+    target_directory: Option<&Utf8Path>,
+    git_root: Option<&Utf8Path>,
+) -> Result<PreflightReport> {
     check_host_prerequisites_with_snapshot(
         &PreflightSnapshot::detect(target_directory, git_root),
         target_directory,
+        runtime,
     )
 }
 
 pub fn check_host_prerequisites_with_snapshot(
     snapshot: &PreflightSnapshot,
     target_directory: Option<&Utf8Path>,
+    runtime: RuntimeKind,
 ) -> Result<PreflightReport> {
     PreflightCheck {
         snapshot,
         target_directory,
+        runtime,
     }
     .run()
 }
@@ -161,6 +215,7 @@ pub fn check_host_prerequisites_with_snapshot(
 struct PreflightCheck<'a> {
     snapshot: &'a PreflightSnapshot,
     target_directory: Option<&'a Utf8Path>,
+    runtime: RuntimeKind,
 }
 
 impl PreflightCheck<'_> {
@@ -170,12 +225,14 @@ impl PreflightCheck<'_> {
         self.validate_nix_daemon()?;
         let nix_client_source = self.nix_client_source()?;
         self.validate_nix_config()?;
+        let runtime_mounts = self.runtime_mounts()?;
 
         Ok(PreflightReport {
             host_nix_mounts: host_nix_mounts(
                 nix_client_source,
                 self.snapshot.nix.config.custom_conf.needs_static_mount,
             ),
+            runtime_mounts,
         })
     }
 
@@ -249,6 +306,45 @@ impl PreflightCheck<'_> {
         }
 
         Ok(())
+    }
+
+    fn runtime_mounts(&self) -> Result<Vec<RuntimeMount>> {
+        match self.runtime {
+            RuntimeKind::Opencode => Ok(Vec::new()),
+            RuntimeKind::Codex => Ok(vec![self.codex_config_mount()?]),
+        }
+    }
+
+    fn codex_config_mount(&self) -> Result<RuntimeMount> {
+        let codex = &self.snapshot.host.codex;
+        let Some(source) = codex.source.as_ref() else {
+            return Err(Error::msg(
+                "`HOME` is not set; cannot locate host Codex configuration directory `${HOME}/.codex` for `run --runtime codex`",
+            ));
+        };
+
+        if !codex.exists {
+            return Err(Error::msg(format!(
+                "Missing host Codex configuration directory: {source}. Run `codex` on the host first so `${{HOME}}/.codex` exists, then retry `agentbox run --runtime codex`."
+            )));
+        }
+
+        if !codex.is_directory {
+            return Err(Error::msg(format!(
+                "Host Codex configuration path is not a directory: {source}"
+            )));
+        }
+
+        if !codex.readable || !codex.writable {
+            return Err(Error::msg(format!(
+                "Host Codex configuration directory is not readable and writable: {source}"
+            )));
+        }
+
+        Ok(RuntimeMount::bind(
+            source.to_string(),
+            CODEX_CONFIG_DESTINATION,
+        ))
     }
 }
 

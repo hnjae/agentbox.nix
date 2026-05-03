@@ -14,7 +14,6 @@ in
     name = "container-runtime";
     paths = [
       pkgsRolling.opencode
-      pkgsRolling.codex
 
       # Devtools
       pkgsRolling.gh

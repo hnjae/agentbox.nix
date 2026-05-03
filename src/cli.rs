@@ -49,6 +49,8 @@ pub struct Cli {
 pub enum Command {
     /// Run a managed session as a detached runtime server.
     Run(RunArgs),
+    /// Manage default runtime images.
+    Runtime(RuntimeArgs),
     /// Attach to a running managed session.
     Attach(DirectoryArgs),
     /// List managed sessions.
@@ -97,6 +99,25 @@ pub struct RunArgs {
 
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RuntimeArgs {
+    #[command(subcommand)]
+    pub command: RuntimeCommand,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum RuntimeCommand {
+    /// Update a default runtime image.
+    Update(RuntimeUpdateArgs),
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RuntimeUpdateArgs {
+    /// Runtime image to update.
+    #[arg(value_enum)]
+    pub runtime: RuntimeKind,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]

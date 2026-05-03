@@ -149,7 +149,7 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(script.contains("run attach ls stop completion help"));
+    assert!(script.contains("run runtime attach ls stop completion help"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -189,6 +189,7 @@ fn installed_manpages_include_referenced_subcommands() {
     for filename in [
         "agentbox.1",
         "agentbox-run.1",
+        "agentbox-runtime.1",
         "agentbox-attach.1",
         "agentbox-ls.1",
         "agentbox-stop.1",

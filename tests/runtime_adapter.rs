@@ -12,10 +12,11 @@ use agentbox::metadata::{
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::preflight::{
-    DirenvPreflightSnapshot, ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION,
-    HostPreflightSnapshot, NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION,
-    NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
-    PreflightSnapshot, check_host_prerequisites_with_snapshot, required_host_mount_destinations,
+    CODEX_CONFIG_DESTINATION, CodexPreflightSnapshot, DirenvPreflightSnapshot, ETC_NIX_DESTINATION,
+    ETC_STATIC_NIX_DESTINATION, HostPreflightSnapshot, NIX_CLIENT_DESTINATION,
+    NIX_STORE_DESTINATION, NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot,
+    NixPreflightSnapshot, PreflightSnapshot, check_host_prerequisites_with_snapshot,
+    required_host_mount_destinations,
 };
 use agentbox::runtime::default_image::{
     CODEX_DEFAULT_IMAGE, OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE, embedded_default_image_paths,
@@ -38,11 +39,16 @@ fn opencode_create_spec_matches_mvp_contract() {
     let preflight = check_host_prerequisites_with_snapshot(
         &passing_preflight_snapshot_with_static_nix_mount(),
         Some(Utf8Path::from_path(repo.path()).unwrap()),
+        RuntimeKind::Opencode,
     )
     .unwrap();
 
     let runtime = RuntimeKind::Opencode;
-    let spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
+    let spec = runtime.create_spec(
+        &workspace,
+        &preflight.host_nix_mounts,
+        &preflight.runtime_mounts,
+    );
 
     assert_eq!(spec.image, DEFAULT_IMAGE);
     assert_eq!(
@@ -195,6 +201,33 @@ fn runtime_adapters_render_host_client_commands() {
 }
 
 #[test]
+fn codex_create_spec_includes_host_codex_config_mount() {
+    let repo = support::temp_git_repo();
+    let workspace = resolve_workspace_identity(repo.path()).unwrap();
+    let preflight = check_host_prerequisites_with_snapshot(
+        &passing_preflight_snapshot_with_static_nix_mount(),
+        Some(Utf8Path::from_path(repo.path()).unwrap()),
+        RuntimeKind::Codex,
+    )
+    .unwrap();
+
+    let spec = RuntimeKind::Codex.create_spec(
+        &workspace,
+        &preflight.host_nix_mounts,
+        &preflight.runtime_mounts,
+    );
+    let codex_mount = spec
+        .mounts
+        .iter()
+        .find(|mount| mount.destination == CODEX_CONFIG_DESTINATION)
+        .unwrap();
+
+    assert_eq!(codex_mount.kind, RuntimeMountKind::Bind);
+    assert_eq!(codex_mount.source, "/home/example/.codex");
+    assert!(!codex_mount.read_only);
+}
+
+#[test]
 fn runtime_adapters_own_default_image_references() {
     assert_eq!(RuntimeKind::Opencode.default_image(), DEFAULT_IMAGE);
     assert_eq!(RuntimeKind::Codex.default_image(), CODEX_DEFAULT_IMAGE);
@@ -225,7 +258,8 @@ fn preflight_missing_nix_conf_reports_exact_message() {
         needs_static_mount: false,
     };
 
-    let error = check_host_prerequisites_with_snapshot(&snapshot, None).unwrap_err();
+    let error =
+        check_host_prerequisites_with_snapshot(&snapshot, None, RuntimeKind::Opencode).unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -261,6 +295,13 @@ fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
             direnv: DirenvPreflightSnapshot {
                 required: false,
                 available: false,
+            },
+            codex: CodexPreflightSnapshot {
+                source: Some("/home/example/.codex".into()),
+                exists: true,
+                is_directory: true,
+                readable: true,
+                writable: true,
             },
         },
         nix: NixPreflightSnapshot {

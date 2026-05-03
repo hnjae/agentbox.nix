@@ -33,6 +33,10 @@ impl CliHarness {
         fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("podman"), &fake_podman_script());
+        write_executable(
+            fake_bin.path().join("npm"),
+            "#!/bin/sh\nprintf '%s\\n' '0.99.0'\n",
+        );
 
         Self {
             fake_bin,
@@ -82,6 +86,10 @@ impl CliHarness {
 
     pub fn read_log(&self) -> Vec<String> {
         read_log_lines(&self.log_path)
+    }
+
+    pub fn state_home_path(&self) -> &Path {
+        self.state_home.path()
     }
 
     pub fn agentbox_command(&self) -> AssertCommand {

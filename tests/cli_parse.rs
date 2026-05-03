@@ -7,7 +7,8 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::cli::{
-    Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, RunArgs, StopArgs,
+    Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, RunArgs, RuntimeArgs,
+    RuntimeCommand, RuntimeUpdateArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
@@ -22,6 +23,7 @@ fn help_lists_core_commands() {
 
     command.assert().success().stdout(
         predicate::str::contains("run")
+            .and(predicate::str::contains("runtime"))
             .and(predicate::str::contains("attach"))
             .and(predicate::str::contains("ls"))
             .and(predicate::str::contains("stop"))
@@ -50,6 +52,7 @@ fn core_commands_parse_into_expected_variants() {
     let attach = Cli::try_parse_from(["agentbox", "attach", "/tmp/workspace"]).unwrap();
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
     let stop = Cli::try_parse_from(["agentbox", "stop", "/tmp/workspace"]).unwrap();
+    let runtime = Cli::try_parse_from(["agentbox", "runtime", "update", "codex"]).unwrap();
     let completion = Cli::try_parse_from(["agentbox", "completion", "bash"]).unwrap();
 
     assert_eq!(
@@ -71,6 +74,14 @@ fn core_commands_parse_into_expected_variants() {
         Command::Stop(StopArgs {
             force: false,
             directory: "/tmp/workspace".into(),
+        })
+    );
+    assert_eq!(
+        runtime.command,
+        Command::Runtime(RuntimeArgs {
+            command: RuntimeCommand::Update(RuntimeUpdateArgs {
+                runtime: RuntimeKind::Codex,
+            }),
         })
     );
     assert_eq!(

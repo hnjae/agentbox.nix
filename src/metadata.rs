@@ -21,6 +21,10 @@ pub const LABEL_LOGICAL_NAME: &str = "io.agentbox.logical_name";
 pub const LABEL_ATTACH_SCHEME: &str = "io.agentbox.attach_scheme";
 pub const LABEL_CONTAINER_PORT: &str = "io.agentbox.container_port";
 pub const LABEL_CONTAINER_LISTEN_IP: &str = "io.agentbox.container_listen_ip";
+pub const LABEL_CODEX_PACKAGE: &str = "io.agentbox.codex.package";
+pub const LABEL_CODEX_VERSION: &str = "io.agentbox.codex.version";
+pub const LABEL_CODEX_INSTALL_SOURCE: &str = "io.agentbox.codex.install_source";
+pub const LABEL_CODEX_RESOLVED_AT: &str = "io.agentbox.codex.resolved_at";
 
 pub const LABEL_MANAGED_VALUE: &str = "true";
 pub const LABEL_SCHEMA_VALUE: &str = "1";

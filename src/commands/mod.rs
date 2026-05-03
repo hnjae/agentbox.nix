@@ -13,6 +13,7 @@ pub mod attach;
 pub mod completion;
 pub mod ls;
 pub mod run;
+pub mod runtime;
 mod runtime_command;
 mod server_readiness;
 mod session_selection;
@@ -24,6 +25,7 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
 
     match command {
         Command::Run(args) => run::run(args, verbose),
+        Command::Runtime(args) => runtime::run(args, verbose),
         Command::Attach(args) => attach::run(args),
         Command::Ls => ls::run(),
         Command::Stop(args) => stop::run(args),

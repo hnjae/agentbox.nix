@@ -8,7 +8,7 @@
 
 use agentbox::direnv::Direnv;
 use agentbox::git::Git;
-use agentbox::podman::Podman;
+use agentbox::podman::{Podman, PodmanBuildOptions};
 use agentbox::process::ProcessRunner;
 use agentbox::runtime::default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE;
 use camino::Utf8Path;
@@ -244,7 +244,12 @@ fn podman_build_image_uses_containerfile_and_context_arguments() {
     );
 
     Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
-        .build_image(DEFAULT_IMAGE, containerfile.as_ref(), context.as_ref())
+        .build_image(
+            DEFAULT_IMAGE,
+            containerfile.as_ref(),
+            context.as_ref(),
+            &PodmanBuildOptions::default(),
+        )
         .unwrap();
 }
 

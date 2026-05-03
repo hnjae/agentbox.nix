@@ -84,7 +84,7 @@ _agentbox() {
     cur="${COMP_WORDS[COMP_CWORD]}"
 
     if [[ "$COMP_CWORD" -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "run attach ls stop completion help" -- "$cur") )
+        COMPREPLY=( $(compgen -W "run runtime attach ls stop completion help" -- "$cur") )
         return 0
     fi
 
@@ -111,6 +111,13 @@ _agentbox() {
                 COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
             elif [[ "$cur" == --* ]]; then
                 COMPREPLY=( $(compgen -W "--runtime" -- "$cur") )
+            fi
+            ;;
+        runtime)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "update" -- "$cur") )
+            elif [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[2]}" == "update" ]]; then
+                COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
             fi
             ;;
         completion)
@@ -147,6 +154,7 @@ _agentbox() {
   local -a subcommands
   subcommands=(
     'run:Run a detached runtime server session'
+    'runtime:Manage default runtime images'
     'attach:Attach to a running managed session'
     'ls:List managed sessions'
     'stop:Stop a managed session'
@@ -178,6 +186,13 @@ _agentbox() {
         _values 'option' '--runtime[select runtime]'
       fi
       ;;
+    runtime)
+      if (( CURRENT == 3 )); then
+        _values 'runtime command' 'update[Update a default runtime image]'
+      elif (( CURRENT == 4 && "$words[3]" == "update" )); then
+        _values 'runtime' @RUNTIME_VALUES@
+      fi
+      ;;
     completion)
       (( CURRENT == 3 )) && _values 'shell' bash zsh fish
       ;;
@@ -195,7 +210,7 @@ fn fish_script() -> String {
     set -l tokens (commandline -opc)
     for token in $tokens[2..-1]
         switch $token
-            case run attach ls stop completion help
+            case run runtime attach ls stop completion help
                 return 0
         end
     end
@@ -208,11 +223,13 @@ function __agentbox_completion_roots --argument-names command
     end
 end
 
-complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "run attach ls stop completion help"
+complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "run runtime attach ls stop completion help"
 complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots attach)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate or failed exact matches"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots stop)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from runtime" -a "update"
+complete -c agentbox -f -n "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update" -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 "#,
     )

@@ -7,13 +7,15 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::cli::RunArgs;
+use crate::metadata::LABEL_CODEX_VERSION;
 use crate::podman::Podman;
-use crate::preflight::check_host_prerequisites;
-use crate::runtime::{RuntimeCreateSpec, RuntimeKind};
+use crate::preflight::check_host_prerequisites_for_runtime;
+use crate::runtime::RuntimeCreateSpec;
 use crate::session::{classify_create_error_or_else, existing_session_error};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
+use super::runtime::ensure_default_runtime_image;
 use super::runtime_command::server_runtime_command;
 use super::server_readiness::wait_for_server_endpoint;
 use super::session_selection::select_single_session;
@@ -27,7 +29,8 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let (workspace, endpoint) = with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
         diagnostics.phase("checking workspace prerequisites");
-        let preflight = check_host_prerequisites(
+        let preflight = check_host_prerequisites_for_runtime(
+            runtime,
             Some(workspace.canonical_target.as_ref()),
             Some(workspace.canonical_git_root.as_ref()),
         )?;
@@ -39,15 +42,29 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             return Err(existing_session_error(podman, workspace, session));
         }
 
-        ensure_default_runtime_image(podman, runtime, workspace, &diagnostics)?;
+        let runtime_version = ensure_default_runtime_image(
+            podman,
+            runtime,
+            workspace.canonical_git_root.as_ref(),
+            |message| diagnostics.phase(message),
+        )?;
         let server_run = server_runtime_command(
             runtime,
             workspace.canonical_target.as_ref(),
             workspace.canonical_git_root.as_ref(),
         );
-        let run_spec = runtime
-            .create_spec(workspace, &preflight.host_nix_mounts)
+        let mut run_spec = runtime
+            .create_spec(
+                workspace,
+                &preflight.host_nix_mounts,
+                &preflight.runtime_mounts,
+            )
             .with_command(server_run.argv);
+        if let Some(version) = runtime_version {
+            run_spec
+                .labels
+                .insert(LABEL_CODEX_VERSION.to_string(), version);
+        }
 
         diagnostics.phase(format!(
             "starting container `{}` for `{}`",
@@ -73,32 +90,6 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         workspace.container_name, workspace.canonical_git_root, workspace.requested_target,
     );
     Ok(())
-}
-
-fn ensure_default_runtime_image(
-    podman: &Podman,
-    runtime: RuntimeKind,
-    workspace: &WorkspaceIdentity,
-    diagnostics: &RunDiagnostics,
-) -> Result<()> {
-    let default_image = runtime.default_image();
-    if podman.image_exists(default_image)? {
-        diagnostics.phase(format!("using runtime image `{default_image}`"));
-        return Ok(());
-    }
-
-    diagnostics.phase(format!("building runtime image `{default_image}`"));
-    let context = runtime.materialize_default_image_context()?;
-    let containerfile = context.containerfile();
-    podman
-        .build_image(default_image, containerfile.as_ref(), context.root())
-        .map_err(|error| {
-            Error::msg(format!(
-                "failed to build default runtime image `{default_image}` for `{}` from `{}`: {error}",
-                workspace.canonical_git_root,
-                context.root(),
-            ))
-        })
 }
 
 #[derive(Debug, Clone, Copy)]

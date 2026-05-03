@@ -10,10 +10,11 @@ use std::fs;
 
 use agentbox::metadata::LABEL_RUNTIME;
 use agentbox::preflight::{
-    DirenvPreflightSnapshot, HostPreflightSnapshot, NixConfigPreflightSnapshot,
-    NixCustomConfPreflightSnapshot, NixPreflightSnapshot, PreflightSnapshot,
-    check_host_prerequisites_with_snapshot,
+    CodexPreflightSnapshot, DirenvPreflightSnapshot, HostPreflightSnapshot,
+    NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
+    PreflightSnapshot, check_host_prerequisites_with_snapshot,
 };
+use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::resolve_workspace_identity;
 use camino::Utf8Path;
@@ -61,6 +62,7 @@ fn host_preflight_errors_are_actionable() {
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| snapshot.host.has_git = false),
         Some(target),
+        RuntimeKind::Opencode,
     )
     .unwrap_err();
     assert!(
@@ -72,6 +74,7 @@ fn host_preflight_errors_are_actionable() {
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| snapshot.host.has_podman = false),
         Some(target),
+        RuntimeKind::Opencode,
     )
     .unwrap_err();
     assert!(
@@ -86,6 +89,7 @@ fn host_preflight_errors_are_actionable() {
             snapshot.host.direnv.available = false;
         }),
         Some(target),
+        RuntimeKind::Opencode,
     )
     .unwrap_err();
     assert!(
@@ -102,6 +106,7 @@ fn host_preflight_errors_are_actionable() {
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| snapshot.nix.has_daemon_socket = false),
         Some(target),
+        RuntimeKind::Opencode,
     )
     .unwrap_err();
     assert!(error.to_string().contains(
@@ -111,6 +116,7 @@ fn host_preflight_errors_are_actionable() {
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| snapshot.nix.client_source = None),
         Some(target),
+        RuntimeKind::Opencode,
     )
     .unwrap_err();
     assert!(error.to_string().contains("`nix` was not found on PATH"));
@@ -118,6 +124,7 @@ fn host_preflight_errors_are_actionable() {
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| snapshot.nix.config.has_etc_nix_mount = false),
         Some(target),
+        RuntimeKind::Opencode,
     )
     .unwrap_err();
     assert!(error.to_string().contains("Missing /etc/nix host mount"));
@@ -125,6 +132,7 @@ fn host_preflight_errors_are_actionable() {
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| snapshot.nix.config.has_readable_nix_conf = false),
         Some(target),
+        RuntimeKind::Opencode,
     )
     .unwrap_err();
     assert!(
@@ -139,6 +147,7 @@ fn host_preflight_errors_are_actionable() {
             snapshot.nix.config.custom_conf.has_readable_target = false;
         }),
         Some(target),
+        RuntimeKind::Opencode,
     )
     .unwrap_err();
     assert!(
@@ -146,6 +155,19 @@ fn host_preflight_errors_are_actionable() {
             .to_string()
             .contains("Missing readable target for /etc/nix/nix.custom.conf")
     );
+
+    let error = check_host_prerequisites_with_snapshot(
+        &snapshot_with(|snapshot| snapshot.host.codex.exists = false),
+        Some(target),
+        RuntimeKind::Codex,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("Missing host Codex configuration directory")
+    );
+    assert!(error.to_string().contains("Run `codex` on the host first"));
 }
 
 fn attach_side_drift_errors_are_actionable() {
@@ -332,6 +354,13 @@ fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSna
             direnv: DirenvPreflightSnapshot {
                 required: false,
                 available: true,
+            },
+            codex: CodexPreflightSnapshot {
+                source: Some("/home/example/.codex".into()),
+                exists: true,
+                is_directory: true,
+                readable: true,
+                writable: true,
             },
         },
         nix: NixPreflightSnapshot {

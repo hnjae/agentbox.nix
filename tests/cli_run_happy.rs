@@ -45,6 +45,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
     command
         .env("PATH", harness.path_env())
+        .env("HOME", harness.home.path())
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
@@ -80,7 +81,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[2].contains(&format!("-t {DEFAULT_IMAGE} -f")));
 
     assert!(log[3].contains("--rm"));
-    assert!(log[3].contains("--rmi"));
+    assert!(!log[3].contains("--rmi"));
     assert!(log[3].contains("--detach"));
     assert!(log[3].contains("--userns keep-id:uid=1000,gid=1000"));
     assert!(!log[3].contains("--interactive"));
@@ -150,6 +151,7 @@ fn run_launches_codex_server_in_yolo_mode() {
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
     command
         .env("PATH", harness.path_env())
+        .env("HOME", harness.home.path())
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
@@ -168,13 +170,29 @@ fn run_launches_codex_server_in_yolo_mode() {
 
     let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
     assert!(log[2].contains(&format!("-t {image} -f")));
+    assert!(log[2].contains("--build-arg AGENTBOX_RUNTIME=codex"));
+    assert!(log[2].contains("--build-arg CODEX_NPM_VERSION=0.99.0"));
+    assert!(log[2].contains("--label io.agentbox.codex.package=@openai/codex"));
+    assert!(log[2].contains("--label io.agentbox.codex.version=0.99.0"));
     assert!(run.contains("--label io.agentbox.runtime=codex"));
+    assert!(run.contains("--label io.agentbox.codex.version=0.99.0"));
     assert!(run.contains(&format!("--label io.agentbox.image={image}")));
     assert!(run.contains("--label io.agentbox.attach_scheme=ws"));
     assert!(run.contains("--label io.agentbox.container_port=1455"));
     assert!(run.contains(&format!(
+        "type=bind,src={},dst=/home/user/.codex",
+        harness.home.path().join(".codex").display()
+    )));
+    assert!(run.contains(&format!(
         " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
     )));
+    let state_path = harness
+        .state_home
+        .path()
+        .join("agentbox/runtime/codex.json");
+    let state = fs::read_to_string(state_path).unwrap();
+    assert!(state.contains("\"package\": \"@openai/codex\""));
+    assert!(state.contains("\"installed_version\": \"0.99.0\""));
 }
 
 #[test]
@@ -281,6 +299,7 @@ struct Harness {
     fake_bin: tempfile::TempDir,
     fixtures: tempfile::TempDir,
     state_home: tempfile::TempDir,
+    home: tempfile::TempDir,
     log_path: PathBuf,
     lock_probe_path: PathBuf,
     original_path: String,
@@ -290,18 +309,25 @@ fn install_harness(repo_root: &Path) -> Harness {
     let fake_bin = tempfile::tempdir().unwrap();
     let fixtures = tempfile::tempdir().unwrap();
     let state_home = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
     let log_path = repo_root.join("agentbox-run.log");
     let lock_probe_path = cargo_bin("agentbox-lock-probe");
     let original_path = std::env::var("PATH").unwrap();
 
+    fs::create_dir(home.path().join(".codex")).unwrap();
     write_executable(fake_bin.path().join("podman"), &fake_podman_script());
     write_executable(fake_bin.path().join("git"), fake_git_script());
     write_executable(fake_bin.path().join("direnv"), "#!/bin/sh\nexit 0\n");
+    write_executable(
+        fake_bin.path().join("npm"),
+        "#!/bin/sh\nprintf '%s\\n' '0.99.0'\n",
+    );
 
     Harness {
         fake_bin,
         fixtures,
         state_home,
+        home,
         log_path,
         lock_probe_path,
         original_path,

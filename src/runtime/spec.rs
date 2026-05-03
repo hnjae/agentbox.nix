@@ -133,6 +133,7 @@ impl RuntimeKind {
         self,
         workspace: &WorkspaceIdentity,
         host_nix_mounts: &[RuntimeMount],
+        runtime_mounts: &[RuntimeMount],
     ) -> RuntimeCreateSpec {
         let image = self.default_image().to_string();
         let attach = self.attach_spec();
@@ -154,6 +155,7 @@ impl RuntimeKind {
             NIX_CACHE_DESTINATION,
         ));
         mounts.extend(host_nix_mounts.iter().cloned());
+        mounts.extend(runtime_mounts.iter().cloned());
 
         RuntimeCreateSpec {
             image,

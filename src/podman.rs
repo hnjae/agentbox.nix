@@ -6,6 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
 use std::process::Command;
 
 use camino::Utf8Path;
@@ -114,16 +115,19 @@ impl Podman {
         image: &str,
         containerfile: &Utf8Path,
         context_dir: &Utf8Path,
+        options: &PodmanBuildOptions,
     ) -> Result<()> {
         let mut command = self.runner.command("podman")?;
-        command.args([
-            "build",
-            "-t",
-            image,
-            "-f",
-            containerfile.as_str(),
-            context_dir.as_str(),
-        ]);
+        command.args(["build", "-t", image, "-f", containerfile.as_str()]);
+        for (name, value) in &options.build_args {
+            command.arg("--build-arg");
+            command.arg(format!("{name}={value}"));
+        }
+        for (name, value) in &options.labels {
+            command.arg("--label");
+            command.arg(format!("{name}={value}"));
+        }
+        command.arg(context_dir.as_str());
         self.run_forwarding_output_when_verbose(&mut command)
             .map(|_| ())
     }
@@ -183,6 +187,12 @@ impl Podman {
             eprintln!("agentbox: running {}", describe_command(command));
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PodmanBuildOptions {
+    pub build_args: BTreeMap<String, String>,
+    pub labels: BTreeMap<String, String>,
 }
 
 fn emit_output(output: &ProcessOutput) {

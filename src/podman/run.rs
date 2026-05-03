@@ -13,7 +13,7 @@ pub(super) fn run_detached_args(
     spec: &RuntimeCreateSpec,
     workdir: Option<&str>,
 ) -> Vec<String> {
-    let mut args = PodmanArgs::from(["run", "--detach", "--rm", "--rmi"]);
+    let mut args = PodmanArgs::from(["run", "--detach", "--rm"]);
     args.option("--name", container_name);
     args.option("--userns", "keep-id:uid=1000,gid=1000");
 
@@ -141,7 +141,6 @@ mod tests {
                 "run",
                 "--detach",
                 "--rm",
-                "--rmi",
                 "--name",
                 "agentbox-demo",
                 "--userns",
