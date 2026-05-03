@@ -10,9 +10,11 @@ use std::fs;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use super::path::{
+    envrc_applies_within_git_root, path_reaches_mount_root, resolve_path, symlink_or_path_exists,
+};
 use super::{
     ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CUSTOM_CONF_PATH, NIX_DAEMON_SOCKET_PATH,
-    envrc_applies_within_git_root, path_reaches_mount_root, resolve_path, symlink_or_path_exists,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
