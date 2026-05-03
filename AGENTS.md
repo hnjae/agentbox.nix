@@ -15,15 +15,14 @@ Follow standard Rust formatting with `cargo fmt`; Use 4-space indentation.
 
 ## Spec-Driven Development
 
-Follow spec-driven development for product behavior and user-facing implementation
-changes. Before implementing a product behavior change, update `SPEC.md` to
-describe the intended behavior from the user's perspective, commit that
-specification update, and then carry out the work according to the committed spec.
-Do not update `SPEC.md` for implementation-dependent changes that do not affect
-user-visible behavior. This includes development-only or verification-only
-changes, such as build tooling, formatter/linter/test configuration, CI wiring,
-dependency metadata, or repository maintenance.
+For user-visible behavior changes, update `SPEC.md` before changing implementation code. The spec update must describe the intended behavior from the user's perspective and should be committed first unless the user explicitly asks not to commit or asks to pause.
+
+Do not update `SPEC.md` for changes that do not affect user-visible behavior, including build tooling, formatter/linter/test configuration, CI wiring, dependency metadata, and repository maintenance.
 
 ## Commit Guidelines
 
-Use Conventional Commits style for commit messages, such as `feat: add nix package output` or `fix: handle missing cargo metadata`.
+Use Conventional Commits style for commit messages, such as `feat: add nix package output`.
+
+When you modify tracked project files, create a commit before ending the task unless the user explicitly asks not to commit or asks to pause. If the work naturally splits into independent steps, use separate commits and keep the `SPEC.md` update as the first commit for behavior changes.
+
+Do not include unrelated user changes in your commits.
