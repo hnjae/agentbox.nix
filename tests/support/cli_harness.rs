@@ -193,6 +193,24 @@ case "$cmd" in
         ;;
     esac
     ;;
+  container)
+    subcommand=${1:-}
+    shift || true
+    case "$subcommand" in
+      exists)
+        target=${1:?missing container exists target}
+        record container-exists "$@"
+        if [ -f "$fixtures/container-exists-$target" ]; then
+          exit 0
+        fi
+        exit 1
+        ;;
+      *)
+        printf 'unexpected podman container invocation: %s %s\n' "$subcommand" "$*" >&2
+        exit 97
+        ;;
+    esac
+    ;;
   build)
     record build "$@"
     maybe_fail build

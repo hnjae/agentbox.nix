@@ -83,7 +83,7 @@ fn exact_full_root_matches(
 fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
     let stop_error = podman.stop_ignore(&session.container_name).err();
 
-    match container_exists(podman, &session.container_name) {
+    match podman.container_exists(&session.container_name) {
         Ok(false) => None,
         Ok(true) => Some(CleanupFailure {
             container_name: session.container_name.clone(),
@@ -96,19 +96,6 @@ fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option
             verification_error: Some(error.to_string()),
         }),
     }
-}
-
-fn container_exists(podman: &Podman, container_name: &str) -> Result<bool> {
-    match podman.inspect_one(container_name) {
-        Ok(_) => Ok(true),
-        Err(error) if is_missing_container_error(&error) => Ok(false),
-        Err(error) => Err(error),
-    }
-}
-
-fn is_missing_container_error(error: &Error) -> bool {
-    let message = error.to_string();
-    message.contains("no such object") || message.contains("returned no containers")
 }
 
 fn render_cleanup_failures(git_root: &Utf8Path, failures: &[CleanupFailure]) -> String {

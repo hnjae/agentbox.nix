@@ -94,6 +94,21 @@ impl Podman {
         }
     }
 
+    pub fn container_exists(&self, container_name: &str) -> Result<bool> {
+        let mut command = self.runner.command("podman")?;
+        command.args(["container", "exists", container_name]);
+        let status = self.status(&mut command)?;
+
+        match status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(Error::msg(format!(
+                "`podman container exists {container_name}` exited with {}",
+                format_status(status),
+            ))),
+        }
+    }
+
     pub fn build_image(
         &self,
         image: &str,

@@ -49,7 +49,10 @@ fn stop_stops_the_container_and_leaves_the_volume_and_workspace_untouched() {
     run_command(&harness, &target, &[]).success();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "inspect"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
     assert!(log[2].contains("--ignore"));
     assert!(target.exists(), "stop must not delete the user workspace");
     assert!(
@@ -93,7 +96,10 @@ fn stop_is_idempotent_when_the_container_disappears_during_cleanup() {
     run_command(&harness, &target, &[]).success();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "inspect"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
     assert!(log[2].contains("--ignore"));
 }
 
@@ -142,7 +148,13 @@ fn stop_force_removes_all_exact_duplicate_root_matches() {
     assert_eq!(
         operation_names(&log),
         [
-            "ps", "inspect", "inspect", "stop", "inspect", "stop", "inspect"
+            "ps",
+            "inspect",
+            "inspect",
+            "stop",
+            "container-exists",
+            "stop",
+            "container-exists"
         ]
     );
 }
@@ -224,7 +236,10 @@ fn stop_allows_exact_missing_path_match_for_orphaned_root_identity() {
     run_command(&harness, Path::new(&root_string), &[]).success();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "inspect"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
 }
 
 fn install_harness() -> Harness {
