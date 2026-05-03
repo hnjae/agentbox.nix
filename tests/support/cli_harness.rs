@@ -1,0 +1,237 @@
+// Copyright 2026 KIM Hyunjae
+//
+// This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+use std::fs;
+use std::path::Path;
+
+use assert_cmd::Command as AssertCommand;
+use tempfile::TempDir;
+
+use super::{path_with_prepend, read_log_lines, write_executable};
+
+pub struct CliHarness {
+    fake_bin: TempDir,
+    fixtures: TempDir,
+    state_home: TempDir,
+    log_path: std::path::PathBuf,
+    original_path: String,
+}
+
+impl CliHarness {
+    pub fn new() -> Self {
+        let fake_bin = tempfile::tempdir().unwrap();
+        let fixtures = tempfile::tempdir().unwrap();
+        let state_home = tempfile::tempdir().unwrap();
+        let log_path = fixtures.path().join("podman.log");
+        let original_path = std::env::var("PATH").unwrap();
+
+        fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
+        fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
+        write_executable(fake_bin.path().join("podman"), &fake_podman_script());
+
+        Self {
+            fake_bin,
+            fixtures,
+            state_home,
+            log_path,
+            original_path,
+        }
+    }
+
+    pub fn path_env(&self) -> String {
+        path_with_prepend(self.fake_bin.path(), &self.original_path)
+    }
+
+    pub fn write_ps(&self, json: &str) {
+        fs::write(self.fixtures.path().join("ps.json"), json).unwrap();
+    }
+
+    pub fn write_inspect(&self, name: &str, json: &str) {
+        fs::write(
+            self.fixtures.path().join(format!("inspect-{name}.json")),
+            json,
+        )
+        .unwrap();
+    }
+
+    pub fn fail_operation(&self, kind: &str, stderr: &str, exit_code: i32) {
+        fs::write(self.fixtures.path().join(format!("{kind}.stderr")), stderr).unwrap();
+        fs::write(
+            self.fixtures.path().join(format!("{kind}.exit")),
+            format!("{exit_code}\n"),
+        )
+        .unwrap();
+    }
+
+    pub fn write_failure(&self, kind: &str, stderr: &str, exit_code: i32) {
+        self.fail_operation(kind, stderr, exit_code);
+    }
+
+    pub fn mark_missing_during_cleanup(&self) {
+        fs::write(self.fixtures.path().join("missing-during-cleanup"), "").unwrap();
+    }
+
+    pub fn read_log(&self) -> Vec<String> {
+        read_log_lines(&self.log_path)
+    }
+
+    pub fn agentbox_command(&self) -> AssertCommand {
+        let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+        command
+            .env("PATH", self.path_env())
+            .env("XDG_STATE_HOME", self.state_home.path())
+            .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
+            .env("AGENTBOX_TEST_LOG", &self.log_path);
+        command
+    }
+
+    pub fn run_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
+        self.run_assert_with_args(target, &[])
+    }
+
+    pub fn run_assert_with_args(
+        &self,
+        target: &Path,
+        extra_args: &[&str],
+    ) -> assert_cmd::assert::Assert {
+        let mut command = self.agentbox_command();
+        command
+            .args(["run", "--runtime", "opencode"])
+            .args(extra_args)
+            .arg(target);
+        command.assert()
+    }
+
+    pub fn attach_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
+        let mut command = self.agentbox_command();
+        command.arg("attach").arg(target);
+        command.assert()
+    }
+
+    pub fn stop_assert(&self, target: &Path, extra_args: &[&str]) -> assert_cmd::assert::Assert {
+        let mut command = self.agentbox_command();
+        command.arg("stop").args(extra_args).arg(target);
+        command.assert()
+    }
+}
+
+fn fake_podman_script() -> String {
+    r#"#!/bin/sh
+set -eu
+
+fixtures=${AGENTBOX_TEST_FIXTURES:?missing AGENTBOX_TEST_FIXTURES}
+log_path=${AGENTBOX_TEST_LOG:-}
+
+record() {
+  if [ -n "$log_path" ]; then
+    op=$1
+    shift
+    printf '%s args=%s\n' "$op" "$*" >> "$log_path"
+  fi
+}
+
+maybe_fail() {
+  prefix=$1
+  if [ -f "$fixtures/$prefix.exit" ]; then
+    if [ -f "$fixtures/$prefix.stderr" ]; then
+      cat "$fixtures/$prefix.stderr" >&2
+    fi
+    exit "$(tr -d '\n' < "$fixtures/$prefix.exit")"
+  fi
+}
+
+has_flag() {
+  flag=$1
+  shift
+  for arg in "$@"; do
+    if [ "$arg" = "$flag" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+last_arg() {
+  last=
+  for arg in "$@"; do
+    last=$arg
+  done
+  printf '%s\n' "$last"
+}
+
+cmd=$1
+shift || true
+
+case "$cmd" in
+  ps)
+    record ps "$@"
+    cat "$fixtures/ps.json"
+    ;;
+  image)
+    record image "$@"
+    subcommand=${1:-}
+    shift || true
+    case "$subcommand" in
+      exists)
+        if [ -f "$fixtures/image.exists" ]; then
+          exit 0
+        fi
+        exit 1
+        ;;
+      *)
+        printf 'unexpected podman image invocation: %s %s\n' "$subcommand" "$*" >&2
+        exit 97
+        ;;
+    esac
+    ;;
+  build)
+    record build "$@"
+    maybe_fail build
+    printf 'built\n'
+    ;;
+  inspect)
+    target=${1:?missing inspect target}
+    record inspect "$@"
+    fixture="$fixtures/inspect-$target.json"
+    if [ ! -f "$fixture" ]; then
+      printf 'no such object: %s\n' "$target" >&2
+      exit 125
+    fi
+    cat "$fixture"
+    ;;
+  run)
+    record run "$@"
+    maybe_fail run
+    printf 'started\n'
+    ;;
+  stop)
+    record stop "$@"
+    if [ -f "$fixtures/missing-during-cleanup" ] && ! has_flag --ignore "$@"; then
+      printf 'no such object: %s\n' "$(last_arg "$@")" >&2
+      exit 125
+    fi
+    maybe_fail stop
+    printf 'stopped\n'
+    ;;
+  rm)
+    record rm "$@"
+    if [ -f "$fixtures/missing-during-cleanup" ] && ! has_flag --ignore "$@"; then
+      printf 'no such object: %s\n' "$(last_arg "$@")" >&2
+      exit 125
+    fi
+    maybe_fail rm
+    printf 'removed\n'
+    ;;
+  *)
+    printf 'unexpected podman invocation: %s %s\n' "$cmd" "$*" >&2
+    exit 97
+    ;;
+esac
+"#
+    .to_string()
+}

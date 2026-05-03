@@ -7,19 +7,17 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use agentbox::session::{LABEL_RUNTIME, REQUIRED_NIX_CACHE_MOUNT_DESTINATION};
 use agentbox::workspace::{hash12, resolve_workspace_identity};
-use assert_cmd::Command as AssertCommand;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
-    fake_git_script, managed_labels, managed_ps_entry, operation_names, path_with_prepend,
-    ps_fixture, read_log_lines, running_managed_inspect_fixture as managed_inspect_fixture,
-    write_executable,
+    CliHarness as Harness, managed_labels, managed_ps_entry, operation_names, ps_fixture,
+    running_managed_inspect_fixture as managed_inspect_fixture,
 };
 
 #[test]
@@ -213,7 +211,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
     let other_root = other_root.to_str().unwrap();
     let harness = install_harness();
     harness.write_ps(&ps_fixture(Vec::new()));
-    harness.fail_run("the container name is already in use", 125);
+    harness.fail_operation("run", "the container name is already in use", 125);
     harness.write_inspect(
         &workspace.container_name,
         &managed_inspect_fixture(
@@ -358,64 +356,8 @@ fn failed_session_with_missing_cache_mount_requires_recreation() {
     assert_eq!(operation_names(&log), ["ps", "inspect"]);
 }
 
-struct Harness {
-    fake_bin: tempfile::TempDir,
-    fixtures: tempfile::TempDir,
-    state_home: tempfile::TempDir,
-    log_path: PathBuf,
-    original_path: String,
-}
-
 fn install_harness() -> Harness {
-    let fake_bin = tempfile::tempdir().unwrap();
-    let fixtures = tempfile::tempdir().unwrap();
-    let state_home = tempfile::tempdir().unwrap();
-    let log_path = fixtures.path().join("podman.log");
-    let original_path = std::env::var("PATH").unwrap();
-
-    fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
-    fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
-    write_executable(fake_bin.path().join("git"), fake_git_script());
-    write_executable(fake_bin.path().join("podman"), &fake_podman_script());
-
-    Harness {
-        fake_bin,
-        fixtures,
-        state_home,
-        log_path,
-        original_path,
-    }
-}
-
-impl Harness {
-    fn path_env(&self) -> String {
-        path_with_prepend(self.fake_bin.path(), &self.original_path)
-    }
-
-    fn write_ps(&self, json: &str) {
-        fs::write(self.fixtures.path().join("ps.json"), json).unwrap();
-    }
-
-    fn write_inspect(&self, name: &str, json: &str) {
-        fs::write(
-            self.fixtures.path().join(format!("inspect-{name}.json")),
-            json,
-        )
-        .unwrap();
-    }
-
-    fn fail_run(&self, stderr: &str, exit_code: i32) {
-        fs::write(self.fixtures.path().join("run.stderr"), stderr).unwrap();
-        fs::write(
-            self.fixtures.path().join("run.exit"),
-            format!("{exit_code}\n"),
-        )
-        .unwrap();
-    }
-
-    fn read_log(&self) -> Vec<String> {
-        read_log_lines(&self.log_path)
-    }
+    Harness::new()
 }
 
 fn run_command(
@@ -423,73 +365,5 @@ fn run_command(
     target: &Path,
     extra_args: &[&str],
 ) -> assert_cmd::assert::Assert {
-    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
-    command
-        .env("PATH", harness.path_env())
-        .env("XDG_STATE_HOME", harness.state_home.path())
-        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
-        .env("AGENTBOX_TEST_LOG", &harness.log_path)
-        .args(["run", "--runtime", "opencode"])
-        .args(extra_args)
-        .arg(target);
-    command.assert()
-}
-
-fn fake_podman_script() -> String {
-    r#"#!/bin/sh
-set -eu
-
-fixtures=${AGENTBOX_TEST_FIXTURES:?missing AGENTBOX_TEST_FIXTURES}
-log_path=${AGENTBOX_TEST_LOG:?missing AGENTBOX_TEST_LOG}
-
-cmd=$1
-shift || true
-printf '%s args=%s\n' "$cmd" "$*" >> "$log_path"
-
-case "$cmd" in
-  ps)
-    cat "$fixtures/ps.json"
-    ;;
-  image)
-    subcommand=${1:-}
-    shift || true
-    case "$subcommand" in
-      exists)
-        if [ -f "$fixtures/image.exists" ]; then
-          exit 0
-        fi
-        exit 1
-        ;;
-      *)
-        printf 'unexpected podman image invocation: %s %s\n' "$subcommand" "$*" >&2
-        exit 97
-        ;;
-    esac
-    ;;
-  build)
-    printf 'built\n'
-    ;;
-  inspect)
-    target=${1:?missing inspect target}
-    fixture="$fixtures/inspect-$target.json"
-    if [ ! -f "$fixture" ]; then
-      printf 'no such object: %s\n' "$target" >&2
-      exit 125
-    fi
-    cat "$fixture"
-    ;;
-  run)
-    if [ -f "$fixtures/run.exit" ]; then
-      cat "$fixtures/run.stderr" >&2
-      exit "$(tr -d '\n' < "$fixtures/run.exit")"
-    fi
-    printf 'started\n'
-    ;;
-  *)
-    printf 'unexpected podman invocation: %s %s\n' "$cmd" "$*" >&2
-    exit 97
-    ;;
-esac
-"#
-    .to_string()
+    harness.run_assert_with_args(target, extra_args)
 }

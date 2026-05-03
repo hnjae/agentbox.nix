@@ -8,10 +8,12 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+mod cli_harness;
 mod fake_bins;
 mod git_repo;
 mod podman_fixtures;
 
+pub use cli_harness::CliHarness;
 pub use fake_bins::{
     FakeBinDir, fake_git_script, operation_names, path_with_prepend, read_log_lines,
     write_executable,

@@ -7,20 +7,17 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
-use std::path::Path;
 
 use agentbox::preflight::{PreflightSnapshot, check_host_prerequisites_with_snapshot};
 use agentbox::session::{LABEL_RUNTIME, REQUIRED_NIX_CACHE_MOUNT_DESTINATION};
 use agentbox::workspace::resolve_workspace_identity;
-use assert_cmd::Command as AssertCommand;
 use camino::Utf8Path;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
-    managed_inspect_fixture, managed_labels, managed_ps_entry, path_with_prepend, ps_fixture,
-    write_executable,
+    CliHarness as Harness, managed_inspect_fixture, managed_labels, managed_ps_entry, ps_fixture,
 };
 
 #[test]
@@ -360,158 +357,4 @@ impl<'a> FailureSpec<'a> {
             exit_code,
         }
     }
-}
-
-struct Harness {
-    fake_bin: tempfile::TempDir,
-    fixtures: tempfile::TempDir,
-    state_home: tempfile::TempDir,
-    original_path: String,
-}
-
-impl Harness {
-    fn new() -> Self {
-        let fake_bin = tempfile::tempdir().unwrap();
-        let fixtures = tempfile::tempdir().unwrap();
-        let state_home = tempfile::tempdir().unwrap();
-        let original_path = std::env::var("PATH").unwrap();
-
-        fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
-        fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
-        write_executable(fake_bin.path().join("podman"), &fake_podman_script());
-
-        Self {
-            fake_bin,
-            fixtures,
-            state_home,
-            original_path,
-        }
-    }
-
-    fn path_env(&self) -> String {
-        path_with_prepend(self.fake_bin.path(), &self.original_path)
-    }
-
-    fn write_ps(&self, json: &str) {
-        fs::write(self.fixtures.path().join("ps.json"), json).unwrap();
-    }
-
-    fn write_inspect(&self, name: &str, json: &str) {
-        fs::write(
-            self.fixtures.path().join(format!("inspect-{name}.json")),
-            json,
-        )
-        .unwrap();
-    }
-
-    fn write_failure(&self, kind: &str, stderr: &str, exit_code: i32) {
-        fs::write(self.fixtures.path().join(format!("{kind}.stderr")), stderr).unwrap();
-        fs::write(
-            self.fixtures.path().join(format!("{kind}.exit")),
-            format!("{exit_code}\n"),
-        )
-        .unwrap();
-    }
-
-    fn run_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
-        let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
-        command
-            .env("PATH", self.path_env())
-            .env("XDG_STATE_HOME", self.state_home.path())
-            .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
-            .args(["run", "--runtime", "opencode"])
-            .arg(target);
-        command.assert()
-    }
-
-    fn attach_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
-        let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
-        command
-            .env("PATH", self.path_env())
-            .env("XDG_STATE_HOME", self.state_home.path())
-            .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
-            .arg("attach")
-            .arg(target);
-        command.assert()
-    }
-}
-
-fn fake_podman_script() -> String {
-    r#"#!/bin/sh
-set -eu
-
-fixtures=${AGENTBOX_TEST_FIXTURES:?missing AGENTBOX_TEST_FIXTURES}
-
-maybe_fail() {
-  prefix=$1
-  if [ -f "$fixtures/$prefix.exit" ]; then
-    if [ -f "$fixtures/$prefix.stderr" ]; then
-      cat "$fixtures/$prefix.stderr" >&2
-    fi
-    exit "$(tr -d '\n' < "$fixtures/$prefix.exit")"
-  fi
-}
-
-cmd=$1
-shift || true
-
-case "$cmd" in
-  ps)
-    cat "$fixtures/ps.json"
-    ;;
-  image)
-    subcommand=${1:-}
-    shift || true
-    case "$subcommand" in
-      exists)
-        if [ -f "$fixtures/image.exists" ]; then
-          exit 0
-        fi
-        exit 1
-        ;;
-      *)
-        printf 'unexpected podman image invocation: %s %s\n' "$subcommand" "$*" >&2
-        exit 97
-        ;;
-    esac
-    ;;
-  build)
-    printf 'built\n'
-    ;;
-  inspect)
-    target=${1:?missing inspect target}
-    cat "$fixtures/inspect-$target.json"
-    ;;
-  create)
-    maybe_fail create
-    printf 'created\n'
-    ;;
-  start)
-    maybe_fail start
-    printf 'started\n'
-    ;;
-  run)
-    maybe_fail run
-    printf 'ok\n'
-    ;;
-  exec)
-    mode=exec-attach
-    case "$*" in
-      --detach*)
-        mode=exec-detach
-        ;;
-      *'/entrypoint curl '*)
-        mode=exec-ready
-        ;;
-    esac
-    maybe_fail "$mode"
-    printf 'ok\n'
-    ;;
-  *)
-    printf 'unexpected podman invocation: %s %s\n' "$cmd" "$*" >&2
-    exit 97
-    ;;
-esac
-"#
-    .to_string()
 }

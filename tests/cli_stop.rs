@@ -7,18 +7,16 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use agentbox::workspace::{hash12, resolve_workspace_identity};
-use assert_cmd::Command as AssertCommand;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
-    cached_managed_inspect_fixture as managed_inspect_fixture, managed_ps_entry,
-    opencode_managed_labels as managed_labels, operation_names, path_with_prepend, ps_fixture,
-    read_log_lines, write_executable,
+    CliHarness as Harness, cached_managed_inspect_fixture as managed_inspect_fixture,
+    managed_ps_entry, opencode_managed_labels as managed_labels, operation_names, ps_fixture,
 };
 
 #[test]
@@ -229,57 +227,8 @@ fn stop_allows_exact_missing_path_match_for_orphaned_root_identity() {
     assert_eq!(operation_names(&log), ["ps", "inspect", "stop", "inspect"]);
 }
 
-struct Harness {
-    fake_bin: tempfile::TempDir,
-    fixtures: tempfile::TempDir,
-    state_home: tempfile::TempDir,
-    log_path: PathBuf,
-    original_path: String,
-}
-
 fn install_harness() -> Harness {
-    let fake_bin = tempfile::tempdir().unwrap();
-    let fixtures = tempfile::tempdir().unwrap();
-    let state_home = tempfile::tempdir().unwrap();
-    let log_path = fixtures.path().join("podman.log");
-    let original_path = std::env::var("PATH").unwrap();
-
-    fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
-    write_executable(fake_bin.path().join("podman"), &fake_podman_script());
-
-    Harness {
-        fake_bin,
-        fixtures,
-        state_home,
-        log_path,
-        original_path,
-    }
-}
-
-impl Harness {
-    fn path_env(&self) -> String {
-        path_with_prepend(self.fake_bin.path(), &self.original_path)
-    }
-
-    fn write_ps(&self, json: &str) {
-        fs::write(self.fixtures.path().join("ps.json"), json).unwrap();
-    }
-
-    fn write_inspect(&self, name: &str, json: &str) {
-        fs::write(
-            self.fixtures.path().join(format!("inspect-{name}.json")),
-            json,
-        )
-        .unwrap();
-    }
-
-    fn mark_missing_during_cleanup(&self) {
-        fs::write(self.fixtures.path().join("missing-during-cleanup"), "").unwrap();
-    }
-
-    fn read_log(&self) -> Vec<String> {
-        read_log_lines(&self.log_path)
-    }
+    Harness::new()
 }
 
 fn run_command(
@@ -287,80 +236,5 @@ fn run_command(
     target: &Path,
     extra_args: &[&str],
 ) -> assert_cmd::assert::Assert {
-    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
-    command
-        .env("PATH", harness.path_env())
-        .env("XDG_STATE_HOME", harness.state_home.path())
-        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
-        .env("AGENTBOX_TEST_LOG", &harness.log_path)
-        .arg("stop")
-        .args(extra_args)
-        .arg(target);
-    command.assert()
-}
-
-fn fake_podman_script() -> String {
-    r#"#!/bin/sh
-set -eu
-
-fixtures=${AGENTBOX_TEST_FIXTURES:?missing AGENTBOX_TEST_FIXTURES}
-log_path=${AGENTBOX_TEST_LOG:?missing AGENTBOX_TEST_LOG}
-
-has_flag() {
-  flag=$1
-  shift
-  for arg in "$@"; do
-    if [ "$arg" = "$flag" ]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-last_arg() {
-  last=
-  for arg in "$@"; do
-    last=$arg
-  done
-  printf '%s\n' "$last"
-}
-
-cmd=$1
-shift || true
-printf '%s args=%s\n' "$cmd" "$*" >> "$log_path"
-
-case "$cmd" in
-  ps)
-    cat "$fixtures/ps.json"
-    ;;
-  inspect)
-    target=${1:?missing inspect target}
-    fixture="$fixtures/inspect-$target.json"
-    if [ ! -f "$fixture" ]; then
-      printf 'no such object: %s\n' "$target" >&2
-      exit 125
-    fi
-    cat "$fixture"
-    ;;
-  stop)
-    if [ -f "$fixtures/missing-during-cleanup" ] && ! has_flag --ignore "$@"; then
-      printf 'no such object: %s\n' "$(last_arg "$@")" >&2
-      exit 125
-    fi
-    printf 'stopped\n'
-    ;;
-  rm)
-    if [ -f "$fixtures/missing-during-cleanup" ] && ! has_flag --ignore "$@"; then
-      printf 'no such object: %s\n' "$(last_arg "$@")" >&2
-      exit 125
-    fi
-    printf 'removed\n'
-    ;;
-  *)
-    printf 'unexpected podman invocation: %s %s\n' "$cmd" "$*" >&2
-    exit 97
-    ;;
-esac
-"#
-    .to_string()
+    harness.stop_assert(target, extra_args)
 }
