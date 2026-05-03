@@ -3,6 +3,7 @@ use clap::CommandFactory;
 use crate::cli::{Cli, CompletionShell};
 use crate::error::Result;
 use crate::podman::Podman;
+use crate::runtime::RuntimeKind;
 use crate::session::{SessionRecord, discover_managed_sessions};
 
 pub fn run(shell: CompletionShell) -> Result<()> {
@@ -49,7 +50,8 @@ pub fn live_roots_output() -> Result<String> {
 }
 
 fn bash_script() -> String {
-    r#"_agentbox_completion_roots() {
+    completion_script(
+        r#"_agentbox_completion_roots() {
     local candidates
     candidates="$({ agentbox __completion-roots 2>/dev/null; } || true)"
     COMPREPLY=( $(compgen -W "$(printf '%s\n' "$candidates" | cut -f1)" -- "${COMP_WORDS[COMP_CWORD]}") )
@@ -81,10 +83,10 @@ _agentbox() {
             elif [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[2]}" == "--force" ]]; then
                 _agentbox_completion_roots
             fi
-            ;;
+        ;;
         run)
             if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--runtime" ]]; then
-                COMPREPLY=( $(compgen -W "opencode codex" -- "$cur") )
+                COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
             elif [[ "$cur" == --* ]]; then
                 COMPREPLY=( $(compgen -W "--runtime" -- "$cur") )
             fi
@@ -98,12 +100,13 @@ _agentbox() {
 }
 
 complete -F _agentbox agentbox
-"#
-    .to_string()
+"#,
+    )
 }
 
 fn zsh_script() -> String {
-    r#"#compdef agentbox
+    completion_script(
+        r#"#compdef agentbox
 
 _agentbox_completion_roots() {
   local line root runtime status container
@@ -146,7 +149,7 @@ _agentbox() {
       ;;
     run)
       if (( CURRENT > 2 && "$words[CURRENT-1]" == "--runtime" )); then
-        _values 'runtime' opencode codex
+        _values 'runtime' @RUNTIME_VALUES@
       else
         _values 'option' '--runtime[select runtime]'
       fi
@@ -158,12 +161,13 @@ _agentbox() {
 }
 
 compdef _agentbox agentbox
-"#
-    .to_string()
+"#,
+    )
 }
 
 fn fish_script() -> String {
-    r#"function __agentbox_has_subcommand
+    completion_script(
+        r#"function __agentbox_has_subcommand
     set -l tokens (commandline -opc)
     for token in $tokens[2..-1]
         switch $token
@@ -184,10 +188,17 @@ complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "run attach ls sto
 complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate exact matches"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots)"
-complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "opencode codex"
+complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
-"#
-    .to_string()
+"#,
+    )
+}
+
+fn completion_script(template: &str) -> String {
+    template.replace(
+        "@RUNTIME_VALUES@",
+        &RuntimeKind::supported_values().join(" "),
+    )
 }
 
 fn installed_asset_command() -> clap::Command {

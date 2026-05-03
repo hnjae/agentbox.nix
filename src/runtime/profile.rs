@@ -104,6 +104,10 @@ pub(super) fn supported_runtime_placeholder() -> String {
     format!("<{}>", runtime_names().join("|"))
 }
 
+pub(super) fn supported_runtime_values() -> Vec<&'static str> {
+    runtime_names()
+}
+
 fn runtime_names() -> Vec<&'static str> {
     RUNTIME_PROFILES
         .iter()

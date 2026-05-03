@@ -32,6 +32,10 @@ impl RuntimeKind {
         profile::supported_runtime_placeholder()
     }
 
+    pub fn supported_values() -> Vec<&'static str> {
+        profile::supported_runtime_values()
+    }
+
     pub fn adapter(self) -> RuntimeAdapter {
         RuntimeAdapter::new(self)
     }
