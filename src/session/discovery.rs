@@ -175,13 +175,7 @@ fn build_session_record(
         .unwrap_or_else(|| container.id.clone());
 
     let session_labels = SessionLabels::from_map(labels);
-    let attach_endpoint = derive_attach_endpoint(
-        session_labels.runtime.as_deref(),
-        session_labels.attach_scheme.as_deref(),
-        session_labels.container_port.as_deref(),
-        &inspect,
-    )
-    .ok();
+    let attach_endpoint = derive_attach_endpoint(&session_labels, &inspect).ok();
 
     let (status, failure) = derive_status(
         &session_labels,

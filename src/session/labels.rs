@@ -10,6 +10,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use std::collections::BTreeMap;
 
+use crate::Error;
 use crate::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
@@ -49,10 +50,77 @@ impl ValidSessionLabels {
 struct RequiredSessionLabels {
     canonical_git_root: Utf8PathBuf,
     git_root_hash: String,
-    runtime: String,
-    attach_scheme: String,
-    container_port: String,
-    container_listen_ip: String,
+}
+
+#[derive(Debug)]
+pub(super) enum AttachLabelError {
+    MissingLabel(&'static str),
+    Runtime(Error),
+    MalformedContainerPort(String),
+    AttachSchemeMismatch {
+        runtime: RuntimeKind,
+        actual: String,
+        expected: &'static str,
+    },
+    ContainerPortMismatch {
+        runtime: RuntimeKind,
+        actual: u16,
+        expected: u16,
+    },
+    ContainerListenIpMismatch {
+        runtime: RuntimeKind,
+        actual: String,
+        expected: &'static str,
+    },
+}
+
+impl AttachLabelError {
+    pub(super) fn session_failure(&self) -> SessionFailure {
+        match self {
+            Self::MissingLabel(_) => SessionFailure::MissingRequiredLabels,
+            Self::Runtime(_) => SessionFailure::UnsupportedRuntimeLabel,
+            Self::MalformedContainerPort(_)
+            | Self::AttachSchemeMismatch { .. }
+            | Self::ContainerPortMismatch { .. }
+            | Self::ContainerListenIpMismatch { .. } => SessionFailure::MalformedEndpointLabels,
+        }
+    }
+
+    pub(super) fn into_error(self) -> Error {
+        match self {
+            Self::MissingLabel(label) => Error::msg(format!("missing required label `{label}`")),
+            Self::Runtime(error) => error,
+            Self::MalformedContainerPort(error) => Error::msg(format!(
+                "malformed `io.agentbox.container_port` label: {error}"
+            )),
+            Self::AttachSchemeMismatch {
+                runtime,
+                actual,
+                expected,
+            } => Error::msg(format!(
+                "managed session has attach scheme `{actual}` but runtime `{runtime}` requires `{expected}`"
+            )),
+            Self::ContainerPortMismatch {
+                runtime,
+                actual,
+                expected,
+            } => Error::msg(format!(
+                "managed session publishes container port `{actual}` but runtime `{runtime}` requires `{expected}`"
+            )),
+            Self::ContainerListenIpMismatch {
+                runtime,
+                actual,
+                expected,
+            } => Error::msg(format!(
+                "managed session has container listen IP `{actual}` but runtime `{runtime}` requires `{expected}`"
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct AttachLabels {
+    attach: RuntimeAttachSpec,
 }
 
 impl SessionLabels {
@@ -78,14 +146,13 @@ impl SessionLabels {
             return Err(SessionFailure::DriftedGitRootHash);
         }
 
-        let runtime = required
-            .runtime
-            .parse::<RuntimeKind>()
-            .map_err(|_| SessionFailure::UnsupportedRuntimeLabel)?;
-        let adapter = runtime.adapter();
-        required.validate_attach_labels(adapter.attach_spec())?;
+        AttachLabels::from_session_labels(self).map_err(|error| error.session_failure())?;
 
         Ok(ValidSessionLabels { required })
+    }
+
+    pub(super) fn attach_labels(&self) -> std::result::Result<AttachLabels, AttachLabelError> {
+        AttachLabels::from_session_labels(self)
     }
 }
 
@@ -105,49 +172,73 @@ impl RequiredSessionLabels {
         let Some(git_root_hash) = labels.git_root_hash.clone() else {
             return Err(SessionFailure::MissingRequiredLabels);
         };
-        let Some(runtime) = labels.runtime.clone() else {
-            return Err(SessionFailure::MissingRequiredLabels);
-        };
-        let Some(attach_scheme) = labels.attach_scheme.clone() else {
-            return Err(SessionFailure::MissingRequiredLabels);
-        };
-        let Some(container_port) = labels.container_port.clone() else {
-            return Err(SessionFailure::MissingRequiredLabels);
-        };
-        let Some(container_listen_ip) = labels.container_listen_ip.clone() else {
-            return Err(SessionFailure::MissingRequiredLabels);
-        };
-
         Ok(Self {
             canonical_git_root,
             git_root_hash,
-            runtime,
-            attach_scheme,
-            container_port,
-            container_listen_ip,
         })
     }
 
     fn hash_matches_root(&self) -> bool {
         self.git_root_hash == hash12(self.canonical_git_root.as_str().as_bytes())
     }
+}
 
-    fn validate_attach_labels(
-        &self,
-        attach: RuntimeAttachSpec,
-    ) -> std::result::Result<(), SessionFailure> {
-        let container_port = self
-            .container_port
-            .parse::<u16>()
-            .map_err(|_| SessionFailure::MalformedEndpointLabels)?;
+impl AttachLabels {
+    fn from_session_labels(labels: &SessionLabels) -> std::result::Result<Self, AttachLabelError> {
+        let runtime = labels
+            .runtime
+            .as_deref()
+            .ok_or(AttachLabelError::MissingLabel(LABEL_RUNTIME))?
+            .parse::<RuntimeKind>()
+            .map_err(AttachLabelError::Runtime)?;
+        let attach = runtime.adapter().attach_spec();
 
-        if container_port != attach.container_port
-            || self.attach_scheme != attach.scheme
-            || self.container_listen_ip != attach.container_listen_ip
-        {
-            return Err(SessionFailure::MalformedEndpointLabels);
+        let attach_scheme = labels
+            .attach_scheme
+            .as_deref()
+            .ok_or(AttachLabelError::MissingLabel(LABEL_ATTACH_SCHEME))?;
+        if attach_scheme != attach.scheme {
+            return Err(AttachLabelError::AttachSchemeMismatch {
+                runtime,
+                actual: attach_scheme.to_string(),
+                expected: attach.scheme,
+            });
         }
 
-        Ok(())
+        let container_port = labels
+            .container_port
+            .as_deref()
+            .ok_or(AttachLabelError::MissingLabel(LABEL_CONTAINER_PORT))?
+            .parse::<u16>()
+            .map_err(|error| AttachLabelError::MalformedContainerPort(error.to_string()))?;
+        if container_port != attach.container_port {
+            return Err(AttachLabelError::ContainerPortMismatch {
+                runtime,
+                actual: container_port,
+                expected: attach.container_port,
+            });
+        }
+
+        let container_listen_ip = labels
+            .container_listen_ip
+            .as_deref()
+            .ok_or(AttachLabelError::MissingLabel(LABEL_CONTAINER_LISTEN_IP))?;
+        if container_listen_ip != attach.container_listen_ip {
+            return Err(AttachLabelError::ContainerListenIpMismatch {
+                runtime,
+                actual: container_listen_ip.to_string(),
+                expected: attach.container_listen_ip,
+            });
+        }
+
+        Ok(Self { attach })
+    }
+
+    pub(super) fn scheme(self) -> &'static str {
+        self.attach.scheme
+    }
+
+    pub(super) fn container_port(self) -> u16 {
+        self.attach.container_port
     }
 }

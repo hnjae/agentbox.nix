@@ -7,58 +7,24 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::podman::PodmanContainerInspect;
-use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeKind};
+use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP};
 use crate::{Error, Result};
 
-use super::{LABEL_ATTACH_SCHEME, LABEL_CONTAINER_PORT, LABEL_RUNTIME, required_label_value};
+use super::labels::SessionLabels;
 
 pub fn discover_attach_endpoint_from_inspect(
     inspect: &PodmanContainerInspect,
 ) -> Result<AttachEndpoint> {
-    let labels = &inspect.config.labels;
-    derive_attach_endpoint(
-        required_label_value(labels, LABEL_RUNTIME),
-        required_label_value(labels, LABEL_ATTACH_SCHEME),
-        required_label_value(labels, LABEL_CONTAINER_PORT),
-        inspect,
-    )
+    let labels = SessionLabels::from_map(&inspect.config.labels);
+    derive_attach_endpoint(&labels, inspect)
 }
 
 pub(super) fn derive_attach_endpoint(
-    runtime: Option<&str>,
-    attach_scheme: Option<&str>,
-    container_port: Option<&str>,
+    labels: &SessionLabels,
     inspect: &PodmanContainerInspect,
 ) -> Result<AttachEndpoint> {
-    let runtime = runtime
-        .ok_or_else(|| Error::msg("missing required label `io.agentbox.runtime`"))?
-        .parse::<RuntimeKind>()?;
-    let adapter = runtime.adapter();
-    let attach = adapter.attach_spec();
-    let attach_scheme = attach_scheme
-        .ok_or_else(|| Error::msg("missing required label `io.agentbox.attach_scheme`"))?;
-    if attach_scheme != attach.scheme {
-        return Err(Error::msg(format!(
-            "managed session has attach scheme `{attach_scheme}` but runtime `{runtime}` requires `{}`",
-            attach.scheme,
-        )));
-    }
-
-    let container_port = container_port
-        .ok_or_else(|| Error::msg("missing required label `io.agentbox.container_port`"))?
-        .parse::<u16>()
-        .map_err(|error| {
-            Error::msg(format!(
-                "malformed `io.agentbox.container_port` label: {error}"
-            ))
-        })?;
-
-    if container_port != attach.container_port {
-        return Err(Error::msg(format!(
-            "managed session publishes container port `{container_port}` but runtime `{runtime}` requires `{}`",
-            attach.container_port,
-        )));
-    }
+    let attach_labels = labels.attach_labels().map_err(|error| error.into_error())?;
+    let container_port = attach_labels.container_port();
 
     let port_key = format!("{container_port}/tcp");
     let binding = inspect
@@ -87,7 +53,7 @@ pub(super) fn derive_attach_endpoint(
         .to_string();
 
     Ok(AttachEndpoint {
-        scheme: attach_scheme.to_string(),
+        scheme: attach_labels.scheme().to_string(),
         host_ip,
         host_port,
     })
