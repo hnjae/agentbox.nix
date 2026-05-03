@@ -14,6 +14,7 @@ pub mod completion;
 pub mod ls;
 pub mod run;
 mod runtime_command;
+mod server_readiness;
 mod session_selection;
 pub mod stop;
 mod workspace_flow;

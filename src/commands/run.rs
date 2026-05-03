@@ -6,20 +6,16 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::net::{TcpStream, ToSocketAddrs};
-use std::time::{Duration, Instant};
-
 use crate::cli::RunArgs;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites;
-use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
-use crate::session::{
-    classify_create_error, discover_attach_endpoint_from_inspect, existing_session_error,
-};
+use crate::runtime::{RuntimeAdapter, RuntimeCreateSpec};
+use crate::session::{classify_create_error, existing_session_error};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::runtime_command::server_runtime_command;
+use super::server_readiness::wait_for_server_endpoint;
 use super::session_selection::select_single_session;
 use super::workspace_flow::with_locked_workspace;
 
@@ -103,66 +99,4 @@ fn classify_run_error(
         &original_error.to_string(),
     );
     classify_create_error(podman, workspace, create_spec, wrapped)
-}
-
-fn wait_for_server_endpoint(
-    podman: &Podman,
-    workspace: &WorkspaceIdentity,
-    runtime: RuntimeAdapter,
-) -> Result<AttachEndpoint> {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let mut last_error = None::<String>;
-
-    loop {
-        if Instant::now() >= deadline {
-            let last_error = last_error
-                .as_deref()
-                .unwrap_or("no inspect data was available");
-            return Err(Error::msg(format!(
-                "runtime server for managed session `{}` in `{}` did not become reachable: {last_error}",
-                workspace.container_name, workspace.canonical_git_root,
-            )));
-        }
-
-        match podman.inspect_one(&workspace.container_name) {
-            Ok(inspect) if !inspect.state.running => {
-                return Err(Error::msg(format!(
-                    "container `{}` for `{}` exited before the `{}` runtime server became reachable; status: {}, exit code: {}",
-                    workspace.container_name,
-                    workspace.canonical_git_root,
-                    runtime.name(),
-                    inspect.state.status,
-                    inspect.state.exit_code,
-                )));
-            }
-            Ok(inspect) => match discover_attach_endpoint_from_inspect(&inspect) {
-                Ok(endpoint) if readiness_check_succeeded(&endpoint) => return Ok(endpoint),
-                Ok(endpoint) => {
-                    last_error = Some(format!("endpoint `{endpoint}` is not reachable yet"));
-                }
-                Err(error) => {
-                    last_error = Some(error.to_string());
-                }
-            },
-            Err(error) => {
-                last_error = Some(error.to_string());
-            }
-        }
-
-        std::thread::sleep(Duration::from_millis(200));
-    }
-}
-
-fn readiness_check_succeeded(endpoint: &AttachEndpoint) -> bool {
-    if std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some() {
-        return true;
-    }
-
-    let Ok(addresses) = (endpoint.host_ip.as_str(), endpoint.host_port).to_socket_addrs() else {
-        return false;
-    };
-
-    addresses
-        .into_iter()
-        .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(250)).is_ok())
 }
