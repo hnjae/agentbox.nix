@@ -27,17 +27,42 @@ pub struct PreflightReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreflightSnapshot {
+    pub host: HostPreflightSnapshot,
+    pub nix: NixPreflightSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostPreflightSnapshot {
     pub has_git: bool,
     pub has_podman: bool,
-    pub direnv_required: bool,
-    pub has_direnv: bool,
-    pub has_nix_daemon_socket: bool,
-    pub nix_client_source: Option<Utf8PathBuf>,
+    pub direnv: DirenvPreflightSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirenvPreflightSnapshot {
+    pub required: bool,
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NixPreflightSnapshot {
+    pub has_daemon_socket: bool,
+    pub client_source: Option<Utf8PathBuf>,
+    pub config: NixConfigPreflightSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NixConfigPreflightSnapshot {
     pub has_etc_nix_mount: bool,
     pub has_readable_nix_conf: bool,
-    pub nix_custom_conf_present: bool,
-    pub has_readable_nix_custom_conf_target: bool,
-    pub needs_static_nix_mount: bool,
+    pub custom_conf: NixCustomConfPreflightSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NixCustomConfPreflightSnapshot {
+    pub present: bool,
+    pub has_readable_target: bool,
+    pub needs_static_mount: bool,
 }
 
 impl PreflightSnapshot {
@@ -54,22 +79,34 @@ impl PreflightSnapshot {
         let resolved_nix_custom_conf = resolve_path(nix_custom_conf);
 
         Self {
-            has_git: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some() || command_exists("git"),
-            has_podman: command_exists("podman"),
-            direnv_required,
-            has_direnv: command_exists("direnv"),
-            has_nix_daemon_socket: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
-                || unix_socket_exists(Utf8Path::new(NIX_DAEMON_SOCKET_PATH)),
-            nix_client_source: resolve_nix_client_source(),
-            has_etc_nix_mount: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
-                || symlink_or_path_exists(Utf8Path::new(ETC_NIX_DESTINATION)),
-            has_readable_nix_conf: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
-                || fs::File::open("/etc/nix/nix.conf").is_ok(),
-            nix_custom_conf_present,
-            has_readable_nix_custom_conf_target: fs::File::open(&resolved_nix_custom_conf).is_ok(),
-            needs_static_nix_mount: resolved_nix_custom_conf
-                == Utf8Path::new(ETC_STATIC_NIX_DESTINATION)
-                || resolved_nix_custom_conf.starts_with(Utf8Path::new(ETC_STATIC_NIX_DESTINATION)),
+            host: HostPreflightSnapshot {
+                has_git: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
+                    || command_exists("git"),
+                has_podman: command_exists("podman"),
+                direnv: DirenvPreflightSnapshot {
+                    required: direnv_required,
+                    available: command_exists("direnv"),
+                },
+            },
+            nix: NixPreflightSnapshot {
+                has_daemon_socket: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
+                    || unix_socket_exists(Utf8Path::new(NIX_DAEMON_SOCKET_PATH)),
+                client_source: resolve_nix_client_source(),
+                config: NixConfigPreflightSnapshot {
+                    has_etc_nix_mount: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
+                        || symlink_or_path_exists(Utf8Path::new(ETC_NIX_DESTINATION)),
+                    has_readable_nix_conf: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
+                        || fs::File::open("/etc/nix/nix.conf").is_ok(),
+                    custom_conf: NixCustomConfPreflightSnapshot {
+                        present: nix_custom_conf_present,
+                        has_readable_target: fs::File::open(&resolved_nix_custom_conf).is_ok(),
+                        needs_static_mount: resolved_nix_custom_conf
+                            == Utf8Path::new(ETC_STATIC_NIX_DESTINATION)
+                            || resolved_nix_custom_conf
+                                .starts_with(Utf8Path::new(ETC_STATIC_NIX_DESTINATION)),
+                    },
+                },
+            },
         }
     }
 }
@@ -88,19 +125,19 @@ pub fn check_host_prerequisites_with_snapshot(
     snapshot: &PreflightSnapshot,
     target_directory: Option<&Utf8Path>,
 ) -> Result<PreflightReport> {
-    if !snapshot.has_git {
+    if !snapshot.host.has_git {
         return Err(Error::msg(
             "`git` was not found on PATH; install `git` or add it to PATH",
         ));
     }
 
-    if !snapshot.has_podman {
+    if !snapshot.host.has_podman {
         return Err(Error::msg(
             "`podman` was not found on PATH; install `podman` or add it to PATH",
         ));
     }
 
-    if snapshot.direnv_required && !snapshot.has_direnv {
+    if snapshot.host.direnv.required && !snapshot.host.direnv.available {
         let target = target_directory
             .map(ToString::to_string)
             .unwrap_or_else(|| ".".to_string());
@@ -109,29 +146,31 @@ pub fn check_host_prerequisites_with_snapshot(
         )));
     }
 
-    if !snapshot.has_nix_daemon_socket {
+    if !snapshot.nix.has_daemon_socket {
         return Err(Error::msg(format!(
             "Missing host nix-daemon socket at: {NIX_DAEMON_SOCKET_PATH}. Mount /nix:/nix:ro."
         )));
     }
 
-    let nix_client_source = snapshot.nix_client_source.as_ref().ok_or_else(|| {
+    let nix_client_source = snapshot.nix.client_source.as_ref().ok_or_else(|| {
         Error::msg("`nix` was not found on PATH; install Nix or add the host `nix` client to PATH")
     })?;
 
-    if !snapshot.has_etc_nix_mount {
+    if !snapshot.nix.config.has_etc_nix_mount {
         return Err(Error::msg(
             "Missing /etc/nix host mount. Mount /etc/nix:/etc/nix:ro so the wrapper inherits the host config and registry.",
         ));
     }
 
-    if !snapshot.has_readable_nix_conf {
+    if !snapshot.nix.config.has_readable_nix_conf {
         return Err(Error::msg(
             "Missing readable host Nix config: /etc/nix/nix.conf. Mount /etc/nix:/etc/nix:ro.",
         ));
     }
 
-    if snapshot.nix_custom_conf_present && !snapshot.has_readable_nix_custom_conf_target {
+    if snapshot.nix.config.custom_conf.present
+        && !snapshot.nix.config.custom_conf.has_readable_target
+    {
         return Err(Error::msg(
             "Missing readable target for /etc/nix/nix.custom.conf. Mount /etc/static/nix:/etc/static/nix:ro when /etc/nix points there.",
         ));
@@ -150,7 +189,7 @@ pub fn check_host_prerequisites_with_snapshot(
         ETC_NIX_DESTINATION,
     ));
 
-    if snapshot.needs_static_nix_mount {
+    if snapshot.nix.config.custom_conf.needs_static_mount {
         host_nix_mounts.push(RuntimeMount::read_only_bind(
             ETC_STATIC_NIX_DESTINATION,
             ETC_STATIC_NIX_DESTINATION,

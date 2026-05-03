@@ -12,7 +12,9 @@ use agentbox::metadata::{
     LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::preflight::{
-    ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION,
+    DirenvPreflightSnapshot, ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION,
+    HostPreflightSnapshot, NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION,
+    NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
     PreflightSnapshot, check_host_prerequisites_with_snapshot, required_host_mount_destinations,
 };
 use agentbox::runtime::default_image::{
@@ -34,19 +36,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     let repo = support::temp_git_repo();
     let workspace = resolve_workspace_identity(repo.path()).unwrap();
     let preflight = check_host_prerequisites_with_snapshot(
-        &PreflightSnapshot {
-            has_git: true,
-            has_podman: true,
-            direnv_required: false,
-            has_direnv: false,
-            has_nix_daemon_socket: true,
-            nix_client_source: Some("/run/current-system/sw/bin/nix".into()),
-            has_etc_nix_mount: true,
-            has_readable_nix_conf: true,
-            nix_custom_conf_present: true,
-            has_readable_nix_custom_conf_target: true,
-            needs_static_nix_mount: true,
-        },
+        &passing_preflight_snapshot_with_static_nix_mount(),
         Some(Utf8Path::from_path(repo.path()).unwrap()),
     )
     .unwrap();
@@ -225,23 +215,15 @@ fn supported_runtime_strings_are_derived_from_profiles() {
 
 #[test]
 fn preflight_missing_nix_conf_reports_exact_message() {
-    let error = check_host_prerequisites_with_snapshot(
-        &PreflightSnapshot {
-            has_git: true,
-            has_podman: true,
-            direnv_required: false,
-            has_direnv: false,
-            has_nix_daemon_socket: true,
-            nix_client_source: Some("/run/current-system/sw/bin/nix".into()),
-            has_etc_nix_mount: true,
-            has_readable_nix_conf: false,
-            nix_custom_conf_present: false,
-            has_readable_nix_custom_conf_target: false,
-            needs_static_nix_mount: false,
-        },
-        None,
-    )
-    .unwrap_err();
+    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    snapshot.nix.config.has_readable_nix_conf = false;
+    snapshot.nix.config.custom_conf = NixCustomConfPreflightSnapshot {
+        present: false,
+        has_readable_target: false,
+        needs_static_mount: false,
+    };
+
+    let error = check_host_prerequisites_with_snapshot(&snapshot, None).unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -266,7 +248,33 @@ fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
         Some(workspace.canonical_git_root.as_ref()),
     );
 
-    assert!(!snapshot.direnv_required);
+    assert!(!snapshot.host.direnv.required);
+}
+
+fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
+    PreflightSnapshot {
+        host: HostPreflightSnapshot {
+            has_git: true,
+            has_podman: true,
+            direnv: DirenvPreflightSnapshot {
+                required: false,
+                available: false,
+            },
+        },
+        nix: NixPreflightSnapshot {
+            has_daemon_socket: true,
+            client_source: Some("/run/current-system/sw/bin/nix".into()),
+            config: NixConfigPreflightSnapshot {
+                has_etc_nix_mount: true,
+                has_readable_nix_conf: true,
+                custom_conf: NixCustomConfPreflightSnapshot {
+                    present: true,
+                    has_readable_target: true,
+                    needs_static_mount: true,
+                },
+            },
+        },
+    }
 }
 
 #[test]

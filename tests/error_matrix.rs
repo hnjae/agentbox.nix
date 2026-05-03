@@ -9,7 +9,11 @@
 use std::fs;
 
 use agentbox::metadata::LABEL_RUNTIME;
-use agentbox::preflight::{PreflightSnapshot, check_host_prerequisites_with_snapshot};
+use agentbox::preflight::{
+    DirenvPreflightSnapshot, HostPreflightSnapshot, NixConfigPreflightSnapshot,
+    NixCustomConfPreflightSnapshot, NixPreflightSnapshot, PreflightSnapshot,
+    check_host_prerequisites_with_snapshot,
+};
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::resolve_workspace_identity;
 use camino::Utf8Path;
@@ -55,7 +59,7 @@ fn host_preflight_errors_are_actionable() {
     let target = Utf8Path::new("/workspace/demo/nested");
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.has_git = false),
+        &snapshot_with(|snapshot| snapshot.host.has_git = false),
         Some(target),
     )
     .unwrap_err();
@@ -66,7 +70,7 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.has_podman = false),
+        &snapshot_with(|snapshot| snapshot.host.has_podman = false),
         Some(target),
     )
     .unwrap_err();
@@ -78,8 +82,8 @@ fn host_preflight_errors_are_actionable() {
 
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| {
-            snapshot.direnv_required = true;
-            snapshot.has_direnv = false;
+            snapshot.host.direnv.required = true;
+            snapshot.host.direnv.available = false;
         }),
         Some(target),
     )
@@ -96,7 +100,7 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.has_nix_daemon_socket = false),
+        &snapshot_with(|snapshot| snapshot.nix.has_daemon_socket = false),
         Some(target),
     )
     .unwrap_err();
@@ -105,21 +109,21 @@ fn host_preflight_errors_are_actionable() {
     ));
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.nix_client_source = None),
+        &snapshot_with(|snapshot| snapshot.nix.client_source = None),
         Some(target),
     )
     .unwrap_err();
     assert!(error.to_string().contains("`nix` was not found on PATH"));
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.has_etc_nix_mount = false),
+        &snapshot_with(|snapshot| snapshot.nix.config.has_etc_nix_mount = false),
         Some(target),
     )
     .unwrap_err();
     assert!(error.to_string().contains("Missing /etc/nix host mount"));
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.has_readable_nix_conf = false),
+        &snapshot_with(|snapshot| snapshot.nix.config.has_readable_nix_conf = false),
         Some(target),
     )
     .unwrap_err();
@@ -131,8 +135,8 @@ fn host_preflight_errors_are_actionable() {
 
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| {
-            snapshot.nix_custom_conf_present = true;
-            snapshot.has_readable_nix_custom_conf_target = false;
+            snapshot.nix.config.custom_conf.present = true;
+            snapshot.nix.config.custom_conf.has_readable_target = false;
         }),
         Some(target),
     )
@@ -322,17 +326,27 @@ fn assert_run_failure_case(case: RunFailureCase<'_>) {
 
 fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSnapshot {
     let mut snapshot = PreflightSnapshot {
-        has_git: true,
-        has_podman: true,
-        direnv_required: false,
-        has_direnv: true,
-        has_nix_daemon_socket: true,
-        nix_client_source: Some("/run/current-system/sw/bin/nix".into()),
-        has_etc_nix_mount: true,
-        has_readable_nix_conf: true,
-        nix_custom_conf_present: false,
-        has_readable_nix_custom_conf_target: true,
-        needs_static_nix_mount: false,
+        host: HostPreflightSnapshot {
+            has_git: true,
+            has_podman: true,
+            direnv: DirenvPreflightSnapshot {
+                required: false,
+                available: true,
+            },
+        },
+        nix: NixPreflightSnapshot {
+            has_daemon_socket: true,
+            client_source: Some("/run/current-system/sw/bin/nix".into()),
+            config: NixConfigPreflightSnapshot {
+                has_etc_nix_mount: true,
+                has_readable_nix_conf: true,
+                custom_conf: NixCustomConfPreflightSnapshot {
+                    present: false,
+                    has_readable_target: true,
+                    needs_static_mount: false,
+                },
+            },
+        },
     };
     configure(&mut snapshot);
     snapshot
