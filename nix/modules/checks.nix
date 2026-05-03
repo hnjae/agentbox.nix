@@ -31,6 +31,9 @@
               commonArgs
               // {
                 inherit cargoArtifacts;
+                nativeCheckInputs = [
+                  pkgs.git
+                ];
               }
             );
           };
