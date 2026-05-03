@@ -42,38 +42,34 @@ const CODEX_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTe
     HostClientCommandArg::AttachEndpoint,
 ]);
 
-const RUNTIME_PROFILES: &[RuntimeProfile] = &[
-    RuntimeProfile {
-        kind: RuntimeKind::Opencode,
-        name: "opencode",
-        default_image: default_image::OPENCODE_DEFAULT_IMAGE,
-        materialize_default_image_context: default_image::materialize_default_image_context,
-        attach: RuntimeAttachSpec {
-            scheme: "http",
-            container_listen_ip: CONTAINER_LISTEN_IP,
-            container_port: 4096,
-        },
-        server_command: OPENCODE_SERVER_COMMAND,
-        host_client_command: OPENCODE_HOST_CLIENT_COMMAND,
+const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
+    name: "opencode",
+    default_image: default_image::OPENCODE_DEFAULT_IMAGE,
+    materialize_default_image_context: default_image::materialize_default_image_context,
+    attach: RuntimeAttachSpec {
+        scheme: "http",
+        container_listen_ip: CONTAINER_LISTEN_IP,
+        container_port: 4096,
     },
-    RuntimeProfile {
-        kind: RuntimeKind::Codex,
-        name: "codex",
-        default_image: default_image::CODEX_DEFAULT_IMAGE,
-        materialize_default_image_context: default_image::materialize_default_image_context,
-        attach: RuntimeAttachSpec {
-            scheme: "ws",
-            container_listen_ip: CONTAINER_LISTEN_IP,
-            container_port: 1455,
-        },
-        server_command: CODEX_SERVER_COMMAND,
-        host_client_command: CODEX_HOST_CLIENT_COMMAND,
+    server_command: OPENCODE_SERVER_COMMAND,
+    host_client_command: OPENCODE_HOST_CLIENT_COMMAND,
+};
+
+const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
+    name: "codex",
+    default_image: default_image::CODEX_DEFAULT_IMAGE,
+    materialize_default_image_context: default_image::materialize_default_image_context,
+    attach: RuntimeAttachSpec {
+        scheme: "ws",
+        container_listen_ip: CONTAINER_LISTEN_IP,
+        container_port: 1455,
     },
-];
+    server_command: CODEX_SERVER_COMMAND,
+    host_client_command: CODEX_HOST_CLIENT_COMMAND,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct RuntimeProfile {
-    pub(super) kind: RuntimeKind,
     pub(super) name: &'static str,
     pub(super) default_image: &'static str,
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
@@ -83,17 +79,17 @@ pub(super) struct RuntimeProfile {
 }
 
 pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
-    RUNTIME_PROFILES
-        .iter()
-        .find(|profile| profile.kind == kind)
-        .expect("every RuntimeKind must have a RuntimeProfile")
+    match kind {
+        RuntimeKind::Opencode => &OPENCODE_PROFILE,
+        RuntimeKind::Codex => &CODEX_PROFILE,
+    }
 }
 
 pub(super) fn runtime_kind_from_name(value: &str) -> Option<RuntimeKind> {
-    RUNTIME_PROFILES
+    runtime_kinds()
         .iter()
-        .find(|profile| profile.name == value)
-        .map(|profile| profile.kind)
+        .copied()
+        .find(|kind| runtime_profile(*kind).name == value)
 }
 
 pub(super) fn supported_runtime_names() -> String {
@@ -109,9 +105,9 @@ pub(super) fn supported_runtime_values() -> Vec<&'static str> {
 }
 
 fn runtime_names() -> Vec<&'static str> {
-    RUNTIME_PROFILES
+    runtime_kinds()
         .iter()
-        .map(|profile| profile.name)
+        .map(|kind| runtime_profile(*kind).name)
         .collect()
 }
 
@@ -120,4 +116,8 @@ fn backticked_runtime_names() -> Vec<String> {
         .iter()
         .map(|name| format!("`{name}`"))
         .collect::<Vec<_>>()
+}
+
+fn runtime_kinds() -> &'static [RuntimeKind] {
+    <RuntimeKind as clap::ValueEnum>::value_variants()
 }
