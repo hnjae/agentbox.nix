@@ -76,44 +76,59 @@ impl ProcessRunner {
 }
 
 pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {
-    let description = describe_command(command);
-    let program = command.get_program().to_string_lossy().into_owned();
-    let output = command.output().map_err(|error| {
-        if error.kind() == ErrorKind::NotFound {
-            Error::msg(format!(
-                "`{program}` was not found on PATH; install `{program}` or add it to PATH"
-            ))
-        } else {
-            Error::msg(format!("failed to run `{description}`: {error}"))
-        }
-    })?;
+    let context = CommandContext::from_command(command);
+    let output = command
+        .output()
+        .map_err(|error| context.spawn_error(error))?;
 
     let stdout = String::from_utf8(output.stdout)?;
     let stderr = String::from_utf8(output.stderr)?;
 
     if !output.status.success() {
-        return Err(Error::msg(format!(
-            "`{description}` exited with {}: {detail}",
-            format_status(output.status),
-            detail = output_detail(&stdout, &stderr),
-        )));
+        return Err(context.exit_error(output.status, &stdout, &stderr));
     }
 
     Ok(ProcessOutput { stdout, stderr })
 }
 
 pub fn run_command_status(command: &mut Command) -> Result<ExitStatus> {
-    let description = describe_command(command);
-    let program = command.get_program().to_string_lossy().into_owned();
-    command.status().map_err(|error| {
+    let context = CommandContext::from_command(command);
+    command.status().map_err(|error| context.spawn_error(error))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandContext {
+    description: String,
+    program: String,
+}
+
+impl CommandContext {
+    fn from_command(command: &Command) -> Self {
+        Self {
+            description: describe_command(command),
+            program: command.get_program().to_string_lossy().into_owned(),
+        }
+    }
+
+    fn spawn_error(&self, error: std::io::Error) -> Error {
         if error.kind() == ErrorKind::NotFound {
             Error::msg(format!(
-                "`{program}` was not found on PATH; install `{program}` or add it to PATH"
+                "`{}` was not found on PATH; install `{}` or add it to PATH",
+                self.program, self.program
             ))
         } else {
-            Error::msg(format!("failed to run `{description}`: {error}"))
+            Error::msg(format!("failed to run `{}`: {error}", self.description))
         }
-    })
+    }
+
+    fn exit_error(&self, status: ExitStatus, stdout: &str, stderr: &str) -> Error {
+        Error::msg(format!(
+            "`{}` exited with {}: {detail}",
+            self.description,
+            format_status(status),
+            detail = output_detail(stdout, stderr),
+        ))
+    }
 }
 
 fn describe_command(command: &Command) -> String {
