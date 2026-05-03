@@ -20,7 +20,8 @@ pub use fake_bins::{
 };
 pub use git_repo::{temp_git_repo, tempdir_outside_git};
 pub use podman_fixtures::{
-    cached_managed_inspect_fixture, managed_inspect_fixture, managed_labels,
+    cached_managed_inspect_fixture, inspect_models_by_id, managed_container_models,
+    managed_container_models_with_hash, managed_inspect_fixture, managed_labels,
     managed_labels_for_image, managed_ps_entry, opencode_managed_labels, podman_inspect_fixture,
     podman_ps_fixture, ps_fixture, running_managed_inspect_fixture,
 };

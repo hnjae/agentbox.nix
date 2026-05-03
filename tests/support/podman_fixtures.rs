@@ -15,8 +15,14 @@ use agentbox::metadata::{
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
     LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
+use agentbox::podman::{
+    PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
+    PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
+};
 use agentbox::runtime::default_image::OPENCODE_DEFAULT_IMAGE;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
+use agentbox::workspace::hash12;
+use camino::Utf8Path;
 use serde_json::{Value, json};
 
 pub fn podman_ps_fixture() -> &'static str {
@@ -124,6 +130,131 @@ pub fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
         "Networks": ["podman"],
         "Namespaces": null,
     })
+}
+
+pub fn managed_container_models(
+    name: &str,
+    root: &Utf8Path,
+    running: bool,
+    include_cache_mount: bool,
+) -> (PodmanPsContainer, PodmanContainerInspect) {
+    managed_container_models_with_hash(
+        name,
+        root,
+        hash12(root.as_str().as_bytes()).as_str(),
+        running,
+        include_cache_mount,
+    )
+}
+
+pub fn managed_container_models_with_hash(
+    name: &str,
+    root: &Utf8Path,
+    git_root_hash: &str,
+    running: bool,
+    include_cache_mount: bool,
+) -> (PodmanPsContainer, PodmanContainerInspect) {
+    let ps_labels = BTreeMap::from([
+        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
+        (LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string()),
+    ]);
+    let inspect_labels = managed_labels(root.as_str(), git_root_hash, "opencode", name);
+    let mounts = if include_cache_mount {
+        vec![PodmanContainerMount {
+            kind: "volume".to_string(),
+            source: "agentbox-cache".to_string(),
+            destination: REQUIRED_NIX_CACHE_MOUNT_DESTINATION.to_string(),
+            rw: true,
+        }]
+    } else {
+        Vec::new()
+    };
+
+    (
+        PodmanPsContainer {
+            id: format!("{name}-id"),
+            image: OPENCODE_DEFAULT_IMAGE.to_string(),
+            command: Some(vec!["opencode".to_string()]),
+            created: 0,
+            created_at: "2026-04-21 00:00:00 +0000 UTC".to_string(),
+            names: Some(vec![name.to_string()]),
+            ports: Some(Vec::new()),
+            status: if running {
+                "Up 1 minute".to_string()
+            } else {
+                "Exited (0) 1 minute ago".to_string()
+            },
+            state: if running {
+                "running".to_string()
+            } else {
+                "exited".to_string()
+            },
+            labels: ps_labels,
+            mounts: Some(Vec::new()),
+            networks: Some(vec!["podman".to_string()]),
+            namespaces: None,
+        },
+        PodmanContainerInspect {
+            id: format!("{name}-id"),
+            created: "2026-04-21T00:00:00.000000000Z".to_string(),
+            path: "/usr/bin/opencode".to_string(),
+            args: Vec::new(),
+            state: PodmanContainerState {
+                status: if running {
+                    "running".to_string()
+                } else {
+                    "exited".to_string()
+                },
+                running,
+                exit_code: 0,
+                pid: if running { 4321 } else { 0 },
+                started_at: Some("2026-04-21T00:00:01.000000000Z".to_string()),
+                finished_at: None,
+                health: None,
+            },
+            image_name: OPENCODE_DEFAULT_IMAGE.to_string(),
+            config: PodmanContainerConfig {
+                user: Some("user".to_string()),
+                env: Vec::new(),
+                cmd: vec!["opencode".to_string()],
+                working_dir: Some("/workspace".to_string()),
+                labels: inspect_labels,
+                entrypoint: Some(vec!["/entrypoint".to_string()]),
+                stop_signal: Some("SIGTERM".to_string()),
+            },
+            host_config: PodmanHostConfig {
+                auto_remove: false,
+                network_mode: Some("bridge".to_string()),
+                privileged: false,
+            },
+            mounts,
+            network_settings: PodmanNetworkSettings {
+                networks: BTreeMap::new(),
+                ports: BTreeMap::from([(
+                    "4096/tcp".to_string(),
+                    Some(vec![PodmanPortBinding {
+                        host_ip: Some("127.0.0.1".to_string()),
+                        host_port: Some("49152".to_string()),
+                    }]),
+                )]),
+            },
+        },
+    )
+}
+
+pub fn inspect_models_by_id(
+    inspects: Vec<PodmanContainerInspect>,
+) -> impl FnMut(&str) -> agentbox::Result<PodmanContainerInspect> {
+    let mut inspects = inspects
+        .into_iter()
+        .map(|inspect| (inspect.id.clone(), inspect))
+        .collect::<BTreeMap<_, _>>();
+
+    move |container_id| {
+        inspects.remove(container_id).ok_or_else(|| {
+            agentbox::Error::msg(format!("missing inspect fixture for `{container_id}`"))
+        })
+    }
 }
 
 pub fn managed_labels(
