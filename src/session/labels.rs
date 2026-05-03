@@ -193,39 +193,27 @@ impl RequiredSessionLabels {
 
 impl AttachLabels {
     fn from_session_labels(labels: &SessionMetadata) -> AttachLabelsResult<Self> {
-        let runtime = require_attach_label(labels, LABEL_RUNTIME)?
-            .parse::<RuntimeKind>()
-            .map_err(AttachLabelError::Runtime)?;
+        let runtime = require_runtime_kind(labels)?;
         let attach = runtime.attach_spec();
 
-        let attach_scheme = require_attach_label(labels, LABEL_ATTACH_SCHEME)?;
-        if attach_scheme != attach.scheme {
-            return Err(AttachLabelError::AttachSchemeMismatch {
+        require_matching_attach_label(labels, LABEL_ATTACH_SCHEME, attach.scheme, |actual| {
+            AttachLabelError::AttachSchemeMismatch {
                 runtime,
-                actual: attach_scheme.to_string(),
+                actual,
                 expected: attach.scheme,
-            });
-        }
-
-        let container_port = require_attach_label(labels, LABEL_CONTAINER_PORT)?
-            .parse::<u16>()
-            .map_err(|error| AttachLabelError::MalformedContainerPort(error.to_string()))?;
-        if container_port != attach.container_port {
-            return Err(AttachLabelError::ContainerPortMismatch {
+            }
+        })?;
+        require_matching_container_port(labels, runtime, attach.container_port)?;
+        require_matching_attach_label(
+            labels,
+            LABEL_CONTAINER_LISTEN_IP,
+            attach.container_listen_ip,
+            |actual| AttachLabelError::ContainerListenIpMismatch {
                 runtime,
-                actual: container_port,
-                expected: attach.container_port,
-            });
-        }
-
-        let container_listen_ip = require_attach_label(labels, LABEL_CONTAINER_LISTEN_IP)?;
-        if container_listen_ip != attach.container_listen_ip {
-            return Err(AttachLabelError::ContainerListenIpMismatch {
-                runtime,
-                actual: container_listen_ip.to_string(),
+                actual,
                 expected: attach.container_listen_ip,
-            });
-        }
+            },
+        )?;
 
         Ok(Self { runtime, attach })
     }
@@ -270,4 +258,44 @@ fn require_attach_label<'a>(
     labels
         .label(name)
         .ok_or(AttachLabelError::MissingLabel(name))
+}
+
+fn require_runtime_kind(labels: &SessionMetadata) -> AttachLabelsResult<RuntimeKind> {
+    require_attach_label(labels, LABEL_RUNTIME)?
+        .parse::<RuntimeKind>()
+        .map_err(AttachLabelError::Runtime)
+}
+
+fn require_matching_attach_label(
+    labels: &SessionMetadata,
+    name: &'static str,
+    expected: &'static str,
+    mismatch: impl FnOnce(String) -> AttachLabelError,
+) -> AttachLabelsResult<()> {
+    let actual = require_attach_label(labels, name)?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(mismatch(actual.to_string()))
+    }
+}
+
+fn require_matching_container_port(
+    labels: &SessionMetadata,
+    runtime: RuntimeKind,
+    expected: u16,
+) -> AttachLabelsResult<()> {
+    let actual = require_attach_label(labels, LABEL_CONTAINER_PORT)?
+        .parse::<u16>()
+        .map_err(|error| AttachLabelError::MalformedContainerPort(error.to_string()))?;
+
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(AttachLabelError::ContainerPortMismatch {
+            runtime,
+            actual,
+            expected,
+        })
+    }
 }
