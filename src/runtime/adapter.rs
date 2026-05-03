@@ -58,12 +58,12 @@ impl RuntimeAdapter {
 
     pub fn server_command(self) -> RuntimeCommand {
         let profile = self.profile();
-        (profile.server_command)(profile)
+        profile.server_command.render(profile.attach)
     }
 
     pub fn host_client_command(self, endpoint: &AttachEndpoint) -> RuntimeCommand {
         let profile = self.profile();
-        (profile.host_client_command)(profile, endpoint)
+        profile.host_client_command.render(endpoint)
     }
 
     pub(super) fn profile(self) -> &'static profile::RuntimeProfile {

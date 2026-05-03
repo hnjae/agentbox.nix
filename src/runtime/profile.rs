@@ -8,11 +8,39 @@
 
 use crate::Result;
 
+use super::command::{
+    HostClientCommandArg, HostClientCommandTemplate, ServerCommandArg, ServerCommandTemplate,
+};
 use super::default_image::{self, DefaultImageBuildContext};
 use super::kind::RuntimeKind;
-use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand};
+use super::spec::RuntimeAttachSpec;
 
 const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
+
+const OPENCODE_SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
+    ServerCommandArg::Literal("opencode"),
+    ServerCommandArg::Literal("serve"),
+    ServerCommandArg::Literal("--port"),
+    ServerCommandArg::ContainerPort,
+]);
+const OPENCODE_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTemplate::new(&[
+    HostClientCommandArg::Literal("opencode"),
+    HostClientCommandArg::Literal("attach"),
+    HostClientCommandArg::AttachEndpoint,
+]);
+
+const CODEX_SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
+    ServerCommandArg::Literal("codex"),
+    ServerCommandArg::Literal("--dangerously-bypass-approvals-and-sandbox"),
+    ServerCommandArg::Literal("app-server"),
+    ServerCommandArg::Literal("--listen"),
+    ServerCommandArg::ContainerListenEndpoint,
+]);
+const CODEX_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTemplate::new(&[
+    HostClientCommandArg::Literal("codex"),
+    HostClientCommandArg::Literal("--remote"),
+    HostClientCommandArg::AttachEndpoint,
+]);
 
 const RUNTIME_PROFILES: &[RuntimeProfile] = &[
     RuntimeProfile {
@@ -25,8 +53,8 @@ const RUNTIME_PROFILES: &[RuntimeProfile] = &[
             container_listen_ip: CONTAINER_LISTEN_IP,
             container_port: 4096,
         },
-        server_command: opencode_server_command,
-        host_client_command: opencode_host_client_command,
+        server_command: OPENCODE_SERVER_COMMAND,
+        host_client_command: OPENCODE_HOST_CLIENT_COMMAND,
     },
     RuntimeProfile {
         kind: RuntimeKind::Codex,
@@ -38,8 +66,8 @@ const RUNTIME_PROFILES: &[RuntimeProfile] = &[
             container_listen_ip: CONTAINER_LISTEN_IP,
             container_port: 1455,
         },
-        server_command: codex_server_command,
-        host_client_command: codex_host_client_command,
+        server_command: CODEX_SERVER_COMMAND,
+        host_client_command: CODEX_HOST_CLIENT_COMMAND,
     },
 ];
 
@@ -50,8 +78,8 @@ pub(super) struct RuntimeProfile {
     pub(super) default_image: &'static str,
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
     pub(super) attach: RuntimeAttachSpec,
-    pub(super) server_command: fn(&RuntimeProfile) -> RuntimeCommand,
-    pub(super) host_client_command: fn(&RuntimeProfile, &AttachEndpoint) -> RuntimeCommand,
+    pub(super) server_command: ServerCommandTemplate,
+    pub(super) host_client_command: HostClientCommandTemplate,
 }
 
 pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
@@ -88,53 +116,4 @@ fn backticked_runtime_names() -> Vec<String> {
         .iter()
         .map(|name| format!("`{name}`"))
         .collect::<Vec<_>>()
-}
-
-fn opencode_server_command(profile: &RuntimeProfile) -> RuntimeCommand {
-    RuntimeCommand {
-        argv: vec![
-            "opencode".to_string(),
-            "serve".to_string(),
-            "--port".to_string(),
-            profile.attach.container_port.to_string(),
-        ],
-    }
-}
-
-fn codex_server_command(profile: &RuntimeProfile) -> RuntimeCommand {
-    RuntimeCommand {
-        argv: vec![
-            "codex".to_string(),
-            "--dangerously-bypass-approvals-and-sandbox".to_string(),
-            "app-server".to_string(),
-            "--listen".to_string(),
-            profile.attach.container_listen_endpoint(),
-        ],
-    }
-}
-
-fn opencode_host_client_command(
-    _profile: &RuntimeProfile,
-    endpoint: &AttachEndpoint,
-) -> RuntimeCommand {
-    RuntimeCommand {
-        argv: vec![
-            "opencode".to_string(),
-            "attach".to_string(),
-            endpoint.to_string(),
-        ],
-    }
-}
-
-fn codex_host_client_command(
-    _profile: &RuntimeProfile,
-    endpoint: &AttachEndpoint,
-) -> RuntimeCommand {
-    RuntimeCommand {
-        argv: vec![
-            "codex".to_string(),
-            "--remote".to_string(),
-            endpoint.to_string(),
-        ],
-    }
 }
