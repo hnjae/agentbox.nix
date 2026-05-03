@@ -28,6 +28,9 @@
           // {
             inherit cargoArtifacts;
             cargoBuildExtraArgs = "--bin ${projectName}";
+            nativeCheckInputs = [
+              pkgs.git
+            ];
             postInstall = ''
               mkdir -p \
                 "$out/share/bash-completion/completions" \
