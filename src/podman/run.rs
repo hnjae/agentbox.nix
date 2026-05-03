@@ -13,41 +13,73 @@ pub(super) fn run_detached_args(
     spec: &RuntimeCreateSpec,
     workdir: Option<&str>,
 ) -> Vec<String> {
-    let mut args = strings(["run", "--detach", "--rm", "--rmi", "--name"]);
-    args.push(container_name.to_string());
+    let mut args = PodmanArgs::from(["run", "--detach", "--rm", "--rmi"]);
+    args.option("--name", container_name);
 
     if let Some(workdir) = workdir {
-        args.extend(strings(["--workdir", workdir]));
+        args.option("--workdir", workdir);
     }
 
     for (name, value) in &spec.labels {
-        args.extend(strings(["--label"]));
-        args.push(format!("{name}={value}"));
+        args.option("--label", format!("{name}={value}"));
     }
 
     for mount in &spec.mounts {
-        args.extend(strings(["--mount"]));
-        args.push(render_mount(mount));
+        args.option("--mount", render_mount(mount));
     }
 
     for (name, value) in &spec.default_env {
-        args.extend(strings(["--env"]));
-        args.push(format!("{name}={value}"));
+        args.option("--env", format!("{name}={value}"));
     }
 
     if !spec.network_enabled {
-        args.extend(strings(["--network=none"]));
+        args.flag("--network=none");
     }
 
     for port in &spec.published_ports {
-        args.extend(strings(["--publish", port]));
+        args.option("--publish", port);
     }
 
-    args.push(spec.image.clone());
-    args.extend(spec.command.iter().cloned());
-    args
+    args.flag(spec.image.as_str());
+    args.extend(spec.command.iter().map(String::as_str));
+    args.into_vec()
 }
 
+#[derive(Debug, Default)]
+struct PodmanArgs {
+    values: Vec<String>,
+}
+
+impl PodmanArgs {
+    fn from<const N: usize>(values: [&str; N]) -> Self {
+        let mut args = Self::default();
+        args.extend(values);
+        args
+    }
+
+    fn flag(&mut self, value: impl Into<String>) {
+        self.values.push(value.into());
+    }
+
+    fn option(&mut self, name: &'static str, value: impl Into<String>) {
+        self.flag(name);
+        self.flag(value);
+    }
+
+    fn extend<I, S>(&mut self, values: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.values.extend(values.into_iter().map(Into::into));
+    }
+
+    fn into_vec(self) -> Vec<String> {
+        self.values
+    }
+}
+
+#[cfg(test)]
 fn strings<const N: usize>(values: [&str; N]) -> Vec<String> {
     values.into_iter().map(str::to_string).collect()
 }
