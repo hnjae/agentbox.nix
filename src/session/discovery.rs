@@ -50,7 +50,7 @@ pub fn discover_sessions_for_git_root(
     let git = Git::new();
     discover_sessions_from_ps_with_git(
         podman.ps()?,
-        SessionDiscoveryScope::GitRoot(git_root),
+        SessionDiscoveryScope::for_git_root(git_root),
         |container_id| podman.inspect_one(container_id),
         &git,
     )
@@ -64,7 +64,7 @@ pub fn discover_sessions_for_git_root_from_ps(
     let git = Git::new();
     discover_sessions_from_ps_with_git(
         containers,
-        SessionDiscoveryScope::GitRoot(git_root),
+        SessionDiscoveryScope::for_git_root(git_root),
         |container_id| inspect_container(container_id),
         &git,
     )
@@ -93,7 +93,89 @@ pub fn group_sessions_by_git_root(sessions: &[SessionRecord]) -> Vec<SessionGrou
 
 enum SessionDiscoveryScope<'a> {
     All,
-    GitRoot(&'a Utf8Path),
+    GitRoot(GitRootDiscoveryScope<'a>),
+}
+
+impl<'a> SessionDiscoveryScope<'a> {
+    fn for_git_root(git_root: &'a Utf8Path) -> Self {
+        Self::GitRoot(GitRootDiscoveryScope::new(git_root))
+    }
+}
+
+struct GitRootDiscoveryScope<'a> {
+    git_root: &'a Utf8Path,
+    git_root_hash: String,
+}
+
+impl<'a> GitRootDiscoveryScope<'a> {
+    fn new(git_root: &'a Utf8Path) -> Self {
+        Self {
+            git_root,
+            git_root_hash: hash12(git_root.as_str().as_bytes()),
+        }
+    }
+
+    fn collect_session(
+        &self,
+        record: SessionRecord,
+        matches: &mut Vec<SessionRecord>,
+        mismatched_roots: &mut Vec<String>,
+    ) {
+        let hash_matches = record.git_root_hash() == Some(self.git_root_hash.as_str());
+
+        match (record.canonical_git_root(), hash_matches) {
+            (Some(root), _) if root == self.git_root => matches.push(record),
+            (Some(root), true) => mismatched_roots.push(root.to_string()),
+            (None, true) => matches.push(record),
+            _ => {}
+        }
+    }
+
+    fn collision_error(&self, mismatched_roots: &[String]) -> Error {
+        Error::msg(format!(
+            "managed identity collision for `{}` matched different full git roots: {}",
+            self.git_root,
+            mismatched_roots.join(", ")
+        ))
+    }
+}
+
+struct SessionCollector<'a> {
+    scope: SessionDiscoveryScope<'a>,
+    sessions: Vec<SessionRecord>,
+    mismatched_roots: Vec<String>,
+}
+
+impl<'a> SessionCollector<'a> {
+    fn new(scope: SessionDiscoveryScope<'a>) -> Self {
+        Self {
+            scope,
+            sessions: Vec::new(),
+            mismatched_roots: Vec::new(),
+        }
+    }
+
+    fn collect(&mut self, record: SessionRecord) {
+        match &self.scope {
+            SessionDiscoveryScope::All => self.sessions.push(record),
+            SessionDiscoveryScope::GitRoot(git_root) => {
+                git_root.collect_session(record, &mut self.sessions, &mut self.mismatched_roots)
+            }
+        }
+    }
+
+    fn finish(mut self) -> Result<Vec<SessionRecord>> {
+        if let SessionDiscoveryScope::GitRoot(git_root) = &self.scope {
+            self.mismatched_roots.sort();
+            self.mismatched_roots.dedup();
+
+            if !self.mismatched_roots.is_empty() {
+                return Err(git_root.collision_error(&self.mismatched_roots));
+            }
+        }
+
+        Ok(mark_duplicate_sessions(self.sessions))
+    }
 }
 
 fn discover_sessions_from_ps_with_git(
@@ -102,62 +184,15 @@ fn discover_sessions_from_ps_with_git(
     mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
     git: &Git,
 ) -> Result<Vec<SessionRecord>> {
-    let target_hash = match scope {
-        SessionDiscoveryScope::All => None,
-        SessionDiscoveryScope::GitRoot(git_root) => Some(hash12(git_root.as_str().as_bytes())),
-    };
-    let mut sessions = Vec::new();
-    let mut mismatched_roots = Vec::new();
+    let mut collector = SessionCollector::new(scope);
 
     for container in containers.into_iter().filter(ps_candidate_is_managed) {
         let inspect = inspect_container(&container.id)?;
         let record = build_session_record(container, inspect, git);
-
-        match scope {
-            SessionDiscoveryScope::All => sessions.push(record),
-            SessionDiscoveryScope::GitRoot(git_root) => collect_git_root_scoped_session(
-                record,
-                git_root,
-                target_hash
-                    .as_deref()
-                    .expect("target hash exists for git-root scope"),
-                &mut sessions,
-                &mut mismatched_roots,
-            ),
-        }
+        collector.collect(record);
     }
 
-    match scope {
-        SessionDiscoveryScope::All => {}
-        SessionDiscoveryScope::GitRoot(git_root) if !mismatched_roots.is_empty() => {
-            mismatched_roots.sort();
-            mismatched_roots.dedup();
-            return Err(Error::msg(format!(
-                "managed identity collision for `{git_root}` matched different full git roots: {}",
-                mismatched_roots.join(", ")
-            )));
-        }
-        SessionDiscoveryScope::GitRoot(_) => {}
-    }
-
-    Ok(mark_duplicate_sessions(sessions))
-}
-
-fn collect_git_root_scoped_session(
-    record: SessionRecord,
-    git_root: &Utf8Path,
-    target_hash: &str,
-    matches: &mut Vec<SessionRecord>,
-    mismatched_roots: &mut Vec<String>,
-) {
-    let hash_matches = record.git_root_hash() == Some(target_hash);
-
-    match (record.canonical_git_root(), hash_matches) {
-        (Some(root), _) if root == git_root => matches.push(record),
-        (Some(root), true) => mismatched_roots.push(root.to_string()),
-        (None, true) => matches.push(record),
-        _ => {}
-    }
+    collector.finish()
 }
 
 fn build_session_record(
