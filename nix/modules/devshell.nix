@@ -44,13 +44,19 @@
               default_stages = [ "pre-commit" ];
               gitPackage = pkgs.gitMinimal;
               hooks = {
+                # Static checkers
+                detect-private-keys.enable = true;
+                editorconfig-checker.enable = true;
+                gitlint.enable = true;
+                typos.enable = true;
+
+                # Formatters:
                 nixfmt.enable = true;
                 rustfmt.enable = true;
 
+                # Other formatters:
                 taplo.enable = true;
                 rumdl.enable = true;
-
-                typos.enable = true;
                 just-format = {
                   enable = true;
                   name = "just-fmt";
@@ -69,8 +75,6 @@
                       ''
                   );
                 };
-
-                gitlint.enable = true;
               };
             };
           };
