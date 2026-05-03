@@ -20,6 +20,8 @@ const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
 const OPENCODE_SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
     ServerCommandArg::Literal("opencode"),
     ServerCommandArg::Literal("serve"),
+    ServerCommandArg::Literal("--hostname"),
+    ServerCommandArg::ContainerListenIp,
     ServerCommandArg::Literal("--port"),
     ServerCommandArg::ContainerPort,
 ]);

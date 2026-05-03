@@ -6,6 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
@@ -137,8 +138,80 @@ impl EndpointProbe for HostTcpEndpointProbe {
             return false;
         };
 
-        addresses
-            .into_iter()
-            .any(|address| TcpStream::connect_timeout(&address, ENDPOINT_CONNECT_TIMEOUT).is_ok())
+        addresses.into_iter().any(|address| {
+            TcpStream::connect_timeout(&address, ENDPOINT_CONNECT_TIMEOUT)
+                .is_ok_and(|mut stream| endpoint_connection_is_ready(endpoint, &mut stream))
+        })
+    }
+}
+
+fn endpoint_connection_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
+    if endpoint.scheme == "http" {
+        return http_endpoint_is_ready(endpoint, stream);
+    }
+
+    true
+}
+
+fn http_endpoint_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
+    let _ = stream.set_read_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
+
+    let request = format!(
+        "GET / HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
+        endpoint.host_ip, endpoint.host_port
+    );
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+
+    let mut response_prefix = [0_u8; 8];
+    stream
+        .read(&mut response_prefix)
+        .is_ok_and(|bytes_read| response_prefix[..bytes_read].starts_with(b"HTTP/1."))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::TcpListener;
+    use std::thread;
+
+    use super::*;
+
+    #[test]
+    fn http_probe_rejects_tcp_accept_without_http_response() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = local_http_endpoint(&listener);
+        let server = thread::spawn(move || {
+            let _ = listener.accept().unwrap();
+        });
+
+        assert!(!HostTcpEndpointProbe.is_reachable(&endpoint));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn http_probe_accepts_http_response() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = local_http_endpoint(&listener);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 128];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+        });
+
+        assert!(HostTcpEndpointProbe.is_reachable(&endpoint));
+        server.join().unwrap();
+    }
+
+    fn local_http_endpoint(listener: &TcpListener) -> AttachEndpoint {
+        AttachEndpoint {
+            scheme: "http".to_string(),
+            host_ip: "127.0.0.1".to_string(),
+            host_port: listener.local_addr().unwrap().port(),
+        }
     }
 }

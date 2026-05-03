@@ -28,6 +28,7 @@ impl ServerCommandTemplate {
 #[derive(Debug, Clone, Copy)]
 pub(super) enum ServerCommandArg {
     Literal(&'static str),
+    ContainerListenIp,
     ContainerPort,
     ContainerListenEndpoint,
 }
@@ -36,6 +37,7 @@ impl ServerCommandArg {
     fn render(self, attach: RuntimeAttachSpec) -> String {
         match self {
             Self::Literal(value) => value.to_string(),
+            Self::ContainerListenIp => attach.container_listen_ip.to_string(),
             Self::ContainerPort => attach.container_port.to_string(),
             Self::ContainerListenEndpoint => attach.container_listen_endpoint(),
         }

@@ -95,7 +95,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[3].contains(&format!("--name {}", workspace.container_name)));
     assert!(log[3].contains(&format!("--workdir {}", workspace.canonical_target)));
     assert!(log[3].contains(DEFAULT_IMAGE));
-    assert!(log[3].contains(" opencode serve --port 4096"));
+    assert!(log[3].contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
     assert!(log[3].contains("--publish 127.0.0.1::4096"));
     assert!(log[3].contains("type=volume"));
     assert!(log[3].contains("dst=/home/user/.cache/nix,U"));
@@ -132,7 +132,7 @@ fn run_wraps_server_command_with_direnv_when_envrc_applies() {
     let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
 
     assert!(run.contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(run.contains("direnv exec . opencode serve --port 4096"));
+    assert!(run.contains("direnv exec . opencode serve --hostname 0.0.0.0 --port 4096"));
 }
 
 #[test]
@@ -343,7 +343,14 @@ impl Harness {
             workspace,
             image,
             "opencode",
-            &["opencode", "serve", "--port", "4096"],
+            &[
+                "opencode",
+                "serve",
+                "--hostname",
+                "0.0.0.0",
+                "--port",
+                "4096",
+            ],
             "http",
             "4096",
         );

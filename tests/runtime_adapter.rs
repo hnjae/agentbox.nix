@@ -94,6 +94,8 @@ fn opencode_create_spec_matches_mvp_contract() {
         vec![
             "opencode".to_string(),
             "serve".to_string(),
+            "--hostname".to_string(),
+            "0.0.0.0".to_string(),
             "--port".to_string(),
             "4096".to_string()
         ]
@@ -141,6 +143,8 @@ fn opencode_create_spec_matches_mvp_contract() {
         vec![
             "opencode".to_string(),
             "serve".to_string(),
+            "--hostname".to_string(),
+            "0.0.0.0".to_string(),
             "--port".to_string(),
             "4096".to_string()
         ]

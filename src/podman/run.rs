@@ -119,7 +119,14 @@ mod tests {
                 RuntimeMount::read_only_bind("/workspace", "/workspace"),
                 RuntimeMount::volume("agentbox-cache", "/home/user/.cache/nix"),
             ],
-            command: strings(["opencode", "serve", "--port", "4096"]),
+            command: strings([
+                "opencode",
+                "serve",
+                "--hostname",
+                "0.0.0.0",
+                "--port",
+                "4096",
+            ]),
             default_env: BTreeMap::from([(
                 "NIX_CONFIG".to_string(),
                 "sandbox = false".to_string(),
@@ -157,6 +164,8 @@ mod tests {
                 "localhost/agentbox-opencode:local",
                 "opencode",
                 "serve",
+                "--hostname",
+                "0.0.0.0",
                 "--port",
                 "4096",
             ])
