@@ -173,7 +173,7 @@ fn build_session_record(
         .cloned()
         .unwrap_or_else(|| container.id.clone());
 
-    let metadata = SessionMetadata::from_map(labels);
+    let metadata = SessionMetadata::from_labels(labels);
     let attach_endpoint = derive_attach_endpoint(&metadata, &inspect).ok();
 
     let (status, failure) = derive_status(

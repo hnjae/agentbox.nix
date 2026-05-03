@@ -15,7 +15,7 @@ use super::record::SessionMetadata;
 pub fn discover_attach_endpoint_from_inspect(
     inspect: &PodmanContainerInspect,
 ) -> Result<AttachEndpoint> {
-    let metadata = SessionMetadata::from_map(&inspect.config.labels);
+    let metadata = SessionMetadata::from_labels(&inspect.config.labels);
     derive_attach_endpoint(&metadata, inspect)
 }
 

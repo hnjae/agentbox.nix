@@ -6,6 +6,8 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
+
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::runtime::AttachEndpoint;
@@ -24,30 +26,21 @@ pub struct SessionRecord {
 
 impl SessionRecord {
     pub fn canonical_git_root(&self) -> Option<&Utf8Path> {
-        self.metadata.canonical_git_root.as_deref()
+        self.metadata.canonical_git_root()
     }
 
     pub fn git_root_hash(&self) -> Option<&str> {
-        self.metadata.git_root_hash.as_deref()
+        self.metadata.git_root_hash()
     }
 
     pub fn runtime(&self) -> Option<&str> {
-        self.metadata.runtime.as_deref()
+        self.metadata.runtime()
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionMetadata {
-    pub managed: Option<String>,
-    pub schema: Option<String>,
-    pub canonical_git_root: Option<Utf8PathBuf>,
-    pub git_root_hash: Option<String>,
-    pub runtime: Option<String>,
-    pub image: Option<String>,
-    pub logical_name: Option<String>,
-    pub attach_scheme: Option<String>,
-    pub container_port: Option<String>,
-    pub container_listen_ip: Option<String>,
+    pub(crate) labels: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

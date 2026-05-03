@@ -24,6 +24,19 @@ pub const LABEL_CONTAINER_LISTEN_IP: &str = "io.agentbox.container_listen_ip";
 pub const LABEL_MANAGED_VALUE: &str = "true";
 pub const LABEL_SCHEMA_VALUE: &str = "1";
 
+pub const REQUIRED_SESSION_LABELS: &[&str] = &[
+    LABEL_MANAGED,
+    LABEL_SCHEMA,
+    LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH,
+    LABEL_RUNTIME,
+    LABEL_IMAGE,
+    LABEL_LOGICAL_NAME,
+    LABEL_ATTACH_SCHEME,
+    LABEL_CONTAINER_PORT,
+    LABEL_CONTAINER_LISTEN_IP,
+];
+
 pub(crate) fn managed_label_filter() -> String {
     format!("label={LABEL_MANAGED}={LABEL_MANAGED_VALUE}")
 }
@@ -67,11 +80,4 @@ pub(crate) fn required_label_value<'a>(
         .get(name)
         .map(String::as_str)
         .filter(|value| !value.trim().is_empty())
-}
-
-pub(crate) fn required_label_string(
-    labels: &BTreeMap<String, String>,
-    name: &str,
-) -> Option<String> {
-    required_label_value(labels, name).map(str::to_owned)
 }

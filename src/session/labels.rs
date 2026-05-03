@@ -14,7 +14,7 @@ use crate::Error;
 use crate::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, required_label_string, required_label_value,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_SESSION_LABELS, required_label_value,
 };
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::hash12;
@@ -111,48 +111,36 @@ pub(super) struct AttachLabels {
 }
 
 impl SessionMetadata {
-    pub(super) fn from_map(labels: &BTreeMap<String, String>) -> Self {
+    pub fn from_labels(labels: &BTreeMap<String, String>) -> Self {
         Self {
-            managed: required_label_string(labels, LABEL_MANAGED),
-            schema: required_label_string(labels, LABEL_SCHEMA),
-            canonical_git_root: required_label_value(labels, LABEL_GIT_ROOT).map(Utf8PathBuf::from),
-            git_root_hash: required_label_string(labels, LABEL_GIT_ROOT_HASH),
-            runtime: required_label_string(labels, LABEL_RUNTIME),
-            image: required_label_string(labels, LABEL_IMAGE),
-            logical_name: required_label_string(labels, LABEL_LOGICAL_NAME),
-            attach_scheme: required_label_string(labels, LABEL_ATTACH_SCHEME),
-            container_port: required_label_string(labels, LABEL_CONTAINER_PORT),
-            container_listen_ip: required_label_string(labels, LABEL_CONTAINER_LISTEN_IP),
+            labels: labels.clone(),
         }
     }
 
-    pub(super) fn is_managed(&self) -> bool {
-        self.managed.as_deref() == Some(LABEL_MANAGED_VALUE)
+    pub(crate) fn is_managed(&self) -> bool {
+        self.label(LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE)
     }
 
-    pub(super) fn has_all_required_label_values(&self) -> bool {
-        self.managed.is_some()
-            && self.schema.is_some()
-            && self.canonical_git_root.is_some()
-            && self.git_root_hash.is_some()
-            && self.runtime.is_some()
-            && self.image.is_some()
-            && self.logical_name.is_some()
-            && self.attach_scheme.is_some()
-            && self.container_port.is_some()
-            && self.container_listen_ip.is_some()
+    pub(crate) fn has_all_required_label_values(&self) -> bool {
+        REQUIRED_SESSION_LABELS
+            .iter()
+            .all(|label| self.label(label).is_some())
     }
 
-    pub(super) fn canonical_git_root(&self) -> Option<&Utf8Path> {
-        self.canonical_git_root.as_deref()
+    pub(crate) fn canonical_git_root(&self) -> Option<&Utf8Path> {
+        self.label(LABEL_GIT_ROOT).map(Utf8Path::new)
     }
 
-    pub(super) fn git_root_hash(&self) -> Option<&str> {
-        self.git_root_hash.as_deref()
+    pub(crate) fn git_root_hash(&self) -> Option<&str> {
+        self.label(LABEL_GIT_ROOT_HASH)
     }
 
-    pub(super) fn logical_name_or<'a>(&'a self, fallback: &'a str) -> &'a str {
-        self.logical_name.as_deref().unwrap_or(fallback)
+    pub(crate) fn runtime(&self) -> Option<&str> {
+        self.label(LABEL_RUNTIME)
+    }
+
+    pub(crate) fn logical_name_or<'a>(&'a self, fallback: &'a str) -> &'a str {
+        self.label(LABEL_LOGICAL_NAME).unwrap_or(fallback)
     }
 
     pub(super) fn validate(&self) -> std::result::Result<ValidSessionLabels, SessionFailure> {
@@ -170,22 +158,27 @@ impl SessionMetadata {
     pub(super) fn attach_labels(&self) -> std::result::Result<AttachLabels, AttachLabelError> {
         AttachLabels::from_session_labels(self)
     }
+
+    fn label(&self, name: &str) -> Option<&str> {
+        required_label_value(&self.labels, name)
+    }
 }
 
 impl RequiredSessionLabels {
     fn from_session_labels(labels: &SessionMetadata) -> std::result::Result<Self, SessionFailure> {
-        if labels.managed.as_deref() != Some(LABEL_MANAGED_VALUE)
-            || labels.schema.as_deref() != Some(LABEL_SCHEMA_VALUE)
-            || labels.image.is_none()
-            || labels.logical_name.is_none()
+        if labels.label(LABEL_MANAGED) != Some(LABEL_MANAGED_VALUE)
+            || labels.label(LABEL_SCHEMA) != Some(LABEL_SCHEMA_VALUE)
+            || labels.label(LABEL_IMAGE).is_none()
+            || labels.label(LABEL_LOGICAL_NAME).is_none()
         {
             return Err(SessionFailure::MissingRequiredLabels);
         }
 
-        let Some(canonical_git_root) = labels.canonical_git_root.clone() else {
+        let Some(canonical_git_root) = labels.canonical_git_root().map(Utf8Path::to_path_buf)
+        else {
             return Err(SessionFailure::MissingRequiredLabels);
         };
-        let Some(git_root_hash) = labels.git_root_hash.clone() else {
+        let Some(git_root_hash) = labels.git_root_hash().map(str::to_string) else {
             return Err(SessionFailure::MissingRequiredLabels);
         };
         Ok(Self {
@@ -204,16 +197,14 @@ impl AttachLabels {
         labels: &SessionMetadata,
     ) -> std::result::Result<Self, AttachLabelError> {
         let runtime = labels
-            .runtime
-            .as_deref()
+            .runtime()
             .ok_or(AttachLabelError::MissingLabel(LABEL_RUNTIME))?
             .parse::<RuntimeKind>()
             .map_err(AttachLabelError::Runtime)?;
         let attach = runtime.adapter().attach_spec();
 
         let attach_scheme = labels
-            .attach_scheme
-            .as_deref()
+            .label(LABEL_ATTACH_SCHEME)
             .ok_or(AttachLabelError::MissingLabel(LABEL_ATTACH_SCHEME))?;
         if attach_scheme != attach.scheme {
             return Err(AttachLabelError::AttachSchemeMismatch {
@@ -224,8 +215,7 @@ impl AttachLabels {
         }
 
         let container_port = labels
-            .container_port
-            .as_deref()
+            .label(LABEL_CONTAINER_PORT)
             .ok_or(AttachLabelError::MissingLabel(LABEL_CONTAINER_PORT))?
             .parse::<u16>()
             .map_err(|error| AttachLabelError::MalformedContainerPort(error.to_string()))?;
@@ -238,8 +228,7 @@ impl AttachLabels {
         }
 
         let container_listen_ip = labels
-            .container_listen_ip
-            .as_deref()
+            .label(LABEL_CONTAINER_LISTEN_IP)
             .ok_or(AttachLabelError::MissingLabel(LABEL_CONTAINER_LISTEN_IP))?;
         if container_listen_ip != attach.container_listen_ip {
             return Err(AttachLabelError::ContainerListenIpMismatch {

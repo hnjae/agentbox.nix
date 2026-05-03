@@ -67,7 +67,7 @@ fn classify_named_container_conflict(
     expected_name: &str,
     inspect: &PodmanContainerInspect,
 ) -> Error {
-    let metadata = SessionMetadata::from_map(&inspect.config.labels);
+    let metadata = SessionMetadata::from_labels(&inspect.config.labels);
     let container_name = inspect_container_name(&metadata, expected_name);
     let canonical_git_root = metadata.canonical_git_root();
     let git_root_hash = metadata.git_root_hash();
