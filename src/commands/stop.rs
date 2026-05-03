@@ -79,7 +79,7 @@ fn exact_full_root_matches(
 ) -> Vec<SessionRecord> {
     sessions
         .into_iter()
-        .filter(|session| session.canonical_git_root.as_deref() == Some(git_root))
+        .filter(|session| session.canonical_git_root() == Some(git_root))
         .collect()
 }
 

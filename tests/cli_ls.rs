@@ -1,6 +1,6 @@
 use agentbox::cli::{Cli, Command};
 use agentbox::commands::ls::render_table;
-use agentbox::session::{SessionRecord, SessionStatus};
+use agentbox::session::{SessionMetadata, SessionRecord, SessionStatus};
 use camino::Utf8PathBuf;
 use clap::Parser;
 
@@ -52,16 +52,18 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
     SessionRecord {
         container_id: format!("{name}-id"),
         container_name: name.to_string(),
-        managed: Some("true".to_string()),
-        schema: Some("1".to_string()),
-        canonical_git_root: Some(Utf8PathBuf::from(root)),
-        git_root_hash: Some("hash".to_string()),
-        runtime: Some("opencode".to_string()),
-        image: Some("image".to_string()),
-        logical_name: Some(name.to_string()),
-        attach_scheme: Some("http".to_string()),
-        container_port: Some("4096".to_string()),
-        container_listen_ip: Some("0.0.0.0".to_string()),
+        metadata: SessionMetadata {
+            managed: Some("true".to_string()),
+            schema: Some("1".to_string()),
+            canonical_git_root: Some(Utf8PathBuf::from(root)),
+            git_root_hash: Some("hash".to_string()),
+            runtime: Some("opencode".to_string()),
+            image: Some("image".to_string()),
+            logical_name: Some(name.to_string()),
+            attach_scheme: Some("http".to_string()),
+            container_port: Some("4096".to_string()),
+            container_listen_ip: Some("0.0.0.0".to_string()),
+        },
         attach_endpoint: None,
         failure: None,
         status,

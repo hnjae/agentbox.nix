@@ -36,11 +36,11 @@ pub fn live_roots() -> Result<Vec<SessionRecord>> {
 pub fn live_roots_output() -> Result<String> {
     let mut lines = Vec::new();
     for session in live_roots()? {
-        if let Some(root) = session.canonical_git_root {
+        if let Some(root) = session.canonical_git_root() {
             lines.push(format!(
                 "{}\t{}\t{}\t{}",
                 root,
-                session.runtime.as_deref().unwrap_or("-"),
+                session.runtime().unwrap_or("-"),
                 session.status.as_str(),
                 session.container_name,
             ));

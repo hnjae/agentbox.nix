@@ -16,7 +16,10 @@ use crate::podman::PodmanContainerMount;
 use crate::runtime::AttachEndpoint;
 
 use super::mounts::has_mount_destination;
-use super::{REQUIRED_NIX_CACHE_MOUNT_DESTINATION, labels::SessionLabels, record::SessionRecord};
+use super::{
+    REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+    record::{SessionMetadata, SessionRecord},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionStatus {
@@ -124,7 +127,7 @@ pub fn session_failure_requires_action_error(
 }
 
 pub(super) fn derive_status(
-    session_labels: &SessionLabels,
+    session_labels: &SessionMetadata,
     attach_endpoint: Option<&AttachEndpoint>,
     running: bool,
     mounts: &[PodmanContainerMount],
@@ -169,8 +172,8 @@ pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<S
             continue;
         }
 
-        if let Some(root) = &session.canonical_git_root {
-            *group_sizes.entry(root.clone()).or_default() += 1;
+        if let Some(root) = session.canonical_git_root() {
+            *group_sizes.entry(root.to_path_buf()).or_default() += 1;
         }
     }
 
@@ -180,8 +183,7 @@ pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<S
         }
 
         if session
-            .canonical_git_root
-            .as_ref()
+            .canonical_git_root()
             .and_then(|root| group_sizes.get(root))
             .is_some_and(|count| *count > 1)
         {

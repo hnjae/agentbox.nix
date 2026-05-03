@@ -82,8 +82,7 @@ fn session_runtime(
     session: &SessionRecord,
 ) -> Result<RuntimeAdapter> {
     session
-        .runtime
-        .as_deref()
+        .runtime()
         .ok_or_else(|| unsupported_runtime_label_error(workspace, session))?
         .parse::<RuntimeKind>()
         .map(RuntimeKind::adapter)
@@ -161,7 +160,7 @@ fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRec
         "managed session `{}` for `{}` is not running; rerun `{}` to start a new session or `agentbox stop {}` to remove the leftover container",
         session.container_name,
         workspace.canonical_git_root,
-        run_command_hint(session.runtime.as_deref(), workspace),
+        run_command_hint(session.runtime(), workspace),
         workspace.requested_target,
     ))
 }

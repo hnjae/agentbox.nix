@@ -22,7 +22,7 @@ pub use discovery::{
     discover_sessions_for_git_root_from_ps, group_sessions_by_git_root,
 };
 pub use endpoint::discover_attach_endpoint_from_inspect;
-pub use record::{SessionGroup, SessionRecord};
+pub use record::{SessionGroup, SessionMetadata, SessionRecord};
 
 pub use status::{
     SessionFailure, SessionStatus, failed_session_requires_action_error,

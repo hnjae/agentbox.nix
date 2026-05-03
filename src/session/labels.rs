@@ -19,21 +19,8 @@ use crate::metadata::{
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::hash12;
 
+use super::record::SessionMetadata;
 use super::status::SessionFailure;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SessionLabels {
-    pub(super) managed: Option<String>,
-    pub(super) schema: Option<String>,
-    pub(super) canonical_git_root: Option<Utf8PathBuf>,
-    pub(super) git_root_hash: Option<String>,
-    pub(super) runtime: Option<String>,
-    pub(super) image: Option<String>,
-    pub(super) logical_name: Option<String>,
-    pub(super) attach_scheme: Option<String>,
-    pub(super) container_port: Option<String>,
-    pub(super) container_listen_ip: Option<String>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ValidSessionLabels {
@@ -123,7 +110,7 @@ pub(super) struct AttachLabels {
     attach: RuntimeAttachSpec,
 }
 
-impl SessionLabels {
+impl SessionMetadata {
     pub(super) fn from_map(labels: &BTreeMap<String, String>) -> Self {
         Self {
             managed: required_label_string(labels, LABEL_MANAGED),
@@ -157,7 +144,7 @@ impl SessionLabels {
 }
 
 impl RequiredSessionLabels {
-    fn from_session_labels(labels: &SessionLabels) -> std::result::Result<Self, SessionFailure> {
+    fn from_session_labels(labels: &SessionMetadata) -> std::result::Result<Self, SessionFailure> {
         if labels.managed.as_deref() != Some(LABEL_MANAGED_VALUE)
             || labels.schema.as_deref() != Some(LABEL_SCHEMA_VALUE)
             || labels.image.is_none()
@@ -184,7 +171,9 @@ impl RequiredSessionLabels {
 }
 
 impl AttachLabels {
-    fn from_session_labels(labels: &SessionLabels) -> std::result::Result<Self, AttachLabelError> {
+    fn from_session_labels(
+        labels: &SessionMetadata,
+    ) -> std::result::Result<Self, AttachLabelError> {
         let runtime = labels
             .runtime
             .as_deref()

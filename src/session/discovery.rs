@@ -17,8 +17,7 @@ use crate::workspace::hash12;
 use crate::{Error, Result};
 
 use super::endpoint::derive_attach_endpoint;
-use super::labels::SessionLabels;
-use super::record::{SessionGroup, SessionRecord};
+use super::record::{SessionGroup, SessionMetadata, SessionRecord};
 use super::status::{derive_status, mark_duplicate_sessions};
 
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
@@ -75,9 +74,9 @@ pub fn group_sessions_by_git_root(sessions: &[SessionRecord]) -> Vec<SessionGrou
     let mut groups = BTreeMap::<Utf8PathBuf, Vec<SessionRecord>>::new();
 
     for session in sessions {
-        if let Some(root) = &session.canonical_git_root {
+        if let Some(root) = session.canonical_git_root() {
             groups
-                .entry(root.clone())
+                .entry(root.to_path_buf())
                 .or_default()
                 .push(session.clone());
         }
@@ -151,9 +150,9 @@ fn collect_git_root_scoped_session(
     matches: &mut Vec<SessionRecord>,
     mismatched_roots: &mut Vec<String>,
 ) {
-    let hash_matches = record.git_root_hash.as_deref() == Some(target_hash);
+    let hash_matches = record.git_root_hash() == Some(target_hash);
 
-    match (record.canonical_git_root.as_deref(), hash_matches) {
+    match (record.canonical_git_root(), hash_matches) {
         (Some(root), _) if root == git_root => matches.push(record),
         (Some(root), true) => mismatched_roots.push(root.to_string()),
         (None, true) => matches.push(record),
@@ -174,11 +173,11 @@ fn build_session_record(
         .cloned()
         .unwrap_or_else(|| container.id.clone());
 
-    let session_labels = SessionLabels::from_map(labels);
-    let attach_endpoint = derive_attach_endpoint(&session_labels, &inspect).ok();
+    let metadata = SessionMetadata::from_map(labels);
+    let attach_endpoint = derive_attach_endpoint(&metadata, &inspect).ok();
 
     let (status, failure) = derive_status(
-        &session_labels,
+        &metadata,
         attach_endpoint.as_ref(),
         inspect.state.running,
         &inspect.mounts,
@@ -188,16 +187,7 @@ fn build_session_record(
     SessionRecord {
         container_id: container.id,
         container_name,
-        managed: session_labels.managed,
-        schema: session_labels.schema,
-        canonical_git_root: session_labels.canonical_git_root,
-        git_root_hash: session_labels.git_root_hash,
-        runtime: session_labels.runtime,
-        image: session_labels.image,
-        logical_name: session_labels.logical_name,
-        attach_scheme: session_labels.attach_scheme,
-        container_port: session_labels.container_port,
-        container_listen_ip: session_labels.container_listen_ip,
+        metadata,
         attach_endpoint,
         failure,
         status,
