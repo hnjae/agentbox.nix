@@ -43,7 +43,7 @@ pub struct HostPreflightSnapshot {
     pub has_git: bool,
     pub has_podman: bool,
     pub direnv: DirenvPreflightSnapshot,
-    pub codex: CodexPreflightSnapshot,
+    pub codex: HostDirectoryPreflightSnapshot,
     pub opencode: OpenCodePreflightSnapshot,
 }
 
@@ -54,22 +54,13 @@ pub struct DirenvPreflightSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CodexPreflightSnapshot {
-    pub source: Option<Utf8PathBuf>,
-    pub exists: bool,
-    pub is_directory: bool,
-    pub readable: bool,
-    pub writable: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenCodePreflightSnapshot {
-    pub config: OpenCodeDirectoryPreflightSnapshot,
-    pub data: OpenCodeDirectoryPreflightSnapshot,
+    pub config: HostDirectoryPreflightSnapshot,
+    pub data: HostDirectoryPreflightSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpenCodeDirectoryPreflightSnapshot {
+pub struct HostDirectoryPreflightSnapshot {
     pub source: Option<Utf8PathBuf>,
     pub exists: bool,
     pub is_directory: bool,
@@ -113,7 +104,7 @@ impl HostPreflightSnapshot {
             has_git: test_fixtures_enabled() || command_exists("git"),
             has_podman: command_exists("podman"),
             direnv: DirenvPreflightSnapshot::detect(target_directory, git_root),
-            codex: CodexPreflightSnapshot::detect(),
+            codex: HostDirectoryPreflightSnapshot::detect(codex_config_source()),
             opencode: OpenCodePreflightSnapshot::detect(),
         }
     }
@@ -132,45 +123,16 @@ impl DirenvPreflightSnapshot {
     }
 }
 
-impl CodexPreflightSnapshot {
-    fn detect() -> Self {
-        let source = std::env::var_os("HOME")
-            .and_then(|home| Utf8PathBuf::from_path_buf(std::path::PathBuf::from(home)).ok())
-            .map(|home| home.join(".codex"));
-        let metadata = source
-            .as_ref()
-            .and_then(|path| fs::metadata(path.as_std_path()).ok());
-        let exists = source
-            .as_ref()
-            .is_some_and(|path| symlink_or_path_exists(path));
-        let is_directory = metadata.as_ref().is_some_and(fs::Metadata::is_dir);
-        let readable = source
-            .as_ref()
-            .is_some_and(|path| fs::read_dir(path.as_std_path()).is_ok());
-        let writable = metadata
-            .as_ref()
-            .is_some_and(|metadata| !metadata.permissions().readonly());
-
-        Self {
-            source,
-            exists,
-            is_directory,
-            readable,
-            writable,
-        }
-    }
-}
-
 impl OpenCodePreflightSnapshot {
     fn detect() -> Self {
         Self {
-            config: OpenCodeDirectoryPreflightSnapshot::detect(opencode_config_source()),
-            data: OpenCodeDirectoryPreflightSnapshot::detect(opencode_data_source()),
+            config: HostDirectoryPreflightSnapshot::detect(opencode_config_source()),
+            data: HostDirectoryPreflightSnapshot::detect(opencode_data_source()),
         }
     }
 }
 
-impl OpenCodeDirectoryPreflightSnapshot {
+impl HostDirectoryPreflightSnapshot {
     fn detect(source: Option<Utf8PathBuf>) -> Self {
         let metadata = source
             .as_ref()
@@ -384,7 +346,7 @@ impl PreflightCheck<'_> {
 
     fn opencode_state_mount(
         &self,
-        state: &OpenCodeDirectoryPreflightSnapshot,
+        state: &HostDirectoryPreflightSnapshot,
         description: &str,
         source_expression: &str,
         destination: &str,
@@ -478,6 +440,10 @@ fn host_nix_mounts(
 
 pub fn direnv_applies_to_target(target_directory: &Utf8Path, git_root: &Utf8Path) -> bool {
     envrc_applies_within_git_root(target_directory, git_root)
+}
+
+fn codex_config_source() -> Option<Utf8PathBuf> {
+    path_from_environment("HOME").and_then(|home| utf8_join(home, &[".codex"]))
 }
 
 fn opencode_config_source() -> Option<Utf8PathBuf> {

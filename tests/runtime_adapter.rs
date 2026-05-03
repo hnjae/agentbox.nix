@@ -12,11 +12,11 @@ use agentbox::metadata::{
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::preflight::{
-    CODEX_CONFIG_DESTINATION, CodexPreflightSnapshot, DirenvPreflightSnapshot, ETC_NIX_DESTINATION,
-    ETC_STATIC_NIX_DESTINATION, HostPreflightSnapshot, NIX_CLIENT_DESTINATION,
-    NIX_STORE_DESTINATION, NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot,
-    NixPreflightSnapshot, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
-    OpenCodeDirectoryPreflightSnapshot, OpenCodePreflightSnapshot, PreflightSnapshot,
+    CODEX_CONFIG_DESTINATION, DirenvPreflightSnapshot, ETC_NIX_DESTINATION,
+    ETC_STATIC_NIX_DESTINATION, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
+    NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION, NixConfigPreflightSnapshot,
+    NixCustomConfPreflightSnapshot, NixPreflightSnapshot, OPENCODE_CONFIG_DESTINATION,
+    OPENCODE_DATA_DESTINATION, OpenCodePreflightSnapshot, PreflightSnapshot,
     check_host_prerequisites_with_snapshot, required_host_mount_destinations,
 };
 use agentbox::runtime::default_image::{
@@ -347,7 +347,7 @@ fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
                 required: false,
                 available: false,
             },
-            codex: CodexPreflightSnapshot {
+            codex: HostDirectoryPreflightSnapshot {
                 source: Some("/home/example/.codex".into()),
                 exists: true,
                 is_directory: true,
@@ -355,8 +355,8 @@ fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
                 writable: true,
             },
             opencode: OpenCodePreflightSnapshot {
-                config: opencode_directory("/home/example/.config/opencode"),
-                data: opencode_directory("/home/example/.local/share/opencode"),
+                config: host_directory("/home/example/.config/opencode"),
+                data: host_directory("/home/example/.local/share/opencode"),
             },
         },
         nix: NixPreflightSnapshot {
@@ -375,8 +375,8 @@ fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
     }
 }
 
-fn opencode_directory(path: &str) -> OpenCodeDirectoryPreflightSnapshot {
-    OpenCodeDirectoryPreflightSnapshot {
+fn host_directory(path: &str) -> HostDirectoryPreflightSnapshot {
+    HostDirectoryPreflightSnapshot {
         source: Some(path.into()),
         exists: true,
         is_directory: true,

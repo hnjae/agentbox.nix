@@ -10,10 +10,9 @@ use std::fs;
 
 use agentbox::metadata::LABEL_RUNTIME;
 use agentbox::preflight::{
-    CodexPreflightSnapshot, DirenvPreflightSnapshot, HostPreflightSnapshot,
+    DirenvPreflightSnapshot, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
     NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
-    OpenCodeDirectoryPreflightSnapshot, OpenCodePreflightSnapshot, PreflightSnapshot,
-    check_host_prerequisites_with_snapshot,
+    OpenCodePreflightSnapshot, PreflightSnapshot, check_host_prerequisites_with_snapshot,
 };
 use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
@@ -380,7 +379,7 @@ fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSna
                 required: false,
                 available: true,
             },
-            codex: CodexPreflightSnapshot {
+            codex: HostDirectoryPreflightSnapshot {
                 source: Some("/home/example/.codex".into()),
                 exists: true,
                 is_directory: true,
@@ -388,8 +387,8 @@ fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSna
                 writable: true,
             },
             opencode: OpenCodePreflightSnapshot {
-                config: opencode_directory("/home/example/.config/opencode"),
-                data: opencode_directory("/home/example/.local/share/opencode"),
+                config: host_directory("/home/example/.config/opencode"),
+                data: host_directory("/home/example/.local/share/opencode"),
             },
         },
         nix: NixPreflightSnapshot {
@@ -410,8 +409,8 @@ fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSna
     snapshot
 }
 
-fn opencode_directory(path: &str) -> OpenCodeDirectoryPreflightSnapshot {
-    OpenCodeDirectoryPreflightSnapshot {
+fn host_directory(path: &str) -> HostDirectoryPreflightSnapshot {
+    HostDirectoryPreflightSnapshot {
         source: Some(path.into()),
         exists: true,
         is_directory: true,
