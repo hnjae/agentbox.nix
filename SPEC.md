@@ -360,7 +360,10 @@ Required package output paths:
 - `share/bash-completion/completions/agentbox`
 - `share/zsh/site-functions/_agentbox`
 - `share/fish/vendor_completions.d/agentbox.fish`
-- `share/man/man1/agentbox.1`, or `share/man/man1/agentbox.1.gz` when the Nix
+- `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`,
+  `share/man/man1/agentbox-attach.1`, `share/man/man1/agentbox-ls.1`,
+  `share/man/man1/agentbox-stop.1`, and
+  `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the Nix
   fixup phase compresses manual pages
 
 `nix build '.#default'` must produce those files in its result path.
