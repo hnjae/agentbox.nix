@@ -9,48 +9,42 @@
 use std::process::Stdio;
 
 use crate::cli::DirectoryArgs;
-use crate::lock::lock_workspace;
-use crate::podman::Podman;
 use crate::process::{ProcessRunner, format_status, run_command_status};
 use crate::runtime::RuntimeKind;
 use crate::session::{
-    SessionFailure, SessionRecord, SessionStatus, discover_sessions_for_git_root,
-    duplicate_sessions_error, session_failure_requires_action_error,
+    SessionFailure, SessionRecord, SessionStatus, duplicate_sessions_error,
+    session_failure_requires_action_error,
 };
-use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
+use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::runtime_command::{RuntimeInvocation, host_client_runtime_command};
 use super::session_selection::{run_command_hint, select_single_session};
+use super::workspace_flow::with_locked_workspace;
 
 pub fn run(args: DirectoryArgs) -> Result<()> {
-    let workspace = resolve_workspace_identity(&args.directory)?;
-    {
-        let mut workspace_lock = lock_workspace(&workspace)?;
-        let _workspace_guard = workspace_lock.guard()?;
-
-        let podman = Podman::new();
-        let sessions =
-            discover_sessions_for_git_root(&podman, workspace.canonical_git_root.as_ref())?;
-        let Some(session) = select_single_session(&sessions, &workspace)? else {
-            return Err(no_session_error(&workspace));
+    with_locked_workspace(&args.directory, |locked| {
+        let workspace = locked.workspace();
+        let sessions = locked.discover_sessions()?;
+        let Some(session) = select_single_session(&sessions, workspace)? else {
+            return Err(no_session_error(workspace));
         };
-        let session = validate_attachable_session(&workspace, session)?;
+        let session = validate_attachable_session(workspace, session)?;
 
         let process_runner = ProcessRunner::new();
         let runtime = session
             .runtime
             .as_deref()
-            .ok_or_else(|| unsupported_runtime_label_error(&workspace, session))?
+            .ok_or_else(|| unsupported_runtime_label_error(workspace, session))?
             .parse::<RuntimeKind>()
-            .map_err(|_| unsupported_runtime_label_error(&workspace, session))?
+            .map_err(|_| unsupported_runtime_label_error(workspace, session))?
             .adapter();
         let endpoint = session
             .attach_endpoint
             .as_ref()
-            .ok_or_else(|| missing_endpoint_error(&workspace, session))?;
-        let client = host_client_runtime_command(runtime, endpoint, &workspace);
-        let retry_run_command = run_command_hint(Some(runtime.name()), &workspace);
+            .ok_or_else(|| missing_endpoint_error(workspace, session))?;
+        let client = host_client_runtime_command(runtime, endpoint, workspace);
+        let retry_run_command = run_command_hint(Some(runtime.name()), workspace);
 
         run_host_client(&process_runner, &client).map_err(|error| {
             Error::msg(format!(
@@ -60,8 +54,8 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
                 retry_run_command,
                 workspace.requested_target,
             ))
-        })?;
-    }
+        })
+    })?;
 
     Ok(())
 }

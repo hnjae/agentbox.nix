@@ -16,6 +16,7 @@ pub mod run;
 mod runtime_command;
 mod session_selection;
 pub mod stop;
+mod workspace_flow;
 
 pub fn dispatch(command: Command) -> Result<()> {
     tracing::debug!(?command, "dispatching CLI command");

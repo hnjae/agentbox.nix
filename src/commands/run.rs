@@ -10,41 +10,36 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
 use crate::cli::RunArgs;
-use crate::lock::lock_workspace;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites;
 use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeCreateSpec};
 use crate::session::{
-    classify_create_error, discover_attach_endpoint_from_inspect, discover_sessions_for_git_root,
-    existing_session_error,
+    classify_create_error, discover_attach_endpoint_from_inspect, existing_session_error,
 };
-use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
+use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::runtime_command::server_runtime_command;
 use super::session_selection::select_single_session;
+use super::workspace_flow::with_locked_workspace;
 
 pub fn run(args: RunArgs) -> Result<()> {
-    let workspace = resolve_workspace_identity(&args.directory)?;
     let runtime = args.runtime.adapter();
-    let endpoint = {
-        let mut workspace_lock = lock_workspace(&workspace)?;
-        let _workspace_guard = workspace_lock.guard()?;
-
+    let (workspace, endpoint) = with_locked_workspace(&args.directory, |locked| {
+        let workspace = locked.workspace();
         let preflight = check_host_prerequisites(
             Some(workspace.canonical_target.as_ref()),
             Some(workspace.canonical_git_root.as_ref()),
         )?;
 
-        let podman = Podman::new();
-        let sessions =
-            discover_sessions_for_git_root(&podman, workspace.canonical_git_root.as_ref())?;
-        if let Some(session) = select_single_session(&sessions, &workspace)? {
-            return Err(existing_session_error(&podman, &workspace, session));
+        let podman = locked.podman();
+        let sessions = locked.discover_sessions()?;
+        if let Some(session) = select_single_session(&sessions, workspace)? {
+            return Err(existing_session_error(podman, workspace, session));
         }
 
-        ensure_default_runtime_image(&podman, runtime, &workspace)?;
-        let mut run_spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
+        ensure_default_runtime_image(podman, runtime, workspace)?;
+        let mut run_spec = runtime.create_spec(workspace, &preflight.host_nix_mounts);
         let server_run = server_runtime_command(
             runtime,
             workspace.canonical_target.as_ref(),
@@ -52,15 +47,17 @@ pub fn run(args: RunArgs) -> Result<()> {
         );
         run_spec.command = server_run.argv;
 
-        podman
+        let endpoint = podman
             .run_detached(
                 &workspace.container_name,
                 &run_spec,
                 Some(server_run.workdir.as_str()),
             )
-            .and_then(|_| wait_for_server_endpoint(&podman, &workspace, runtime))
-            .map_err(|error| classify_run_error(&podman, &workspace, &run_spec, error))?
-    };
+            .and_then(|_| wait_for_server_endpoint(podman, workspace, runtime))
+            .map_err(|error| classify_run_error(podman, workspace, &run_spec, error))?;
+
+        Ok(endpoint)
+    })?;
 
     println!(
         "managed session `{}` is running for `{}` at `{endpoint}`; use `agentbox attach {}` to connect",
