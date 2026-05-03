@@ -16,13 +16,13 @@ use tempfile::TempDir;
 pub fn temp_git_repo() -> TempDir {
     let repo = tempfile::tempdir().unwrap();
 
-    fs::create_dir_all(repo.path().join(".git/refs/heads")).unwrap();
-    fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
-    fs::write(
-        repo.path().join(".git/config"),
-        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = true\n",
-    )
-    .unwrap();
+    let status = Command::new("git")
+        .arg("init")
+        .arg("--quiet")
+        .arg(repo.path())
+        .status()
+        .expect("failed to run `git init` for test repository");
+    assert!(status.success(), "`git init` failed with {status}");
     fs::write(repo.path().join(".gitignore"), "\n").unwrap();
 
     repo

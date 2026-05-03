@@ -7,11 +7,16 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::workspace::{
-    container_name_from_canonical_root, hash12, resolve_workspace_identity, sha256_bytes,
+    container_name_from_canonical_root, hash12, resolve_workspace_identity,
+    resolve_workspace_identity_with_git, sha256_bytes,
 };
+use agentbox::{git::Git, process::ProcessRunner};
 use camino::Utf8PathBuf;
-use std::fs;
+use std::{fs, process::Command};
 use tempfile::TempDir;
+
+#[path = "support/mod.rs"]
+mod support;
 
 #[test]
 fn resolves_canonical_root_and_target() {
@@ -60,6 +65,25 @@ fn rejects_escaped_target_outside_repo_root() {
 }
 
 #[test]
+fn does_not_accept_git_marker_when_git_rejects_the_directory() {
+    let fake_bins = support::FakeBinDir::new();
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir(repo.path().join(".git")).unwrap();
+    let repo_path = repo.path().to_str().unwrap();
+    fake_bins.install_exact_failure(
+        "git",
+        &["-C", repo_path, "rev-parse", "--show-toplevel"],
+        "fatal: not a git repository (or any of the parent directories): .git",
+        128,
+    );
+
+    let git = Git::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()));
+    let error = resolve_workspace_identity_with_git(repo.path(), &git).unwrap_err();
+
+    assert!(error.to_string().contains("not inside a git repository"));
+}
+
+#[test]
 fn hashes_and_names_match_spec_example() {
     let digest = sha256_bytes(b"/aaa/bbb");
     assert_eq!(
@@ -86,13 +110,13 @@ fn overlong_paths_preserve_rightmost_suffix() {
 
 fn temp_git_repo() -> TempDir {
     let repo = tempfile::tempdir().unwrap();
-    fs::create_dir_all(repo.path().join(".git/refs/heads")).unwrap();
-    fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
-    fs::write(
-        repo.path().join(".git/config"),
-        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = true\n",
-    )
-    .unwrap();
+    let status = Command::new("git")
+        .arg("init")
+        .arg("--quiet")
+        .arg(repo.path())
+        .status()
+        .expect("failed to run `git init` for test repository");
+    assert!(status.success(), "`git init` failed with {status}");
     fs::write(repo.path().join(".gitignore"), "\n").unwrap();
     repo
 }

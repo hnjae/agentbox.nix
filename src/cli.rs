@@ -43,7 +43,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    /// Run a managed session in the foreground.
+    /// Run a managed session as a detached runtime server.
     Run(RunArgs),
     /// Attach to a running managed session.
     Attach(DirectoryArgs),

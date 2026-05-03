@@ -65,6 +65,26 @@ fn missing_required_labels_marks_failed() {
 }
 
 #[test]
+fn scoped_discovery_keeps_matching_root_when_identity_hash_is_missing() {
+    let repo = git_repo::temp_git_repo();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let (mut ps, mut inspect) = managed_container("missing-hash", root, true, true);
+    ps.labels.remove(LABEL_GIT_ROOT_HASH);
+    inspect.config.labels.remove(LABEL_GIT_ROOT_HASH);
+
+    let sessions =
+        discover_sessions_for_git_root_from_ps(vec![ps], root, inspect_by_id(vec![inspect]))
+            .unwrap();
+
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].status, SessionStatus::Failed);
+    assert_eq!(
+        sessions[0].failure,
+        Some(SessionFailure::MissingRequiredLabels)
+    );
+}
+
+#[test]
 fn missing_cache_mount_marks_failed() {
     let repo = git_repo::temp_git_repo();
     let root = Utf8Path::from_path(repo.path()).unwrap();
@@ -202,7 +222,7 @@ fn hash_collision_between_different_roots_fails_clearly() {
     )
     .unwrap_err();
 
-    assert!(error.to_string().contains("hash12 prefilter"));
+    assert!(error.to_string().contains("managed identity collision"));
     assert!(error.to_string().contains(target_root.as_str()));
     assert!(error.to_string().contains(other_root.as_str()));
 }

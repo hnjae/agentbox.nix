@@ -16,17 +16,7 @@ pub fn run(shell: CompletionShell) -> Result<()> {
 }
 
 pub fn generate_installed(shell: CompletionShell) -> Result<()> {
-    let mut command = installed_asset_command();
-    let bin_name = command.get_name().to_string();
-    let shell = match shell {
-        CompletionShell::Bash => clap_complete::Shell::Bash,
-        CompletionShell::Zsh => clap_complete::Shell::Zsh,
-        CompletionShell::Fish => clap_complete::Shell::Fish,
-    };
-    let mut stdout = std::io::stdout().lock();
-
-    clap_complete::generate(shell, &mut command, bin_name, &mut stdout);
-    Ok(())
+    run(shell)
 }
 
 pub fn generate_manpage() -> Result<()> {
@@ -64,7 +54,50 @@ fn bash_script() -> String {
     candidates="$({ agentbox __completion-roots 2>/dev/null; } || true)"
     COMPREPLY=( $(compgen -W "$(printf '%s\n' "$candidates" | cut -f1)" -- "${COMP_WORDS[COMP_CWORD]}") )
 }
-complete -F _agentbox_completion_roots agentbox
+
+_agentbox() {
+    local cur subcommand
+    cur="${COMP_WORDS[COMP_CWORD]}"
+
+    if [[ "$COMP_CWORD" -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "run attach ls stop completion help" -- "$cur") )
+        return 0
+    fi
+
+    subcommand="${COMP_WORDS[1]}"
+    case "$subcommand" in
+        attach)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                _agentbox_completion_roots
+            fi
+            ;;
+        stop)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                if [[ "$cur" == --* ]]; then
+                    COMPREPLY=( $(compgen -W "--force" -- "$cur") )
+                else
+                    _agentbox_completion_roots
+                fi
+            elif [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[2]}" == "--force" ]]; then
+                _agentbox_completion_roots
+            fi
+            ;;
+        run)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--runtime" ]]; then
+                COMPREPLY=( $(compgen -W "opencode codex" -- "$cur") )
+            elif [[ "$cur" == --* ]]; then
+                COMPREPLY=( $(compgen -W "--runtime" -- "$cur") )
+            fi
+            ;;
+        completion)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
+            fi
+            ;;
+    esac
+}
+
+complete -F _agentbox agentbox
 "#
     .to_string()
 }
@@ -83,16 +116,76 @@ _agentbox_completion_roots() {
   compadd -d descriptions -- "${candidates[@]}"
 }
 
-compdef _agentbox_completion_roots agentbox
+_agentbox() {
+  local -a subcommands
+  subcommands=(
+    'run:Run a detached runtime server session'
+    'attach:Attach to a running managed session'
+    'ls:List managed sessions'
+    'stop:Stop a managed session'
+    'completion:Generate shell completion'
+    'help:Show help'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' subcommands
+    return
+  fi
+
+  case "$words[2]" in
+    attach)
+      (( CURRENT == 3 )) && _agentbox_completion_roots
+      ;;
+    stop)
+      if (( CURRENT == 3 )); then
+        _values 'option' '--force[clean up duplicate exact matches]'
+        _agentbox_completion_roots
+      elif (( CURRENT == 4 && "$words[3]" == "--force" )); then
+        _agentbox_completion_roots
+      fi
+      ;;
+    run)
+      if (( CURRENT > 2 && "$words[CURRENT-1]" == "--runtime" )); then
+        _values 'runtime' opencode codex
+      else
+        _values 'option' '--runtime[select runtime]'
+      fi
+      ;;
+    completion)
+      (( CURRENT == 3 )) && _values 'shell' bash zsh fish
+      ;;
+  esac
+}
+
+compdef _agentbox agentbox
 "#
     .to_string()
 }
 
 fn fish_script() -> String {
-    r#"function __agentbox_completion_roots
-    agentbox __completion-roots 2>/dev/null
+    r#"function __agentbox_has_subcommand
+    set -l tokens (commandline -opc)
+    for token in $tokens[2..-1]
+        switch $token
+            case run attach ls stop completion help
+                return 0
+        end
+    end
+    return 1
 end
-complete -c agentbox -f -a "(__agentbox_completion_roots)"
+
+function __agentbox_completion_roots
+    agentbox __completion-roots 2>/dev/null | while read -l root runtime status container
+        printf "%s\t%s %s\n" "$root" "$runtime" "$status"
+    end
+end
+
+complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "run attach ls stop completion help"
+complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate exact matches"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "opencode codex"
+complete -c agentbox -f -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 "#
     .to_string()
 }

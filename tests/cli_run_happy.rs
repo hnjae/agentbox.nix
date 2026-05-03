@@ -90,7 +90,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
 }
 
 #[test]
-fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
+fn run_wraps_server_command_with_direnv_when_envrc_applies() {
     let repo = support::temp_git_repo();
     let target = repo.path().join("nested");
     fs::create_dir(&target).unwrap();

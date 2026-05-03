@@ -91,7 +91,7 @@ pub(crate) enum GitRootError {
 }
 
 impl GitRootError {
-    fn into_error(self, directory: &Utf8Path) -> Error {
+    pub(crate) fn into_error(self, directory: &Utf8Path) -> Error {
         match self {
             Self::GitNotFound => {
                 Error::msg("`git` was not found on PATH; install `git` or add it to PATH")

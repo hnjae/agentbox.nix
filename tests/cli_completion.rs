@@ -47,7 +47,7 @@ fn zsh_completion_script_wires_the_dynamic_callback_and_descriptions() {
     let script = capture_completion_script();
 
     assert!(script.contains("__completion-roots"));
-    assert!(script.contains("compdef _agentbox_completion_roots agentbox"));
+    assert!(script.contains("compdef _agentbox agentbox"));
     assert!(script.contains("compadd -d descriptions -- \"${candidates[@]}\""));
     assert!(script.contains("runtime status"));
 }
@@ -57,16 +57,19 @@ fn fish_completion_script_keeps_helper_metadata_available() {
     let script = capture_completion_script_shell("fish");
 
     assert!(script.contains("agentbox __completion-roots 2>/dev/null"));
-    assert!(script.contains("complete -c agentbox -f -a \"(__agentbox_completion_roots)\""));
+    assert!(script.contains("__fish_seen_subcommand_from attach"));
+    assert!(script.contains("__fish_seen_subcommand_from stop"));
+    assert!(script.contains("(__agentbox_completion_roots)"));
 }
 
 #[test]
-fn installed_completion_script_uses_clap_model_without_internal_helpers() {
+fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
     assert!(script.contains("run attach ls stop completion help"));
-    assert!(!script.contains("__completion-roots"));
+    assert!(script.contains("__completion-roots"));
+    assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
     assert!(!script.contains("__generate-man"));
 }

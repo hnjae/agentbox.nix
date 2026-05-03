@@ -20,11 +20,6 @@ pub const ETC_NIX_DESTINATION: &str = "/etc/nix";
 pub const ETC_STATIC_NIX_DESTINATION: &str = "/etc/static/nix";
 pub const NIX_CACHE_DESTINATION: &str = "/home/user/.cache/nix";
 
-const NIX_CLIENT_CANDIDATES: [&str; 2] = [
-    "/run/current-system/sw/bin/nix",
-    "/nix/var/nix/profiles/default/bin/nix",
-];
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreflightReport {
     pub host_nix_mounts: Vec<RuntimeMount>,
@@ -121,9 +116,7 @@ pub fn check_host_prerequisites_with_snapshot(
     }
 
     let nix_client_source = snapshot.nix_client_source.as_ref().ok_or_else(|| {
-        Error::msg(
-            "Expected host-mounted nix not found in PATH. Mount /run/current-system/sw/bin/nix:/usr/local/bin/nix:ro or /nix/var/nix/profiles/default/bin/nix:/usr/local/bin/nix:ro.",
-        )
+        Error::msg("`nix` was not found on PATH; install Nix or add the host `nix` client to PATH")
     })?;
 
     if !snapshot.has_etc_nix_mount {
@@ -185,10 +178,9 @@ fn resolve_nix_client_source() -> Option<Utf8PathBuf> {
         return Some(Utf8PathBuf::from("/usr/bin/nix"));
     }
 
-    NIX_CLIENT_CANDIDATES.iter().find_map(|candidate| {
-        let path = Utf8PathBuf::from(candidate.to_string());
-        fs::File::open(path.as_std_path()).ok().map(|_| path)
-    })
+    which::which("nix")
+        .ok()
+        .and_then(|path| Utf8PathBuf::from_path_buf(path).ok())
 }
 
 fn command_exists(program: &str) -> bool {

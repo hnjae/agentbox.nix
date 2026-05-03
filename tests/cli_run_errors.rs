@@ -191,7 +191,7 @@ fn hash_collision_fails_closed() {
 
     run_command(&harness, &target, &[])
         .failure()
-        .stderr(predicates::str::contains("hash12 prefilter"))
+        .stderr(predicates::str::contains("managed identity collision"))
         .stderr(predicates::str::contains(
             workspace.canonical_git_root.as_str(),
         ))

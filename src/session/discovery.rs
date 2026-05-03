@@ -11,9 +11,7 @@ use std::collections::BTreeMap;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::git::Git;
-use crate::metadata::{
-    LABEL_GIT_ROOT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE, required_label_value,
-};
+use crate::metadata::{LABEL_MANAGED, LABEL_MANAGED_VALUE, required_label_value};
 use crate::podman::{Podman, PodmanContainerInspect, PodmanPsContainer};
 use crate::workspace::hash12;
 use crate::{Error, Result};
@@ -113,12 +111,6 @@ fn discover_sessions_from_ps_with_git(
     let mut mismatched_roots = Vec::new();
 
     for container in containers.into_iter().filter(ps_candidate_is_managed) {
-        if target_hash.as_deref().is_some_and(|target_hash| {
-            required_label_value(&container.labels, LABEL_GIT_ROOT_HASH) != Some(target_hash)
-        }) {
-            continue;
-        }
-
         let inspect = inspect_container(&container.id)?;
         let record = build_session_record(container, inspect, git);
 
@@ -127,6 +119,9 @@ fn discover_sessions_from_ps_with_git(
             SessionDiscoveryScope::GitRoot(git_root) => collect_git_root_scoped_session(
                 record,
                 git_root,
+                target_hash
+                    .as_deref()
+                    .expect("target hash exists for git-root scope"),
                 &mut sessions,
                 &mut mismatched_roots,
             ),
@@ -139,7 +134,7 @@ fn discover_sessions_from_ps_with_git(
             mismatched_roots.sort();
             mismatched_roots.dedup();
             return Err(Error::msg(format!(
-                "hash12 prefilter for `{git_root}` matched different full git roots: {}",
+                "managed identity collision for `{git_root}` matched different full git roots: {}",
                 mismatched_roots.join(", ")
             )));
         }
@@ -152,13 +147,17 @@ fn discover_sessions_from_ps_with_git(
 fn collect_git_root_scoped_session(
     record: SessionRecord,
     git_root: &Utf8Path,
+    target_hash: &str,
     matches: &mut Vec<SessionRecord>,
     mismatched_roots: &mut Vec<String>,
 ) {
-    match record.canonical_git_root.as_deref() {
-        Some(root) if root == git_root => matches.push(record),
-        Some(root) => mismatched_roots.push(root.to_string()),
-        None => matches.push(record),
+    let hash_matches = record.git_root_hash.as_deref() == Some(target_hash);
+
+    match (record.canonical_git_root.as_deref(), hash_matches) {
+        (Some(root), _) if root == git_root => matches.push(record),
+        (Some(root), true) => mismatched_roots.push(root.to_string()),
+        (None, true) => matches.push(record),
+        _ => {}
     }
 }
 

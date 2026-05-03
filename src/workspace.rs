@@ -111,23 +111,10 @@ fn canonicalize_utf8(path: &Utf8Path) -> Result<Utf8PathBuf> {
 fn git_root_for(directory: &Utf8Path, git: &Git) -> Result<Utf8PathBuf> {
     match git.resolve_toplevel(directory) {
         Ok(root) => Ok(root),
-        Err(GitRootError::GitNotFound | GitRootError::NotRepository) => {
-            git_root_from_marker(directory).ok_or_else(|| Error::non_git_target(directory))
+        Err(error @ (GitRootError::GitNotFound | GitRootError::NotRepository)) => {
+            Err(error.into_error(directory))
         }
         Err(GitRootError::Failed(error)) => Err(error),
-    }
-}
-
-fn git_root_from_marker(directory: &Utf8Path) -> Option<Utf8PathBuf> {
-    let mut current = directory;
-
-    loop {
-        let git_dir = current.join(".git");
-        if git_dir.is_dir() || git_dir.is_file() {
-            return Some(current.to_path_buf());
-        }
-
-        current = current.parent()?;
     }
 }
 

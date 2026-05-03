@@ -9,7 +9,6 @@ dependencies = [
  "assert_cmd",
  "camino",
  "clap",
- "clap_complete",
  "clap_mangen",
  "comfy-table",
  "directories",
@@ -169,15 +168,6 @@ dependencies = [
  "anstyle",
  "clap_lex",
  "strsim",
-]
-
-[[package]]
-name = "clap_complete"
-version = "4.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ff7a1dccbdd8b078c2bdebff47e404615151534d5043da397ec50286816f9cb"
-dependencies = [
- "clap",
 ]
 
 [[package]]

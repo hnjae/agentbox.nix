@@ -111,11 +111,7 @@ fn host_preflight_errors_are_actionable() {
         Some(target),
     )
     .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("Expected host-mounted nix not found in PATH")
-    );
+    assert!(error.to_string().contains("`nix` was not found on PATH"));
 
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(|snapshot| snapshot.has_etc_nix_mount = false),
@@ -268,8 +264,8 @@ fn runtime_command_failures_are_actionable() {
     };
     assert_run_failure_case(unusable_state_path);
 
-    let missing_foreground_command = RunFailureCase {
-        target_subdir: "missing-foreground-command",
+    let missing_server_command = RunFailureCase {
+        target_subdir: "missing-server-command",
         failure: FailureSpec::new("run", "opencode: not found", 127),
         expected: vec![
             "failed to run the runtime server command",
@@ -277,7 +273,7 @@ fn runtime_command_failures_are_actionable() {
             "Verify the runtime image still provides `/entrypoint` and the expected runtime tools",
         ],
     };
-    assert_run_failure_case(missing_foreground_command);
+    assert_run_failure_case(missing_server_command);
 
     let entrypoint_failure = RunFailureCase {
         target_subdir: "entrypoint-failure",

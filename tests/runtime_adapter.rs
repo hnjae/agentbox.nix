@@ -20,8 +20,8 @@ use agentbox::session::{
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
     LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
-use std::fs;
 use std::path::Path;
+use std::{fs, process::Command};
 
 use agentbox::workspace::resolve_workspace_identity;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -298,13 +298,13 @@ fn materialized_default_image_context_matches_repo_assets() {
 }
 
 fn init_git_repo(path: &std::path::Path) {
-    fs::create_dir_all(path.join(".git/refs/heads")).unwrap();
-    fs::write(path.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
-    fs::write(
-        path.join(".git/config"),
-        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = true\n",
-    )
-    .unwrap();
+    let status = Command::new("git")
+        .arg("init")
+        .arg("--quiet")
+        .arg(path)
+        .status()
+        .expect("failed to run `git init` for test repository");
+    assert!(status.success(), "`git init` failed with {status}");
     fs::write(path.join(".gitignore"), "\n").unwrap();
 }
 

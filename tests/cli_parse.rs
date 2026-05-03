@@ -25,7 +25,8 @@ fn help_lists_core_commands() {
             .and(predicate::str::contains("attach"))
             .and(predicate::str::contains("ls"))
             .and(predicate::str::contains("stop"))
-            .and(predicate::str::contains("completion")),
+            .and(predicate::str::contains("completion"))
+            .and(predicate::str::contains("detached runtime server")),
     );
 }
 
