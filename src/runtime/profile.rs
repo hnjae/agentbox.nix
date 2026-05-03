@@ -43,6 +43,7 @@ const CODEX_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTe
 ]);
 
 const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
+    kind: RuntimeKind::Opencode,
     name: "opencode",
     default_image: default_image::OPENCODE_DEFAULT_IMAGE,
     materialize_default_image_context: default_image::materialize_default_image_context,
@@ -56,6 +57,7 @@ const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
 };
 
 const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
+    kind: RuntimeKind::Codex,
     name: "codex",
     default_image: default_image::CODEX_DEFAULT_IMAGE,
     materialize_default_image_context: default_image::materialize_default_image_context,
@@ -68,8 +70,11 @@ const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
     host_client_command: CODEX_HOST_CLIENT_COMMAND,
 };
 
+const RUNTIME_PROFILES: &[RuntimeProfile] = &[OPENCODE_PROFILE, CODEX_PROFILE];
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct RuntimeProfile {
+    pub(super) kind: RuntimeKind,
     pub(super) name: &'static str,
     pub(super) default_image: &'static str,
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
@@ -86,10 +91,10 @@ pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
 }
 
 pub(super) fn runtime_kind_from_name(value: &str) -> Option<RuntimeKind> {
-    runtime_kinds()
+    RUNTIME_PROFILES
         .iter()
-        .copied()
-        .find(|kind| runtime_profile(*kind).name == value)
+        .find(|profile| profile.name == value)
+        .map(|profile| profile.kind)
 }
 
 pub(super) fn supported_runtime_names() -> String {
@@ -105,9 +110,9 @@ pub(super) fn supported_runtime_values() -> Vec<&'static str> {
 }
 
 fn runtime_names() -> Vec<&'static str> {
-    runtime_kinds()
+    RUNTIME_PROFILES
         .iter()
-        .map(|kind| runtime_profile(*kind).name)
+        .map(|profile| profile.name)
         .collect()
 }
 
@@ -118,6 +123,27 @@ fn backticked_runtime_names() -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
+#[cfg(test)]
 fn runtime_kinds() -> &'static [RuntimeKind] {
     <RuntimeKind as clap::ValueEnum>::value_variants()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_profile_table_covers_value_enum_variants() {
+        let mut profile_kinds = RUNTIME_PROFILES
+            .iter()
+            .map(|profile| profile.kind)
+            .collect::<Vec<_>>();
+        profile_kinds.sort_by_key(|kind| kind.as_str());
+        profile_kinds.dedup();
+
+        let mut value_enum_kinds = runtime_kinds().to_vec();
+        value_enum_kinds.sort_by_key(|kind| kind.as_str());
+
+        assert_eq!(profile_kinds, value_enum_kinds);
+    }
 }
