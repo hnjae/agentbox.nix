@@ -1,8 +1,9 @@
 # Agentbox Specification
 
-This document describes the behavior that users and operators can observe from
-the `agentbox` CLI, installed package, managed Podman objects, and documented
-filesystem effects. It does not specify internal module structure.
+This document specifies user-visible CLI behavior and operator-visible runtime
+state for the `agentbox` CLI, installed package, managed Podman objects, and
+documented filesystem effects. It does not specify Rust module structure or
+private implementation details.
 
 ## Summary
 
@@ -24,7 +25,9 @@ selected runtime server for that workspace.
 `agentbox attach <directory>` discovers the running server endpoint for the
 resolved repository and runs the running session's runtime host-side client
 command from the session's stored launch directory. The newly requested
-directory is used only to identify the workspace once the session exists.
+directory is used only to identify the workspace once the session exists. For
+`attach`, `<directory>` is a workspace selector, not a request to change the
+running session's working directory.
 
 Managed containers are started with Podman's `--rm` and `--rmi` cleanup flags.
 When the runtime server exits, or when `agentbox stop <directory>` stops it,
@@ -220,7 +223,9 @@ Image rules:
 
 ### `agentbox attach <directory>`
 
-`attach` connects to an already-running managed workspace session.
+`attach` connects to an already-running managed workspace session. For
+`attach`, `<directory>` is a workspace selector, not a requested working
+directory for the running session.
 
 Expected behavior:
 
@@ -250,6 +255,8 @@ Rules:
 - `attach` does not open a raw shell through `podman exec`.
 - The host client process current working directory is the running session's
   stored launch directory.
+- When the requested directory differs from the stored launch directory,
+  `attach` prints a short notice before launching the host client.
 - The running server process keeps the working directory and environment from
   its original `run`.
 - A different requested directory under the same git root does not change the
@@ -263,8 +270,8 @@ Rules:
 
 Expected output fields:
 
-- canonical git root
-- runtime
+- canonical git root, or `unknown`
+- runtime, or `unknown`
 - status
 - concrete container name
 
@@ -283,6 +290,9 @@ Rules:
 
 - Containers not marked as managed by `agentbox` are ignored, even if their
   names resemble `agentbox` names.
+- For `failed` sessions, fields that cannot be recovered from live Podman state
+  are shown as `unknown`. The concrete container name must still be shown so the
+  user or operator can inspect or remove the broken container.
 - `ls` prints a compact human-readable table in the MVP.
 - The MVP does not require machine-readable `ls` output.
 
@@ -310,10 +320,15 @@ Expected behavior:
 
 Optional flag:
 
-- `--force`: best-effort cleanup when duplicate exact matches exist
+- `--force`: best-effort cleanup when duplicate or failed exact matches exist
 
 Safety rules:
 
+- Without `--force`, `stop` fails when more than one matching managed container
+  is found.
+- With `--force`, `stop` stops all live managed containers that exactly claim
+  the resolved canonical git root or exact orphan path. It still does not stop
+  containers that cannot be matched to that identity.
 - `stop` never deletes the user workspace.
 - `stop` never directly removes images or named cache volumes.
 
@@ -324,10 +339,16 @@ Shell completion for `attach` and `stop` is dynamic.
 Required behavior:
 
 - Completion candidates come from live managed sessions, not from a static file.
-- Candidate values are canonical git root paths.
+- Candidate values are canonical or stored git root paths when known. Sessions
+  with no recoverable git-root path are not completion candidates, but remain
+  visible through `agentbox ls` by concrete container name.
+- `attach` completion includes only attachable `running` sessions with valid
+  endpoint metadata.
+- `stop` completion includes running, orphaned, duplicate, and failed sessions
+  when a canonical or stored git-root path is known.
 - Candidate descriptions include runtime and status when the shell supports
   descriptions.
-- Running sessions are visible immediately at tab completion time.
+- Eligible live sessions are reflected immediately at tab completion time.
 - `fzf-tab`-style frontends work automatically because they consume normal shell
   completion results.
 
@@ -398,6 +419,10 @@ Rules:
 - The runtime user home inside the container is `/home/user`.
 - `/home/user` itself is writable for runtime state creation, but it is not
   required to persist across container recreation.
+- Runtime state outside `/home/user/.cache/nix` is ephemeral in the MVP. Users
+  should not expect runtime configuration, login state, shell history, or files
+  written elsewhere under `/home/user` to survive container recreation unless
+  those files are also stored in the workspace bind mount.
 - The runtime cache volume name is identical to the container name for the same
   workspace session.
 - The mounted runtime cache volume stores Nix cache and evaluation artifacts
@@ -520,14 +545,16 @@ reclamation is explicit, for example `podman volume rm <container-name>` or
 Required drift behavior:
 
 - Duplicate containers for one git root: mark the session as `duplicate`, fail
-  `run` and `attach`, and do not guess which container to use.
+  `run` and `attach`, and do not guess which container to use. `stop --force`
+  may stop all duplicate managed containers that exactly claim the resolved
+  canonical git root or exact orphan path.
 - Missing or malformed managed-container metadata: mark the session as `failed`
-  and require explicit repair or recreation before the session can be used
+  and require explicit cleanup or recreation before the session can be used
   again.
 - Missing runtime cache volume mount for an existing session: fail clearly and
   require explicit container recreation.
 - Missing or inconsistent attach endpoint metadata or published port data: mark
-  the session as `failed` and require explicit repair or recreation before the
+  the session as `failed` and require explicit cleanup or recreation before the
   session can be attached.
 - Missing host-attached Nix prerequisite: fail clearly, report the missing
   mount, client, socket, config, or state-path requirement, and do not attempt
@@ -538,6 +565,11 @@ Required drift behavior:
   not treat them as the same workspace.
 - Stop failure: report exactly which managed containers are still running or
   still inspectable.
+- A `failed` session is not attachable. If enough metadata remains to identify
+  it by git root or exact orphan path, `agentbox stop --force <directory>` may
+  stop it. If the session cannot be matched safely, `ls` reports the concrete
+  container name and the user must remove that container with Podman before
+  starting a new session for the affected workspace.
 
 ## Error Handling
 
