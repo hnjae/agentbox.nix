@@ -20,6 +20,8 @@ pub const ETC_NIX_DESTINATION: &str = "/etc/nix";
 pub const ETC_STATIC_NIX_DESTINATION: &str = "/etc/static/nix";
 pub const NIX_CACHE_DESTINATION: &str = "/home/user/.cache/nix";
 
+const NIX_CUSTOM_CONF_PATH: &str = "/etc/nix/nix.custom.conf";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreflightReport {
     pub host_nix_mounts: Vec<RuntimeMount>,
@@ -67,46 +69,68 @@ pub struct NixCustomConfPreflightSnapshot {
 
 impl PreflightSnapshot {
     pub fn detect(target_directory: Option<&Utf8Path>, git_root: Option<&Utf8Path>) -> Self {
-        let direnv_required =
-            target_directory
+        Self {
+            host: HostPreflightSnapshot::detect(target_directory, git_root),
+            nix: NixPreflightSnapshot::detect(),
+        }
+    }
+}
+
+impl HostPreflightSnapshot {
+    fn detect(target_directory: Option<&Utf8Path>, git_root: Option<&Utf8Path>) -> Self {
+        Self {
+            has_git: test_fixtures_enabled() || command_exists("git"),
+            has_podman: command_exists("podman"),
+            direnv: DirenvPreflightSnapshot::detect(target_directory, git_root),
+        }
+    }
+}
+
+impl DirenvPreflightSnapshot {
+    fn detect(target_directory: Option<&Utf8Path>, git_root: Option<&Utf8Path>) -> Self {
+        Self {
+            required: target_directory
                 .zip(git_root)
                 .is_some_and(|(target_directory, git_root)| {
                     envrc_applies_within_git_root(target_directory, git_root)
-                });
+                }),
+            available: command_exists("direnv"),
+        }
+    }
+}
 
-        let nix_custom_conf = Utf8Path::new("/etc/nix/nix.custom.conf");
-        let nix_custom_conf_present = symlink_or_path_exists(nix_custom_conf);
-        let resolved_nix_custom_conf = resolve_path(nix_custom_conf);
-
+impl NixPreflightSnapshot {
+    fn detect() -> Self {
         Self {
-            host: HostPreflightSnapshot {
-                has_git: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
-                    || command_exists("git"),
-                has_podman: command_exists("podman"),
-                direnv: DirenvPreflightSnapshot {
-                    required: direnv_required,
-                    available: command_exists("direnv"),
-                },
-            },
-            nix: NixPreflightSnapshot {
-                has_daemon_socket: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
-                    || unix_socket_exists(Utf8Path::new(NIX_DAEMON_SOCKET_PATH)),
-                client_source: resolve_nix_client_source(),
-                config: NixConfigPreflightSnapshot {
-                    has_etc_nix_mount: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
-                        || symlink_or_path_exists(Utf8Path::new(ETC_NIX_DESTINATION)),
-                    has_readable_nix_conf: std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
-                        || fs::File::open("/etc/nix/nix.conf").is_ok(),
-                    custom_conf: NixCustomConfPreflightSnapshot {
-                        present: nix_custom_conf_present,
-                        has_readable_target: fs::File::open(&resolved_nix_custom_conf).is_ok(),
-                        needs_static_mount: resolved_nix_custom_conf
-                            == Utf8Path::new(ETC_STATIC_NIX_DESTINATION)
-                            || resolved_nix_custom_conf
-                                .starts_with(Utf8Path::new(ETC_STATIC_NIX_DESTINATION)),
-                    },
-                },
-            },
+            has_daemon_socket: test_fixtures_enabled()
+                || unix_socket_exists(Utf8Path::new(NIX_DAEMON_SOCKET_PATH)),
+            client_source: resolve_nix_client_source(),
+            config: NixConfigPreflightSnapshot::detect(),
+        }
+    }
+}
+
+impl NixConfigPreflightSnapshot {
+    fn detect() -> Self {
+        Self {
+            has_etc_nix_mount: test_fixtures_enabled()
+                || symlink_or_path_exists(Utf8Path::new(ETC_NIX_DESTINATION)),
+            has_readable_nix_conf: test_fixtures_enabled()
+                || fs::File::open("/etc/nix/nix.conf").is_ok(),
+            custom_conf: NixCustomConfPreflightSnapshot::detect(),
+        }
+    }
+}
+
+impl NixCustomConfPreflightSnapshot {
+    fn detect() -> Self {
+        let path = Utf8Path::new(NIX_CUSTOM_CONF_PATH);
+        let resolved_path = resolve_path(path);
+        Self {
+            present: symlink_or_path_exists(path),
+            has_readable_target: fs::File::open(&resolved_path).is_ok(),
+            needs_static_mount: resolved_path == Utf8Path::new(ETC_STATIC_NIX_DESTINATION)
+                || resolved_path.starts_with(Utf8Path::new(ETC_STATIC_NIX_DESTINATION)),
         }
     }
 }
@@ -213,13 +237,17 @@ pub fn required_host_mount_destinations() -> [&'static str; 4] {
 }
 
 fn resolve_nix_client_source() -> Option<Utf8PathBuf> {
-    if std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some() {
+    if test_fixtures_enabled() {
         return Some(Utf8PathBuf::from("/usr/bin/nix"));
     }
 
     which::which("nix")
         .ok()
         .and_then(|path| Utf8PathBuf::from_path_buf(path).ok())
+}
+
+fn test_fixtures_enabled() -> bool {
+    std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some()
 }
 
 fn command_exists(program: &str) -> bool {
