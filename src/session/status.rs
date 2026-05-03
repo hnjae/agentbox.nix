@@ -15,10 +15,8 @@ use crate::git::Git;
 use crate::podman::PodmanContainerMount;
 use crate::runtime::AttachEndpoint;
 
-use super::{
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionRecord, has_mount_destination,
-    labels::SessionLabels,
-};
+use super::mounts::has_mount_destination;
+use super::{REQUIRED_NIX_CACHE_MOUNT_DESTINATION, labels::SessionLabels, record::SessionRecord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionStatus {
