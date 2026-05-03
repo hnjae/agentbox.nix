@@ -149,78 +149,132 @@ pub fn check_host_prerequisites_with_snapshot(
     snapshot: &PreflightSnapshot,
     target_directory: Option<&Utf8Path>,
 ) -> Result<PreflightReport> {
-    if !snapshot.host.has_git {
-        return Err(Error::msg(
-            "`git` was not found on PATH; install `git` or add it to PATH",
-        ));
+    PreflightCheck {
+        snapshot,
+        target_directory,
+    }
+    .run()
+}
+
+struct PreflightCheck<'a> {
+    snapshot: &'a PreflightSnapshot,
+    target_directory: Option<&'a Utf8Path>,
+}
+
+impl PreflightCheck<'_> {
+    fn run(&self) -> Result<PreflightReport> {
+        self.validate_host_tools()?;
+        self.validate_direnv()?;
+        self.validate_nix_daemon()?;
+        let nix_client_source = self.nix_client_source()?;
+        self.validate_nix_config()?;
+
+        Ok(PreflightReport {
+            host_nix_mounts: host_nix_mounts(
+                nix_client_source,
+                self.snapshot.nix.config.custom_conf.needs_static_mount,
+            ),
+        })
     }
 
-    if !snapshot.host.has_podman {
-        return Err(Error::msg(
-            "`podman` was not found on PATH; install `podman` or add it to PATH",
-        ));
+    fn validate_host_tools(&self) -> Result<()> {
+        if !self.snapshot.host.has_git {
+            return Err(Error::msg(
+                "`git` was not found on PATH; install `git` or add it to PATH",
+            ));
+        }
+
+        if !self.snapshot.host.has_podman {
+            return Err(Error::msg(
+                "`podman` was not found on PATH; install `podman` or add it to PATH",
+            ));
+        }
+
+        Ok(())
     }
 
-    if snapshot.host.direnv.required && !snapshot.host.direnv.available {
-        let target = target_directory
-            .map(ToString::to_string)
-            .unwrap_or_else(|| ".".to_string());
-        return Err(Error::msg(format!(
-            "`.envrc` applies to `{target}`, but `direnv` was not found on PATH; install `direnv` or add it to PATH"
-        )));
+    fn validate_direnv(&self) -> Result<()> {
+        if self.snapshot.host.direnv.required && !self.snapshot.host.direnv.available {
+            let target = self
+                .target_directory
+                .map(ToString::to_string)
+                .unwrap_or_else(|| ".".to_string());
+            return Err(Error::msg(format!(
+                "`.envrc` applies to `{target}`, but `direnv` was not found on PATH; install `direnv` or add it to PATH"
+            )));
+        }
+
+        Ok(())
     }
 
-    if !snapshot.nix.has_daemon_socket {
-        return Err(Error::msg(format!(
-            "Missing host nix-daemon socket at: {NIX_DAEMON_SOCKET_PATH}. Mount /nix:/nix:ro."
-        )));
+    fn validate_nix_daemon(&self) -> Result<()> {
+        if !self.snapshot.nix.has_daemon_socket {
+            return Err(Error::msg(format!(
+                "Missing host nix-daemon socket at: {NIX_DAEMON_SOCKET_PATH}. Mount /nix:/nix:ro."
+            )));
+        }
+
+        Ok(())
     }
 
-    let nix_client_source = snapshot.nix.client_source.as_ref().ok_or_else(|| {
-        Error::msg("`nix` was not found on PATH; install Nix or add the host `nix` client to PATH")
-    })?;
-
-    if !snapshot.nix.config.has_etc_nix_mount {
-        return Err(Error::msg(
-            "Missing /etc/nix host mount. Mount /etc/nix:/etc/nix:ro so the wrapper inherits the host config and registry.",
-        ));
+    fn nix_client_source(&self) -> Result<&Utf8Path> {
+        self.snapshot.nix.client_source.as_deref().ok_or_else(|| {
+            Error::msg(
+                "`nix` was not found on PATH; install Nix or add the host `nix` client to PATH",
+            )
+        })
     }
 
-    if !snapshot.nix.config.has_readable_nix_conf {
-        return Err(Error::msg(
-            "Missing readable host Nix config: /etc/nix/nix.conf. Mount /etc/nix:/etc/nix:ro.",
-        ));
-    }
+    fn validate_nix_config(&self) -> Result<()> {
+        let config = &self.snapshot.nix.config;
 
-    if snapshot.nix.config.custom_conf.present
-        && !snapshot.nix.config.custom_conf.has_readable_target
-    {
-        return Err(Error::msg(
-            "Missing readable target for /etc/nix/nix.custom.conf. Mount /etc/static/nix:/etc/static/nix:ro when /etc/nix points there.",
-        ));
-    }
+        if !config.has_etc_nix_mount {
+            return Err(Error::msg(
+                "Missing /etc/nix host mount. Mount /etc/nix:/etc/nix:ro so the wrapper inherits the host config and registry.",
+            ));
+        }
 
-    let mut host_nix_mounts = vec![RuntimeMount::read_only_bind(
+        if !config.has_readable_nix_conf {
+            return Err(Error::msg(
+                "Missing readable host Nix config: /etc/nix/nix.conf. Mount /etc/nix:/etc/nix:ro.",
+            ));
+        }
+
+        if config.custom_conf.present && !config.custom_conf.has_readable_target {
+            return Err(Error::msg(
+                "Missing readable target for /etc/nix/nix.custom.conf. Mount /etc/static/nix:/etc/static/nix:ro when /etc/nix points there.",
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+fn host_nix_mounts(
+    nix_client_source: &Utf8Path,
+    include_static_nix_mount: bool,
+) -> Vec<RuntimeMount> {
+    let mut mounts = vec![RuntimeMount::read_only_bind(
         NIX_STORE_DESTINATION,
         NIX_STORE_DESTINATION,
     )];
-    host_nix_mounts.push(RuntimeMount::read_only_bind(
+    mounts.push(RuntimeMount::read_only_bind(
         nix_client_source.to_string(),
         NIX_CLIENT_DESTINATION,
     ));
-    host_nix_mounts.push(RuntimeMount::read_only_bind(
+    mounts.push(RuntimeMount::read_only_bind(
         ETC_NIX_DESTINATION,
         ETC_NIX_DESTINATION,
     ));
 
-    if snapshot.nix.config.custom_conf.needs_static_mount {
-        host_nix_mounts.push(RuntimeMount::read_only_bind(
+    if include_static_nix_mount {
+        mounts.push(RuntimeMount::read_only_bind(
             ETC_STATIC_NIX_DESTINATION,
             ETC_STATIC_NIX_DESTINATION,
         ));
     }
 
-    Ok(PreflightReport { host_nix_mounts })
+    mounts
 }
 
 pub fn direnv_applies_to_target(target_directory: &Utf8Path, git_root: &Utf8Path) -> bool {
