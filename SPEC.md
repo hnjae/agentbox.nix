@@ -13,7 +13,7 @@ containers.
 The MVP is workspace-centric rather than name-centric:
 
 - `agentbox run --runtime <opencode|codex> <directory>`
-- `agentbox runtime update codex`
+- `agentbox runtime update <opencode|codex>`
 - `agentbox attach <directory>`
 - `agentbox ls`
 - `agentbox stop <directory>`
@@ -57,8 +57,8 @@ Always-required host tools:
 Conditionally required host tools:
 
 - the running session's runtime host client command for `attach`
-- `npm` when `agentbox` must resolve the latest Codex npm package version for
-  initial Codex default image creation or `agentbox runtime update codex`
+- `npm` when `agentbox` must resolve the latest runtime npm package version
+  for initial default image creation or `agentbox runtime update <runtime>`
 - `direnv` when a matching `.envrc` applies to the directory whose environment
   is used by the command: the `run` target directory for server startup, or the
   stored launch directory for `attach`
@@ -78,8 +78,9 @@ Out of scope for the MVP:
 - user-supplied runtime image references
 - generic container orchestration
 - durable runtime state beyond the workspace bind mount, one Podman-managed
-  runtime cache volume, Codex host configuration passthrough, Codex runtime
-  image version metadata, and live managed-container metadata
+  runtime cache volume, Codex host configuration passthrough, OpenCode host
+  state passthrough, runtime image version metadata, and live
+  managed-container metadata
 - a bundled standalone Nix installation inside the runtime image
 - stopped managed containers that remain after the runtime server exits
 
@@ -241,35 +242,40 @@ Image rules:
 - If the selected runtime is `codex` and the default image is missing, `run`
   resolves the latest `@openai/codex` npm version, builds the Codex default
   image with that version, and records the version metadata in agentbox state.
-- If the selected runtime is `codex` and the default image already exists,
-  `run` reuses it without checking the npm registry.
+- If the selected runtime is `opencode` and the default image is missing, `run`
+  resolves the latest `opencode-ai` npm version, builds the OpenCode default
+  image with that version, and records the version metadata in agentbox state.
+- If the selected runtime's default image already exists, `run` reuses it
+  without checking the npm registry.
 - `agentbox` records the exact default image reference on the running managed
   container so live discovery can report it while the container exists.
 - Default runtime images are not removed by `stop`; image cleanup and image
   updates are explicit operator actions.
 
-### `agentbox runtime update codex`
+### `agentbox runtime update <opencode|codex>`
 
-`runtime update codex` refreshes the default Codex runtime image.
+`runtime update <opencode|codex>` refreshes the selected default runtime image.
 
 Expected behavior:
 
-1. Resolve the latest `@openai/codex` npm package version.
-2. Read the stored Codex runtime image metadata from
+1. Resolve the latest npm package version for the selected runtime:
+   `opencode-ai` for OpenCode or `@openai/codex` for Codex.
+2. Read the stored runtime image metadata from
+   `$XDG_STATE_HOME/agentbox/runtime/opencode.json` or
    `$XDG_STATE_HOME/agentbox/runtime/codex.json`, if it exists.
-3. If the local default Codex image exists and the stored installed version is
-   already the latest npm version, skip the rebuild and record the latest check
-   time.
-4. Otherwise, rebuild `localhost/agentbox-codex:local` with the resolved npm
-   version.
+3. If the selected local default image exists and the stored installed version
+   is already the latest npm version, skip the rebuild and record the latest
+   check time.
+4. Otherwise, rebuild the selected default image with the resolved npm version.
 5. Record the installed version, latest seen version, check time, image build
    time, npm package name, install source, and image reference in agentbox state.
 
 Rules:
 
-- `runtime update` supports `codex` only in the MVP.
 - The update command does not stop, replace, or mutate running sessions.
-- The update command does not write metadata under `~/.codex`.
+- The update command does not write metadata under runtime host state
+  directories such as `~/.codex`, `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`,
+  or `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`.
 
 ### `agentbox attach <directory>`
 
@@ -525,6 +531,32 @@ Rules:
 - `agentbox` does not create, migrate, or write files inside `${HOME}/.codex`.
 - OpenCode sessions do not receive the Codex passthrough mount.
 
+### OpenCode Host State Passthrough
+
+OpenCode sessions use the invoking host user's OpenCode configuration and data
+directories as the runtime OpenCode state.
+
+Rules:
+
+- For `agentbox run --runtime opencode`, the host
+  `${XDG_CONFIG_HOME:-$HOME/.config}/opencode` directory is bind-mounted
+  read-write at `/home/user/.config/opencode`.
+- For `agentbox run --runtime opencode`, the host
+  `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` directory is bind-mounted
+  read-write at `/home/user/.local/share/opencode`.
+- Both host directories are required so global configuration, provider
+  settings, authentication state, and other OpenCode user state remain
+  consistent between host and container OpenCode clients.
+- `run --runtime opencode` fails before starting a container if either host
+  OpenCode directory is missing, is not a directory, or is not readable and
+  writable by the invoking host user.
+- `agentbox` validates the OpenCode state directories only. It does not require
+  a specific authentication file such as `auth.json`, because OpenCode may also
+  be configured through environment variables or provider configuration.
+- `agentbox` does not create, migrate, or write files inside the host OpenCode
+  configuration or data directories.
+- Codex sessions do not receive the OpenCode passthrough mounts.
+
 ### Direnv
 
 When a command uses a directory with `direnv`, the affected runtime process is
@@ -557,6 +589,9 @@ OpenCode sessions:
 
 - use OpenCode's remote server and host-side attach client
 - expose an `http` attach endpoint
+- run with `OPENCODE_CONFIG_CONTENT={"autoupdate":false}` so OpenCode
+  auto-update behavior does not change the installed runtime version inside the
+  managed image or mutate host configuration
 
 Codex sessions:
 
@@ -609,8 +644,8 @@ Rules:
   when needed.
 - The Codex default image installs Codex from npm package `@openai/codex` at
   the version resolved by `agentbox` for that image build.
-- The OpenCode default image continues to use the runtime package manifest and
-  does not require the Codex npm package.
+- The OpenCode default image installs OpenCode from npm package `opencode-ai`
+  at the version resolved by `agentbox` for that image build.
 - The runtime image provides its own CA bundle. Host SSL trust-store mounts are
   out of scope for the MVP.
 - If a host-attached Nix prerequisite is missing, `run` fails clearly and does
@@ -631,8 +666,9 @@ Valid lifecycle behavior:
 
 Default runtime image lifecycle is separate from managed sessions. When the
 runtime server exits or `agentbox stop` stops it, Podman removes the container
-but keeps the default runtime image. Codex image updates happen through
-`agentbox runtime update codex`; `stop` does not remove or rebuild images.
+but keeps the default runtime image. Runtime image updates happen through
+`agentbox runtime update <opencode|codex>`; `stop` does not remove or rebuild
+images.
 
 Named runtime cache volume lifecycle remains separate. `agentbox stop` leaves
 the workspace cache volume intact so later sessions can reuse it. Volume
@@ -701,7 +737,9 @@ Required error cases:
 - missing `/etc/nix` host mount or unreadable `/etc/nix/nix.conf`
 - missing readable `/etc/static/nix` target when `/etc/nix` resolves there
 - missing or unusable host `${HOME}/.codex` for `run --runtime codex`
-- missing host `npm` when a Codex npm version must be resolved
+- missing or unusable host OpenCode configuration or data directories for
+  `run --runtime opencode`
+- missing host `npm` when a runtime npm version must be resolved
 - unusable runtime profile path under the XDG state or HOME fallback location
 - runtime image setup failure
 - `direnv` unavailable, blocked, or failing when a matching `.envrc` applies
@@ -716,6 +754,8 @@ MVP isolation expectations:
 - host-provided Nix inputs mounted alongside one Podman-managed cache volume
 - Codex sessions receive the invoking host user's `${HOME}/.codex` directory as
   a read-write passthrough mount
+- OpenCode sessions receive the invoking host user's OpenCode configuration and
+  data directories as read-write passthrough mounts
 - one writable Podman-managed named cache volume at `/home/user/.cache/nix`
 - minimal privileges
 - networking enabled only as needed for the runtime server and its local-only
