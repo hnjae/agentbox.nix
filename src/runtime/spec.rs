@@ -84,6 +84,13 @@ pub struct RuntimeCreateSpec {
     pub published_ports: Vec<String>,
 }
 
+impl RuntimeCreateSpec {
+    pub fn with_command(mut self, command: impl Into<Vec<String>>) -> Self {
+        self.command = command.into();
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachEndpoint {
     pub scheme: String,

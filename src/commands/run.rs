@@ -39,13 +39,14 @@ pub fn run(args: RunArgs) -> Result<()> {
         }
 
         ensure_default_runtime_image(podman, runtime, workspace)?;
-        let mut run_spec = runtime.create_spec(workspace, &preflight.host_nix_mounts);
         let server_run = server_runtime_command(
             runtime,
             workspace.canonical_target.as_ref(),
             workspace.canonical_git_root.as_ref(),
         );
-        run_spec.command = server_run.argv;
+        let run_spec = runtime
+            .create_spec(workspace, &preflight.host_nix_mounts)
+            .with_command(server_run.argv);
 
         let endpoint = podman
             .run_detached(
