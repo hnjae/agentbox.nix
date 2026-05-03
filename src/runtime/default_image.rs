@@ -76,14 +76,10 @@ impl DefaultImageBuildContext {
     }
 }
 
-pub fn embedded_default_image_paths() -> &'static [&'static str] {
-    &[
-        "Containerfile",
-        "bootstrap",
-        "entrypoint",
-        "lib/runtime-contract.sh",
-        "runtime-packages.nix",
-    ]
+pub fn embedded_default_image_paths() -> impl Iterator<Item = &'static str> {
+    EMBEDDED_DEFAULT_IMAGE_FILES
+        .iter()
+        .map(|file| file.relative_path)
 }
 
 pub fn materialize_default_image_context() -> Result<DefaultImageBuildContext> {

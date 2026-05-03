@@ -279,7 +279,6 @@ fn materialized_default_image_context_contains_only_required_files() {
     files.sort();
 
     let mut expected = embedded_default_image_paths()
-        .iter()
         .map(|path| path.to_string())
         .collect::<Vec<_>>();
     expected.sort();
