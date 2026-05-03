@@ -170,6 +170,12 @@ separate host-side session database.
 
 ## CLI
 
+Global flags:
+
+- `--verbose` enables diagnostic command traces and external command output for
+  commands that support verbose diagnostics. Diagnostic output is written to
+  stderr and must not replace machine-readable or success output on stdout.
+
 ### `agentbox run --runtime <opencode|codex> <directory>`
 
 `run` launches a new workspace session as a detached runtime server.
@@ -201,6 +207,18 @@ Expected behavior:
 9. Wait until the runtime server endpoint is reachable or the container exits.
 10. Report the discovered attach endpoint and suggest
     `agentbox attach <directory>`.
+
+Progress and diagnostics:
+
+- `run` prints short phase progress to stderr while checking prerequisites,
+  resolving session state, ensuring the runtime image, starting the detached
+  container, and waiting for the runtime server endpoint.
+- `run` keeps its final success message on stdout.
+- With `--verbose`, `run` also prints the external commands it executes and
+  forwards non-JSON Podman command output to stderr.
+- If the runtime container fails to start, exits before readiness, or times out
+  before becoming reachable, `run` includes a short `podman logs --tail` excerpt
+  for the managed container when Podman can provide one.
 
 Runtime rules:
 
