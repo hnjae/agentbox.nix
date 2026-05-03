@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::runtime::AttachEndpoint;
+use crate::runtime::{AttachEndpoint, RuntimeKind};
 
 use super::status::{SessionFailure, SessionStatus};
 
@@ -19,6 +19,7 @@ pub struct SessionRecord {
     pub container_id: String,
     pub container_name: String,
     pub metadata: SessionMetadata,
+    pub runtime_kind: Option<RuntimeKind>,
     pub attach_endpoint: Option<AttachEndpoint>,
     pub failure: Option<SessionFailure>,
     pub status: SessionStatus,
@@ -35,6 +36,10 @@ impl SessionRecord {
 
     pub fn runtime(&self) -> Option<&str> {
         self.metadata.runtime()
+    }
+
+    pub fn runtime_kind(&self) -> Option<RuntimeKind> {
+        self.runtime_kind
     }
 }
 

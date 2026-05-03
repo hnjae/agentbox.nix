@@ -211,6 +211,7 @@ fn build_session_record(
 
     let metadata = SessionMetadata::from_labels(labels);
     let label_report = SessionLabelReport::from_metadata(&metadata);
+    let runtime_kind = label_report.runtime_kind();
     let attach_endpoint = label_report
         .attach_labels()
         .and_then(|attach_labels| derive_attach_endpoint(attach_labels, &inspect).ok());
@@ -227,6 +228,7 @@ fn build_session_record(
         container_id: container.id,
         container_name,
         metadata,
+        runtime_kind,
         attach_endpoint,
         failure,
         status,

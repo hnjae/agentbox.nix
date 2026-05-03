@@ -96,6 +96,7 @@ impl AttachLabelError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AttachLabels {
+    runtime: RuntimeKind,
     attach: RuntimeAttachSpec,
 }
 
@@ -131,6 +132,10 @@ impl SessionLabelReport {
 
     pub(super) fn attach_labels(&self) -> Option<AttachLabels> {
         self.attach.as_ref().ok().copied()
+    }
+
+    pub(super) fn runtime_kind(&self) -> Option<RuntimeKind> {
+        self.attach_labels().map(AttachLabels::runtime)
     }
 }
 
@@ -263,7 +268,11 @@ impl AttachLabels {
             });
         }
 
-        Ok(Self { attach })
+        Ok(Self { runtime, attach })
+    }
+
+    pub(super) fn runtime(self) -> RuntimeKind {
+        self.runtime
     }
 
     pub(super) fn scheme(self) -> &'static str {

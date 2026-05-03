@@ -10,7 +10,7 @@ use std::process::Stdio;
 
 use crate::cli::DirectoryArgs;
 use crate::process::{ProcessRunner, format_status, run_command_status};
-use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeKind};
+use crate::runtime::{AttachEndpoint, RuntimeAdapter};
 use crate::session::{
     SessionFailure, SessionRecord, SessionStatus, duplicate_sessions_error,
     session_failure_requires_action_error,
@@ -81,12 +81,10 @@ fn session_runtime(
     workspace: &WorkspaceIdentity,
     session: &SessionRecord,
 ) -> Result<RuntimeAdapter> {
-    session
-        .runtime()
+    Ok(session
+        .runtime_kind()
         .ok_or_else(|| unsupported_runtime_label_error(workspace, session))?
-        .parse::<RuntimeKind>()
-        .map(RuntimeKind::adapter)
-        .map_err(|_| unsupported_runtime_label_error(workspace, session))
+        .adapter())
 }
 
 fn session_endpoint<'a>(
