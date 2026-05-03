@@ -327,87 +327,139 @@ impl PreflightCheck<'_> {
     fn runtime_mounts(&self) -> Result<Vec<RuntimeMount>> {
         match self.runtime {
             RuntimeKind::Opencode => Ok(vec![
-                self.opencode_state_mount(
-                    &self.snapshot.host.opencode.config,
+                HostStateMountRequirement::xdg_or_home(
+                    RuntimeKind::Opencode,
+                    "OpenCode",
                     "configuration",
                     "`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`",
+                    &self.snapshot.host.opencode.config,
                     OPENCODE_CONFIG_DESTINATION,
-                )?,
-                self.opencode_state_mount(
-                    &self.snapshot.host.opencode.data,
+                )
+                .validate()?,
+                HostStateMountRequirement::xdg_or_home(
+                    RuntimeKind::Opencode,
+                    "OpenCode",
                     "data",
                     "`${XDG_DATA_HOME:-$HOME/.local/share}/opencode`",
+                    &self.snapshot.host.opencode.data,
                     OPENCODE_DATA_DESTINATION,
-                )?,
+                )
+                .validate()?,
             ]),
-            RuntimeKind::Codex => Ok(vec![self.codex_config_mount()?]),
+            RuntimeKind::Codex => Ok(vec![
+                HostStateMountRequirement::home_only(
+                    RuntimeKind::Codex,
+                    "Codex",
+                    "configuration",
+                    "`${HOME}/.codex`",
+                    &self.snapshot.host.codex,
+                    CODEX_CONFIG_DESTINATION,
+                )
+                .validate()?,
+            ]),
+        }
+    }
+}
+
+struct HostStateMountRequirement<'a> {
+    runtime: RuntimeKind,
+    product_name: &'static str,
+    description: &'static str,
+    source_expression: &'static str,
+    source_lookup: HostStateSourceLookup,
+    state: &'a HostDirectoryPreflightSnapshot,
+    destination: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum HostStateSourceLookup {
+    HomeOnly,
+    XdgOrHome,
+}
+
+impl<'a> HostStateMountRequirement<'a> {
+    fn home_only(
+        runtime: RuntimeKind,
+        product_name: &'static str,
+        description: &'static str,
+        source_expression: &'static str,
+        state: &'a HostDirectoryPreflightSnapshot,
+        destination: &'static str,
+    ) -> Self {
+        Self {
+            runtime,
+            product_name,
+            description,
+            source_expression,
+            source_lookup: HostStateSourceLookup::HomeOnly,
+            state,
+            destination,
         }
     }
 
-    fn opencode_state_mount(
-        &self,
-        state: &HostDirectoryPreflightSnapshot,
-        description: &str,
-        source_expression: &str,
-        destination: &str,
-    ) -> Result<RuntimeMount> {
-        let Some(source) = state.source.as_ref() else {
-            return Err(Error::msg(format!(
-                "Cannot locate host OpenCode {description} directory {source_expression} for `run --runtime opencode`; set `HOME` or the matching XDG environment variable, then retry."
-            )));
-        };
-
-        if !state.exists {
-            return Err(Error::msg(format!(
-                "Missing host OpenCode {description} directory: {source}. Run `opencode` on the host first so {source_expression} exists, then retry `agentbox run --runtime opencode`."
-            )));
+    fn xdg_or_home(
+        runtime: RuntimeKind,
+        product_name: &'static str,
+        description: &'static str,
+        source_expression: &'static str,
+        state: &'a HostDirectoryPreflightSnapshot,
+        destination: &'static str,
+    ) -> Self {
+        Self {
+            runtime,
+            product_name,
+            description,
+            source_expression,
+            source_lookup: HostStateSourceLookup::XdgOrHome,
+            state,
+            destination,
         }
-
-        if !state.is_directory {
-            return Err(Error::msg(format!(
-                "Host OpenCode {description} path is not a directory: {source}"
-            )));
-        }
-
-        if !state.readable || !state.writable {
-            return Err(Error::msg(format!(
-                "Host OpenCode {description} directory is not readable and writable: {source}"
-            )));
-        }
-
-        Ok(RuntimeMount::bind(source.to_string(), destination))
     }
 
-    fn codex_config_mount(&self) -> Result<RuntimeMount> {
-        let codex = &self.snapshot.host.codex;
-        let Some(source) = codex.source.as_ref() else {
-            return Err(Error::msg(
-                "`HOME` is not set; cannot locate host Codex configuration directory `${HOME}/.codex` for `run --runtime codex`",
-            ));
+    fn validate(self) -> Result<RuntimeMount> {
+        let Some(source) = self.state.source.as_ref() else {
+            return Err(self.missing_source_error());
         };
 
-        if !codex.exists {
+        if !self.state.exists {
             return Err(Error::msg(format!(
-                "Missing host Codex configuration directory: {source}. Run `codex` on the host first so `${{HOME}}/.codex` exists, then retry `agentbox run --runtime codex`."
+                "Missing host {} {} directory: {source}. Run `{}` on the host first so {} exists, then retry `agentbox run --runtime {}`.",
+                self.product_name,
+                self.description,
+                self.runtime,
+                self.source_expression,
+                self.runtime,
             )));
         }
 
-        if !codex.is_directory {
+        if !self.state.is_directory {
             return Err(Error::msg(format!(
-                "Host Codex configuration path is not a directory: {source}"
+                "Host {} {} path is not a directory: {source}",
+                self.product_name, self.description,
             )));
         }
 
-        if !codex.readable || !codex.writable {
+        if !self.state.readable || !self.state.writable {
             return Err(Error::msg(format!(
-                "Host Codex configuration directory is not readable and writable: {source}"
+                "Host {} {} directory is not readable and writable: {source}",
+                self.product_name, self.description,
             )));
         }
 
-        Ok(RuntimeMount::bind(
-            source.to_string(),
-            CODEX_CONFIG_DESTINATION,
-        ))
+        Ok(RuntimeMount::bind(source.to_string(), self.destination))
+    }
+
+    fn missing_source_error(&self) -> Error {
+        match self.source_lookup {
+            HostStateSourceLookup::HomeOnly => Error::msg(format!(
+                "`HOME` is not set; cannot locate host {} {} directory {} for `run --runtime {}`",
+                self.product_name, self.description, self.source_expression, self.runtime,
+            )),
+            HostStateSourceLookup::XdgOrHome => Error::msg(format!(
+                "Cannot locate host {} {} directory {} for `run --runtime {}`; set `HOME` or the matching XDG environment variable, then retry.",
+                self.product_name, self.description, self.source_expression, self.runtime,
+            )),
+        }
     }
 }
 
