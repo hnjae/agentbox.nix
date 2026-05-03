@@ -268,9 +268,8 @@ Rules:
 
 ### `agentbox stop <directory>`
 
-`stop` stops the workspace session for the resolved repository. It is an
-idempotent stop command for live managed containers, including orphaned live
-containers. It is not a volume pruning command.
+`stop` stops the workspace session for the resolved repository, including
+orphaned live containers. It is not a volume pruning command.
 
 Expected behavior:
 
@@ -281,9 +280,11 @@ Expected behavior:
 4. Stop the matching container if it is running.
 5. Treat an already-removed matching container as success after verifying it is
    absent.
-6. Rely on Podman's `--rm --rmi` cleanup for container and image removal after
+6. If no matching managed session exists, report that no session exists for the
+   resolved repository and exit non-zero.
+7. Rely on Podman's `--rm --rmi` cleanup for container and image removal after
    the stop.
-7. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
+8. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
    later by explicit Podman volume cleanup.
 
 Optional flag:
