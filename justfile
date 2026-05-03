@@ -51,6 +51,10 @@ build:
     nix --no-warn-dirty build -- '.#default'
 
 [group('build')]
+install:
+    nix --no-warn-dirty profile add -- '.#default'
+
+[group('build')]
 build-rs:
     cargo build --quiet
 
