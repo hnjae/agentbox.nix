@@ -10,7 +10,7 @@ use std::process::Stdio;
 
 use crate::cli::DirectoryArgs;
 use crate::process::{ProcessRunner, format_status, run_command_status};
-use crate::runtime::RuntimeKind;
+use crate::runtime::{AttachEndpoint, RuntimeAdapter, RuntimeKind};
 use crate::session::{
     SessionFailure, SessionRecord, SessionStatus, duplicate_sessions_error,
     session_failure_requires_action_error,
@@ -29,27 +29,16 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
         let Some(session) = select_single_session(&sessions, workspace)? else {
             return Err(no_session_error(workspace));
         };
-        let session = validate_attachable_session(workspace, session)?;
+        let attach_session = prepare_attach_session(workspace, session)?;
 
         let process_runner = ProcessRunner::new();
-        let runtime = session
-            .runtime
-            .as_deref()
-            .ok_or_else(|| unsupported_runtime_label_error(workspace, session))?
-            .parse::<RuntimeKind>()
-            .map_err(|_| unsupported_runtime_label_error(workspace, session))?
-            .adapter();
-        let endpoint = session
-            .attach_endpoint
-            .as_ref()
-            .ok_or_else(|| missing_endpoint_error(workspace, session))?;
-        let client = host_client_runtime_command(runtime, endpoint, workspace);
-        let retry_run_command = run_command_hint(Some(runtime.name()), workspace);
+        let client = attach_session.client_invocation(workspace);
+        let retry_run_command = run_command_hint(Some(attach_session.runtime.name()), workspace);
 
         run_host_client(&process_runner, &client).map_err(|error| {
             Error::msg(format!(
                 "failed to attach to managed session `{}` for `{}`: {error}. If the session already exited, rerun `{}` or remove the leftover container with `agentbox stop {}`.",
-                session.container_name,
+                attach_session.session.container_name,
                 workspace.canonical_git_root,
                 retry_run_command,
                 workspace.requested_target,
@@ -60,16 +49,85 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
     Ok(())
 }
 
-fn validate_attachable_session<'a>(
+struct AttachSession<'a> {
+    session: &'a SessionRecord,
+    runtime: RuntimeAdapter,
+    endpoint: &'a AttachEndpoint,
+}
+
+impl AttachSession<'_> {
+    fn client_invocation(&self, workspace: &WorkspaceIdentity) -> RuntimeInvocation {
+        host_client_runtime_command(self.runtime, self.endpoint, workspace)
+    }
+}
+
+fn prepare_attach_session<'a>(
     workspace: &WorkspaceIdentity,
     session: &'a SessionRecord,
-) -> Result<&'a SessionRecord> {
-    if session.status == SessionStatus::Duplicate {
-        return Err(duplicate_sessions_error(workspace));
-    }
+) -> Result<AttachSession<'a>> {
+    validate_attachable_status(workspace, session)?;
 
+    let runtime = session_runtime(workspace, session)?;
+    let endpoint = session_endpoint(workspace, session)?;
+
+    Ok(AttachSession {
+        session,
+        runtime,
+        endpoint,
+    })
+}
+
+fn session_runtime(
+    workspace: &WorkspaceIdentity,
+    session: &SessionRecord,
+) -> Result<RuntimeAdapter> {
+    session
+        .runtime
+        .as_deref()
+        .ok_or_else(|| unsupported_runtime_label_error(workspace, session))?
+        .parse::<RuntimeKind>()
+        .map(RuntimeKind::adapter)
+        .map_err(|_| unsupported_runtime_label_error(workspace, session))
+}
+
+fn session_endpoint<'a>(
+    workspace: &WorkspaceIdentity,
+    session: &'a SessionRecord,
+) -> Result<&'a AttachEndpoint> {
+    session
+        .attach_endpoint
+        .as_ref()
+        .ok_or_else(|| malformed_endpoint_labels_error(workspace, session))
+}
+
+fn unsupported_runtime_label_error(
+    workspace: &WorkspaceIdentity,
+    session: &SessionRecord,
+) -> Error {
+    session_failure_requires_action_error(
+        workspace.canonical_git_root.as_ref(),
+        &session.container_name,
+        SessionFailure::UnsupportedRuntimeLabel,
+    )
+}
+
+fn malformed_endpoint_labels_error(
+    workspace: &WorkspaceIdentity,
+    session: &SessionRecord,
+) -> Error {
+    session_failure_requires_action_error(
+        workspace.canonical_git_root.as_ref(),
+        &session.container_name,
+        SessionFailure::MalformedEndpointLabels,
+    )
+}
+
+fn validate_attachable_status(
+    workspace: &WorkspaceIdentity,
+    session: &SessionRecord,
+) -> Result<()> {
     match session.status {
-        SessionStatus::Running => Ok(session),
+        SessionStatus::Running => Ok(()),
         SessionStatus::Orphaned => Err(Error::orphaned_managed_session(
             workspace.canonical_git_root.as_ref(),
             &session.container_name,
@@ -106,27 +164,6 @@ fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRec
         run_command_hint(session.runtime.as_deref(), workspace),
         workspace.requested_target,
     ))
-}
-
-fn unsupported_runtime_label_error(
-    workspace: &WorkspaceIdentity,
-    session: &SessionRecord,
-) -> Error {
-    Error::managed_session_requires_action(
-        workspace.canonical_git_root.as_ref(),
-        &session.container_name,
-        "has an unsupported or malformed `io.agentbox.runtime` label",
-        "repair or recreate it before retrying",
-    )
-}
-
-fn missing_endpoint_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
-    Error::managed_session_requires_action(
-        workspace.canonical_git_root.as_ref(),
-        &session.container_name,
-        "has missing or inconsistent attach endpoint labels",
-        "repair or recreate it before retrying",
-    )
 }
 
 fn run_host_client(process_runner: &ProcessRunner, client: &RuntimeInvocation) -> Result<()> {
