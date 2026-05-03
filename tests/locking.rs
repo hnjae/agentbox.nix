@@ -6,7 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use agentbox::lock::{lock_path_in_state_dir, lock_workspace_in_state_dir};
+use agentbox::lock::{WorkspaceLockStore, lock_path_in_state_dir, lock_workspace_in_state_dir};
 use agentbox::workspace::WorkspaceIdentity;
 use camino::Utf8PathBuf;
 use std::fs;
@@ -23,6 +23,16 @@ fn builds_lock_path_from_state_home_and_digest() {
         std::path::PathBuf::from(
             "/tmp/state/agentbox/locks/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.lock"
         )
+    );
+}
+
+#[test]
+fn lock_store_builds_paths_for_a_known_state_dir() {
+    let store = WorkspaceLockStore::in_state_dir("/tmp/state");
+
+    assert_eq!(
+        store.lock_path_for_digest("f".repeat(64)),
+        lock_path_in_state_dir("/tmp/state", "f".repeat(64))
     );
 }
 
