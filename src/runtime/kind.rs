@@ -13,6 +13,7 @@ use clap::ValueEnum;
 
 use crate::{Error, Result};
 
+use super::RuntimePackageSpec;
 use super::default_image::DefaultImageBuildContext;
 use super::profile;
 use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand};
@@ -44,6 +45,10 @@ impl RuntimeKind {
     pub fn materialize_default_image_context(self) -> Result<DefaultImageBuildContext> {
         let profile = self.profile();
         (profile.materialize_default_image_context)()
+    }
+
+    pub(crate) fn package_spec(self) -> RuntimePackageSpec {
+        self.profile().package
     }
 
     pub fn attach_spec(self) -> RuntimeAttachSpec {

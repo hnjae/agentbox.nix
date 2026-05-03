@@ -7,6 +7,11 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::Result;
+use crate::metadata::{
+    LABEL_CODEX_INSTALL_SOURCE, LABEL_CODEX_PACKAGE, LABEL_CODEX_RESOLVED_AT, LABEL_CODEX_VERSION,
+    LABEL_OPENCODE_INSTALL_SOURCE, LABEL_OPENCODE_PACKAGE, LABEL_OPENCODE_RESOLVED_AT,
+    LABEL_OPENCODE_VERSION,
+};
 
 use super::command::{
     HostClientCommandArg, HostClientCommandTemplate, ServerCommandArg, ServerCommandTemplate,
@@ -16,6 +21,10 @@ use super::kind::RuntimeKind;
 use super::spec::RuntimeAttachSpec;
 
 const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
+const NPM_INSTALL_SOURCE: &str = "npm";
+
+const OPENCODE_NPM_PACKAGE: &str = "opencode-ai";
+const CODEX_NPM_PACKAGE: &str = "@openai/codex";
 
 const OPENCODE_SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
     ServerCommandArg::Literal("opencode"),
@@ -49,6 +58,15 @@ const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
     name: "opencode",
     default_image: default_image::OPENCODE_DEFAULT_IMAGE,
     materialize_default_image_context: default_image::materialize_default_image_context,
+    package: RuntimePackageSpec {
+        name: OPENCODE_NPM_PACKAGE,
+        install_source: NPM_INSTALL_SOURCE,
+        build_arg: "OPENCODE_NPM_VERSION",
+        package_label: LABEL_OPENCODE_PACKAGE,
+        version_label: LABEL_OPENCODE_VERSION,
+        install_source_label: LABEL_OPENCODE_INSTALL_SOURCE,
+        resolved_at_label: LABEL_OPENCODE_RESOLVED_AT,
+    },
     attach: RuntimeAttachSpec {
         scheme: "http",
         container_listen_ip: CONTAINER_LISTEN_IP,
@@ -63,6 +81,15 @@ const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
     name: "codex",
     default_image: default_image::CODEX_DEFAULT_IMAGE,
     materialize_default_image_context: default_image::materialize_default_image_context,
+    package: RuntimePackageSpec {
+        name: CODEX_NPM_PACKAGE,
+        install_source: NPM_INSTALL_SOURCE,
+        build_arg: "CODEX_NPM_VERSION",
+        package_label: LABEL_CODEX_PACKAGE,
+        version_label: LABEL_CODEX_VERSION,
+        install_source_label: LABEL_CODEX_INSTALL_SOURCE,
+        resolved_at_label: LABEL_CODEX_RESOLVED_AT,
+    },
     attach: RuntimeAttachSpec {
         scheme: "ws",
         container_listen_ip: CONTAINER_LISTEN_IP,
@@ -80,9 +107,21 @@ pub(super) struct RuntimeProfile {
     pub(super) name: &'static str,
     pub(super) default_image: &'static str,
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
+    pub(super) package: RuntimePackageSpec,
     pub(super) attach: RuntimeAttachSpec,
     pub(super) server_command: ServerCommandTemplate,
     pub(super) host_client_command: HostClientCommandTemplate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RuntimePackageSpec {
+    pub(crate) name: &'static str,
+    pub(crate) install_source: &'static str,
+    pub(crate) build_arg: &'static str,
+    pub(crate) package_label: &'static str,
+    pub(crate) version_label: &'static str,
+    pub(crate) install_source_label: &'static str,
+    pub(crate) resolved_at_label: &'static str,
 }
 
 pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {

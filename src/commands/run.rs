@@ -7,7 +7,6 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::cli::RunArgs;
-use crate::metadata::{LABEL_CODEX_VERSION, LABEL_OPENCODE_VERSION};
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites_for_runtime;
 use crate::runtime::RuntimeCreateSpec;
@@ -61,11 +60,9 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             )
             .with_command(server_run.argv);
         if let Some(version) = runtime_version {
-            let label = match runtime {
-                crate::runtime::RuntimeKind::Opencode => LABEL_OPENCODE_VERSION,
-                crate::runtime::RuntimeKind::Codex => LABEL_CODEX_VERSION,
-            };
-            run_spec.labels.insert(label.to_string(), version);
+            run_spec
+                .labels
+                .insert(runtime.package_spec().version_label.to_string(), version);
         }
 
         diagnostics.phase(format!(

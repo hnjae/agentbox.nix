@@ -16,19 +16,10 @@ use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 
 use crate::cli::{RuntimeArgs, RuntimeCommand};
-use crate::metadata::{
-    LABEL_CODEX_INSTALL_SOURCE, LABEL_CODEX_PACKAGE, LABEL_CODEX_RESOLVED_AT, LABEL_CODEX_VERSION,
-    LABEL_OPENCODE_INSTALL_SOURCE, LABEL_OPENCODE_PACKAGE, LABEL_OPENCODE_RESOLVED_AT,
-    LABEL_OPENCODE_VERSION,
-};
 use crate::podman::{Podman, PodmanBuildOptions};
 use crate::process::ProcessRunner;
 use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
-
-const CODEX_NPM_PACKAGE: &str = "@openai/codex";
-const OPENCODE_NPM_PACKAGE: &str = "opencode-ai";
-const NPM_INSTALL_SOURCE: &str = "npm";
 
 pub fn run(args: RuntimeArgs, verbose: bool) -> Result<()> {
     match args.command {
@@ -58,7 +49,7 @@ pub(super) fn ensure_default_runtime_image(
 }
 
 fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
-    let package = runtime_package_spec(runtime);
+    let package = runtime.package_spec();
     let podman = Podman::new().with_verbose(verbose);
     eprintln!("agentbox: resolving latest `{}` version", package.name);
     let latest_version = resolve_latest_runtime_version(package.name)?;
@@ -92,7 +83,7 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
 }
 
 fn build_default_runtime_image(podman: &Podman, runtime: RuntimeKind) -> Result<Option<String>> {
-    let package = runtime_package_spec(runtime);
+    let package = runtime.package_spec();
     let latest_version = resolve_latest_runtime_version(package.name)?;
     build_runtime_image(podman, runtime, &latest_version)?;
     let now = now_unix_seconds()?;
@@ -104,7 +95,7 @@ fn build_default_runtime_image(podman: &Podman, runtime: RuntimeKind) -> Result<
 }
 
 fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> Result<()> {
-    let package = runtime_package_spec(runtime);
+    let package = runtime.package_spec();
     let context = runtime.materialize_default_image_context()?;
     let resolved_at = now_unix_seconds()?.to_string();
     let options = PodmanBuildOptions {
@@ -117,7 +108,7 @@ fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> 
             (package.version_label.to_string(), version.to_string()),
             (
                 package.install_source_label.to_string(),
-                NPM_INSTALL_SOURCE.to_string(),
+                package.install_source.to_string(),
             ),
             (package.resolved_at_label.to_string(), resolved_at),
         ]),
@@ -170,11 +161,11 @@ impl RuntimeImageState {
         latest_checked_at: u64,
         image_built_at: u64,
     ) -> Self {
-        let package = runtime_package_spec(runtime);
+        let package = runtime.package_spec();
         Self {
             runtime: runtime.as_str().to_string(),
             package: package.name.to_string(),
-            install_source: NPM_INSTALL_SOURCE.to_string(),
+            install_source: package.install_source.to_string(),
             image: runtime.default_image().to_string(),
             installed_version: version.clone(),
             latest_seen_version: version,
@@ -230,37 +221,6 @@ fn runtime_image_state_path(runtime: RuntimeKind) -> Result<PathBuf> {
         .join("agentbox")
         .join("runtime")
         .join(format!("{}.json", runtime.as_str())))
-}
-
-#[derive(Debug, Clone, Copy)]
-struct RuntimePackageSpec {
-    name: &'static str,
-    build_arg: &'static str,
-    package_label: &'static str,
-    version_label: &'static str,
-    install_source_label: &'static str,
-    resolved_at_label: &'static str,
-}
-
-fn runtime_package_spec(runtime: RuntimeKind) -> RuntimePackageSpec {
-    match runtime {
-        RuntimeKind::Opencode => RuntimePackageSpec {
-            name: OPENCODE_NPM_PACKAGE,
-            build_arg: "OPENCODE_NPM_VERSION",
-            package_label: LABEL_OPENCODE_PACKAGE,
-            version_label: LABEL_OPENCODE_VERSION,
-            install_source_label: LABEL_OPENCODE_INSTALL_SOURCE,
-            resolved_at_label: LABEL_OPENCODE_RESOLVED_AT,
-        },
-        RuntimeKind::Codex => RuntimePackageSpec {
-            name: CODEX_NPM_PACKAGE,
-            build_arg: "CODEX_NPM_VERSION",
-            package_label: LABEL_CODEX_PACKAGE,
-            version_label: LABEL_CODEX_VERSION,
-            install_source_label: LABEL_CODEX_INSTALL_SOURCE,
-            resolved_at_label: LABEL_CODEX_RESOLVED_AT,
-        },
-    }
 }
 
 fn now_unix_seconds() -> Result<u64> {
