@@ -533,6 +533,9 @@ Rules:
   visible inside the container.
 - `/etc/static/nix` is mounted only when needed because `/etc/nix` resolves
   there on the host model.
+- If a file under `/etc/nix`, such as `/etc/nix/nix.custom.conf`, points into
+  `/etc/static/nix`, `run` treats `/etc/static/nix` as needed even when that
+  static file ultimately resolves into `/nix/store`.
 - Runtime profile state lives under `$XDG_STATE_HOME/nix/profile`, with fallback
   to `$HOME/.local/state/nix/profile` or `/home/user/.local/state/nix/profile`
   when needed.
