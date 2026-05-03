@@ -18,12 +18,12 @@ The MVP is workspace-centric rather than name-centric:
 
 `agentbox run --runtime <opencode|codex> <directory>` resolves `<directory>` to
 its canonical git root and launches one managed workspace session for that
-repository as a detached runtime server container. The container main process is
-the selected runtime's remote server command.
+repository as a detached runtime server container. The container starts the
+selected runtime server for that workspace.
 
 `agentbox attach <directory>` discovers the running server endpoint for the
 resolved repository and runs the selected runtime's host-side client command
-from the requested target directory.
+from the canonical target directory.
 
 Managed containers are started with Podman's `--rm` and `--rmi` cleanup flags.
 When the runtime server exits, or when `agentbox stop <directory>` stops it,
@@ -42,15 +42,23 @@ Supported host environments:
 - NixOS
 - other Linux distributions with multi-user Nix
 
-Required host tools:
+Always-required host tools:
 
 - Podman
 - Git
 - a host `nix` client and nix-daemon socket compatible with the host-attached
   Nix model described below
 
-The target directory is expected to live inside a git repository. A non-git
-target fails clearly; the MVP does not create ad-hoc non-git sessions.
+Conditionally required host tools:
+
+- the selected runtime's host client command for `attach`
+- `direnv` when a matching `.envrc` applies to the target directory
+
+For `run` and `attach`, `<directory>` must resolve to an existing directory
+inside a git repository. A non-git target fails clearly; the MVP does not create
+ad-hoc non-git sessions. `stop` normally follows the same resolution rules, but
+it may also accept an exact absolute git-root path string for an orphaned
+session whose stored path no longer exists.
 
 Out of scope for the MVP:
 
@@ -75,46 +83,35 @@ canonical git root.
 1. Convert the user input to an absolute path.
 2. Resolve the git root with `git -C <directory> rev-parse --show-toplevel`.
 3. Canonicalize the resulting git root by resolving symlinks.
-4. Canonicalize the requested target directory as well.
+4. Canonicalize the target directory as well.
 5. Require the target directory to remain inside the canonical git root.
+
+After resolution, "target directory" means this canonical target directory, not
+the raw path spelling entered by the user.
 
 Required behavior:
 
 - A symlinked path resolves to the same canonical git root as the real path.
-- Nested repositories use the git root reported for the requested target
-  directory, so an inner repository gets its own session.
+- Nested repositories use the git root reported for the target directory, so an
+  inner repository gets its own session.
 - Submodules and git worktrees each get their own session identity because each
   resolves to its own canonical git root.
 - Moving a repository to a different absolute path creates a new identity.
 - A still-running container whose stored git-root path no longer exists is
   reported as `orphaned` until it is stopped.
-- The requested target directory is not part of identity. Different `run` or
-  `attach` invocations may target different subdirectories under the same git
-  root while still referring to the same running managed session.
+- The target directory is not part of identity. Different `run` or `attach`
+  invocations may target different subdirectories under the same git root while
+  still referring to the same running managed session.
 
 ## Naming And Visible Podman State
 
 Each workspace session has a deterministic logical name derived from the
 canonical git root.
 
-Naming algorithm:
+Name contract:
 
-1. Take the canonical git-root absolute path bytes.
-2. Compute `SHA-256` of those bytes.
-3. Use the first 12 lowercase hex characters of the digest as `hash12`.
-4. Escape the canonical git-root path by replacing `/` with `_`.
-5. Replace every other character outside `[A-Za-z0-9_.-]` with `-`.
-6. Build the readable suffix from the escaped path by taking the full escaped
-   path if it already fits, or else taking the rightmost characters of the
-   escaped path so the final name fits within 63 characters including prefix,
-   separator, and `hash12`.
-7. Container names use the prefix `agentbox-`.
-8. If the derived name is already occupied by a non-matching Podman object,
-   fail with a name-conflict error. Do not generate an alternate name.
-
-Required behavior:
-
-- The escaped readable suffix remains visible in the final name.
+- Container names use the prefix `agentbox-`.
+- The final name includes a readable suffix derived from the canonical git root.
 - Overlong paths preserve the rightmost path segment characters, not the
   leftmost prefix characters.
 - The exact same canonical git-root path always yields the exact same container
@@ -123,18 +120,21 @@ Required behavior:
   allowed.
 - The runtime cache volume name for a workspace session is exactly the same
   string as the container name.
-- The algorithm does not depend on ambient Podman state to produce a different
-  name.
+- Ambient Podman state does not cause the same canonical git root to produce a
+  different name.
 - The 63-character maximum is owned by this spec for managed container names.
-- If two different canonical git roots collide on `hash12`, fail clearly with a
-  hash-collision error rather than treating them as the same workspace.
+- If the derived name is already occupied by a non-matching Podman object, fail
+  with a name-conflict error. Do not generate an alternate name.
+- If two different canonical git roots would produce indistinguishable managed
+  identities, fail clearly with an identity-collision error rather than treating
+  them as the same workspace.
 
-Example:
+Example shape:
 
 - canonical git root: `/aaa/bbb`
-- escaped readable suffix: `_aaa_bbb`
-- container name: `agentbox-_aaa_bbb-9ae5447864f7`
-- runtime cache volume name: `agentbox-_aaa_bbb-9ae5447864f7`
+- readable suffix: `_aaa_bbb`
+- container name starts with `agentbox-_aaa_bbb-`
+- runtime cache volume name is the same string as the container name
 
 Managed containers are visible through Podman while they are running. They carry
 Podman labels that identify at least:
@@ -142,7 +142,7 @@ Podman labels that identify at least:
 - that the container is managed by `agentbox`
 - the metadata schema version
 - the canonical git root
-- the git-root `hash12`
+- a stable git-root identity token
 - the selected runtime
 - the default runtime image reference used for the session
 - the logical name
@@ -168,8 +168,8 @@ Expected behavior:
    and canonical target directory.
 2. Validate Podman, the selected runtime, and the host-attached Nix
    prerequisites.
-3. Ensure concurrent lifecycle operations for the same git root do not create
-   duplicate containers or race teardown.
+3. Ensure concurrent lifecycle operations for the same git root do not leave
+   duplicate sessions or ambiguous lifecycle state.
 4. Discover existing managed containers for that canonical git root.
 5. If more than one matching container exists, fail as `duplicate` and do not
    guess which one to use.
@@ -179,8 +179,8 @@ Expected behavior:
 7. If none exists, start detached `podman run --rm --rmi` with the required
    labels, mounts, default runtime image, local-only published attach endpoint,
    and target-directory working directory.
-8. Run the selected runtime's actual remote server command as the container main
-   command.
+8. Start the selected runtime server for the session. If `direnv` applies, the
+   server starts with the target directory's `direnv` environment.
 9. Wait until the runtime server endpoint is reachable or the container exits.
 10. Report the discovered attach endpoint and suggest
     `agentbox attach <directory>`.
@@ -230,7 +230,7 @@ Rules:
 - `attach` does not accept or interpret `--image`.
 - `attach` does not use `podman attach` as the user transport in the MVP.
 - `attach` does not open a raw shell through `podman exec`.
-- The host client process current working directory is the requested target
+- The host client process current working directory is the canonical target
   directory.
 - The running server process keeps the working directory and environment from
   its original `run`.
@@ -340,7 +340,7 @@ match the host filesystem layout.
 ### Target Directory CWD
 
 The effective working directory for a given `run` or `attach` invocation is the
-requested target directory, not always the git root.
+canonical target directory, not always the git root.
 
 Examples:
 
@@ -352,9 +352,9 @@ Examples:
 
 Rules:
 
-- `run` starts the runtime server from the requested target directory inside the
+- `run` starts the runtime server from the canonical target directory inside the
   container.
-- `attach` starts the runtime host client from the requested target directory on
+- `attach` starts the runtime host client from the canonical target directory on
   the host.
 - `attach` does not change the already-running server process working
   directory.
@@ -392,46 +392,40 @@ Rules:
 
 ### Direnv
 
-When the target directory uses `direnv`, the runtime command for that invocation
-is executed from the target directory context as:
-
-- `direnv exec . <runtime-server>` for `run`
-- `direnv exec . <runtime-client>` for `attach`, when the host target directory
-  uses `direnv`
+When the target directory uses `direnv`, the affected runtime process is
+launched with the environment produced for that target directory.
 
 Rules:
 
-- `direnv` evaluation happens relative to the requested target directory, not
+- `direnv` evaluation happens relative to the canonical target directory, not
   forcibly at the git root.
-- `direnv` wraps the runtime server command for `run`.
-- `direnv` wraps the runtime host client command for `attach` when a host-side
-  `.envrc` applies to the requested target directory.
+- `run` starts the runtime server in the target directory's `direnv`
+  environment when a matching `.envrc` applies.
+- `attach` starts the runtime host client in the target directory's `direnv`
+  environment when a host-side `.envrc` applies.
 - When `run` launches a session, the server environment is fixed by the
-  requested target directory used for that `run`.
+  canonical target directory used for that `run`.
 - `attach` to an already-running session does not reevaluate or replace the
   server environment.
 - The MVP does not persist host-side direnv state for running-session
   compatibility checks.
-- The MVP does not compare the requested attach target directory against the
+- The MVP does not compare the attach target directory against the
   earlier `run` direnv context for that running session.
 - If `.envrc` is present but `direnv` is unavailable, blocked, or fails to load,
   the affected `run` or `attach` fails clearly.
 - If no `.envrc` applies, the runtime server or client launches normally.
 
-### Runtime Server And Client Commands
+### Runtime Server And Client Behavior
 
-OpenCode command contract:
+OpenCode sessions:
 
-- server command inside the container: `opencode serve --port <container-port>`
-- host client command: `opencode attach "http://<host-ip>:<host-port>"`
-- attach endpoint scheme: `http`
+- use OpenCode's remote server and host-side attach client
+- expose an `http` attach endpoint
 
-Codex command contract:
+Codex sessions:
 
-- server command inside the container:
-  `codex --dangerously-bypass-approvals-and-sandbox app-server --listen 'ws://<container-listen-ip>:<container-port>'`
-- host client command: `codex --remote 'ws://<host-ip>:<host-port>'`
-- attach endpoint scheme: `ws`
+- use Codex's app server and host-side remote client
+- expose a `ws` attach endpoint
 
 Endpoint rules:
 
@@ -445,7 +439,7 @@ Endpoint rules:
   executing `attach`.
 - The attach endpoint must be discoverable from live managed-container metadata
   plus Podman's published port data.
-- The host client command is executed with inherited stdio from the requested
+- The host client command is executed with inherited stdio from the canonical
   target directory.
 
 ### Host-Attached Nix Model
@@ -483,10 +477,8 @@ Valid lifecycle behavior:
 - `ls` derives session status from live Podman state and host path checks.
 - `stop` stops the container and relies on the container's `--rm --rmi` run
   options for cleanup.
-- Concurrent lifecycle operations for the same canonical git root are
-  serialized so they do not create duplicate containers or race teardown.
-- Stale coordination state with no live owner is cleared automatically before
-  proceeding.
+- Concurrent lifecycle operations for the same canonical git root do not leave
+  more than one valid managed session or ambiguous cleanup outcome.
 
 Image lifecycle is tied to the managed session. When the runtime server exits or
 `agentbox stop` stops it, Podman removes the image if no other container
@@ -514,8 +506,8 @@ Required drift behavior:
   to synthesize a bundled Nix installation.
 - Runtime image setup failure: fail clearly and preserve inspectable runtime
   state when Podman has not already removed the container.
-- Hash collision between different canonical git roots: fail clearly and do not
-  treat them as the same workspace.
+- Identity collision between different canonical git roots: fail clearly and do
+  not treat them as the same workspace.
 - Stop failure: report exactly which managed containers are still running or
   still inspectable.
 
@@ -542,9 +534,9 @@ Required error cases:
 - duplicate managed containers for one git root
 - `run` called for a git root that already has a managed session
 - name conflict with a non-matching Podman object
-- hash collision between different canonical git roots
+- identity collision between different canonical git roots
 - missing required managed-container metadata on an existing session
-- coordination state that cannot be cleared automatically
+- concurrent lifecycle operation that cannot complete safely
 - missing runtime cache volume mount for an existing session
 - orphaned session after repo move
 - missing host `nix` client in `PATH`
