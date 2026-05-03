@@ -74,10 +74,7 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
         "agentbox: building runtime image `{image}` with `{}@{latest_version}`",
         package.name
     );
-    build_runtime_image(&podman, runtime, &latest_version)?;
-    let now = now_unix_seconds()?;
-    let state = RuntimeImageState::new(runtime, latest_version.clone(), now, now);
-    write_runtime_image_state(runtime, &state)?;
+    build_runtime_image_and_record_state(&podman, runtime, &latest_version)?;
     println!("updated {runtime} runtime image `{image}` to {latest_version}");
     Ok(())
 }
@@ -85,13 +82,21 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
 fn build_default_runtime_image(podman: &Podman, runtime: RuntimeKind) -> Result<Option<String>> {
     let package = runtime.package_spec();
     let latest_version = resolve_latest_runtime_version(package.name)?;
-    build_runtime_image(podman, runtime, &latest_version)?;
+    build_runtime_image_and_record_state(podman, runtime, &latest_version)?;
+    Ok(Some(latest_version))
+}
+
+fn build_runtime_image_and_record_state(
+    podman: &Podman,
+    runtime: RuntimeKind,
+    version: &str,
+) -> Result<()> {
+    build_runtime_image(podman, runtime, version)?;
     let now = now_unix_seconds()?;
     write_runtime_image_state(
         runtime,
-        &RuntimeImageState::new(runtime, latest_version.clone(), now, now),
-    )?;
-    Ok(Some(latest_version))
+        &RuntimeImageState::new(runtime, version.to_string(), now, now),
+    )
 }
 
 fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> Result<()> {
