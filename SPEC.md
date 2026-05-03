@@ -516,6 +516,12 @@ Endpoint rules:
 
 - The server listens inside the container on the runtime's configured listen
   address and container port.
+- The runtime server command must pass the configured listen address to
+  runtimes whose default bind address would not be reachable through the
+  published attach endpoint.
+- For `http` attach endpoints, `run` treats the endpoint as reachable only after
+  the host-published endpoint returns an HTTP response. A TCP accept followed by
+  a reset is not sufficient readiness.
 - The attach endpoint is published only on the host loopback interface by
   default.
 - The default host attach IP is `127.0.0.1`.
