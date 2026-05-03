@@ -44,8 +44,8 @@
                 > "$out/share/zsh/site-functions/_${projectName}"
               "$out/bin/${projectName}" __generate-completion fish \
                 > "$out/share/fish/vendor_completions.d/${projectName}.fish"
-              "$out/bin/${projectName}" __generate-man \
-                > "$out/share/man/man1/${projectName}.1"
+              "$out/bin/${projectName}" __generate-manpages \
+                "$out/share/man/man1"
             '';
             meta = {
               mainProgram = projectName;

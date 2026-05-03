@@ -34,5 +34,6 @@ pub fn dispatch(command: Command) -> Result<()> {
         }
         Command::GenerateCompletion(args) => completion::generate_installed(args.shell),
         Command::GenerateMan => completion::generate_manpage(),
+        Command::GenerateManpages(args) => completion::generate_manpages(&args.directory),
     }
 }

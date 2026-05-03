@@ -60,6 +60,8 @@ pub enum Command {
     GenerateCompletion(CompletionArgs),
     #[command(name = "__generate-man", hide = true)]
     GenerateMan,
+    #[command(name = "__generate-manpages", hide = true)]
+    GenerateManpages(GenerateManpagesArgs),
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -70,6 +72,11 @@ pub struct CompletionArgs {
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct CompletionRootsArgs {
     pub command: CompletionRootCommand,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct GenerateManpagesArgs {
+    pub directory: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

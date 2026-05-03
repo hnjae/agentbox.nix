@@ -154,6 +154,7 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
     assert!(!script.contains("__generate-man"));
+    assert!(!script.contains("__generate-manpages"));
 }
 
 #[test]
@@ -162,10 +163,51 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
 
     assert!(manpage.contains(".TH agentbox 1"));
     assert!(manpage.contains("agentbox\\-run(1)"));
+    assert!(!manpage.contains("agentbox\\-help(1)"));
     assert!(manpage.contains("Shell completion helpers"));
     assert!(!manpage.contains("__completion-roots"));
     assert!(!manpage.contains("__generate-completion"));
     assert!(!manpage.contains("__generate-man"));
+    assert!(!manpage.contains("__generate-manpages"));
+}
+
+#[test]
+fn installed_manpages_include_referenced_subcommands() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = AssertCommand::cargo_bin("agentbox")
+        .unwrap()
+        .arg("__generate-manpages")
+        .arg(directory.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for filename in [
+        "agentbox.1",
+        "agentbox-run.1",
+        "agentbox-attach.1",
+        "agentbox-ls.1",
+        "agentbox-stop.1",
+        "agentbox-completion.1",
+    ] {
+        assert!(
+            directory.path().join(filename).is_file(),
+            "missing generated manpage {filename}"
+        );
+    }
+    assert!(!directory.path().join("agentbox-help.1").exists());
+
+    let agentbox = fs::read_to_string(directory.path().join("agentbox.1")).unwrap();
+    assert!(agentbox.contains("agentbox\\-run(1)"));
+    assert!(!agentbox.contains("agentbox\\-help(1)"));
+
+    let run = fs::read_to_string(directory.path().join("agentbox-run.1")).unwrap();
+    assert!(run.contains(".TH agentbox-run 1"));
+    assert!(run.contains("Runtime to launch for this run"));
 }
 
 fn capture_completion_script() -> String {

@@ -1,4 +1,5 @@
 use clap::CommandFactory;
+use std::path::Path;
 
 use crate::cli::{Cli, CompletionRootCommand, CompletionShell};
 use crate::error::Result;
@@ -25,6 +26,13 @@ pub fn generate_manpage() -> Result<()> {
     let mut stdout = std::io::stdout().lock();
 
     clap_mangen::Man::new(command).render(&mut stdout)?;
+    Ok(())
+}
+
+pub fn generate_manpages(directory: &Path) -> Result<()> {
+    let command = installed_asset_command();
+
+    clap_mangen::generate_to(command, directory)?;
     Ok(())
 }
 
@@ -222,6 +230,7 @@ fn installed_asset_command() -> clap::Command {
     let mut installed = clap::Command::new("agentbox")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Manage agentbox sessions")
+        .disable_help_subcommand(true)
         .subcommand_required(true);
 
     for subcommand in command
