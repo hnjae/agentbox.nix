@@ -19,22 +19,25 @@ use super::server_readiness::wait_for_server_endpoint;
 use super::session_selection::select_single_session;
 use super::workspace_flow::with_locked_workspace;
 
-pub fn run(args: RunArgs) -> Result<()> {
+pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let runtime = args.runtime;
+    let diagnostics = RunDiagnostics::new(verbose);
     let (workspace, endpoint) = with_locked_workspace(&args.directory, |locked| {
         let workspace = locked.workspace();
+        diagnostics.phase("checking workspace prerequisites");
         let preflight = check_host_prerequisites(
             Some(workspace.canonical_target.as_ref()),
             Some(workspace.canonical_git_root.as_ref()),
         )?;
 
+        diagnostics.phase("checking existing managed sessions");
         let podman = locked.podman();
         let sessions = locked.discover_sessions()?;
         if let Some(session) = select_single_session(&sessions, workspace)? {
             return Err(existing_session_error(podman, workspace, session));
         }
 
-        ensure_default_runtime_image(podman, runtime, workspace)?;
+        ensure_default_runtime_image(podman, runtime, workspace, &diagnostics)?;
         let server_run = server_runtime_command(
             runtime,
             workspace.canonical_target.as_ref(),
@@ -44,13 +47,20 @@ pub fn run(args: RunArgs) -> Result<()> {
             .create_spec(workspace, &preflight.host_nix_mounts)
             .with_command(server_run.argv);
 
+        diagnostics.phase(format!(
+            "starting container `{}` for `{}`",
+            workspace.container_name, runtime
+        ));
         let endpoint = podman
             .run_detached(
                 &workspace.container_name,
                 &run_spec,
                 Some(server_run.workdir.as_str()),
             )
-            .and_then(|_| wait_for_server_endpoint(podman, workspace, runtime))
+            .and_then(|_| {
+                diagnostics.phase(format!("waiting for `{runtime}` runtime server"));
+                wait_for_server_endpoint(podman, workspace, runtime)
+            })
             .map_err(|error| classify_run_error(podman, workspace, &run_spec, error))?;
 
         Ok(endpoint)
@@ -67,12 +77,15 @@ fn ensure_default_runtime_image(
     podman: &Podman,
     runtime: RuntimeKind,
     workspace: &WorkspaceIdentity,
+    diagnostics: &RunDiagnostics,
 ) -> Result<()> {
     let default_image = runtime.default_image();
     if podman.image_exists(default_image)? {
+        diagnostics.phase(format!("using runtime image `{default_image}`"));
         return Ok(());
     }
 
+    diagnostics.phase(format!("building runtime image `{default_image}`"));
     let context = runtime.materialize_default_image_context()?;
     let containerfile = context.containerfile();
     podman
@@ -84,6 +97,22 @@ fn ensure_default_runtime_image(
                 context.root(),
             ))
         })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RunDiagnostics {
+    verbose: bool,
+}
+
+impl RunDiagnostics {
+    fn new(verbose: bool) -> Self {
+        Self { verbose }
+    }
+
+    fn phase(&self, message: impl AsRef<str>) {
+        let _ = self.verbose;
+        eprintln!("agentbox: {}", message.as_ref());
+    }
 }
 
 fn classify_run_error(

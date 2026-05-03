@@ -37,6 +37,10 @@ impl std::str::FromStr for CompletionShell {
 #[command(version)]
 #[command(about = "Manage agentbox sessions", long_about = None)]
 pub struct Cli {
+    /// Print diagnostic progress and command details to stderr.
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }

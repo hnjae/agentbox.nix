@@ -53,7 +53,17 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
         .args(["run", "--runtime", "opencode"])
         .arg(&target);
 
-    command.assert().success();
+    command.assert().success().stderr(
+        predicate::str::contains("agentbox: checking workspace prerequisites")
+            .and(predicate::str::contains(
+                "agentbox: checking existing managed sessions",
+            ))
+            .and(predicate::str::contains("agentbox: building runtime image"))
+            .and(predicate::str::contains("agentbox: starting container"))
+            .and(predicate::str::contains(
+                "agentbox: waiting for `opencode` runtime server",
+            )),
+    );
 
     let log = harness.read_log();
     assert_eq!(

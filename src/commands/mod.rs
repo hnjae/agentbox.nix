@@ -19,11 +19,11 @@ mod session_selection;
 pub mod stop;
 mod workspace_flow;
 
-pub fn dispatch(command: Command) -> Result<()> {
+pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
     tracing::debug!(?command, "dispatching CLI command");
 
     match command {
-        Command::Run(args) => run::run(args),
+        Command::Run(args) => run::run(args, verbose),
         Command::Attach(args) => attach::run(args),
         Command::Ls => ls::run(),
         Command::Stop(args) => stop::run(args),

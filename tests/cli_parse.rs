@@ -82,6 +82,31 @@ fn core_commands_parse_into_expected_variants() {
 }
 
 #[test]
+fn global_verbose_flag_is_available_before_or_after_subcommands() {
+    let before = Cli::try_parse_from([
+        "agentbox",
+        "--verbose",
+        "run",
+        "--runtime",
+        "opencode",
+        "/tmp/workspace",
+    ])
+    .unwrap();
+    let after = Cli::try_parse_from([
+        "agentbox",
+        "run",
+        "--runtime",
+        "opencode",
+        "--verbose",
+        "/tmp/workspace",
+    ])
+    .unwrap();
+
+    assert!(before.verbose);
+    assert!(after.verbose);
+}
+
+#[test]
 fn stop_accepts_force_cleanup_flag() {
     let cli = Cli::try_parse_from(["agentbox", "stop", "--force", "/tmp/workspace"]).unwrap();
 

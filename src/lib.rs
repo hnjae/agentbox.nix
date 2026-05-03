@@ -52,5 +52,5 @@ where
     T: Into<OsString> + Clone,
 {
     let cli = Cli::try_parse_from(args)?;
-    commands::dispatch(cli.command)
+    commands::dispatch(cli.command, cli.verbose)
 }
