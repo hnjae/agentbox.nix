@@ -8,10 +8,9 @@
 
 use crate::Result;
 
-use super::{
-    AttachEndpoint, RuntimeAttachSpec, RuntimeCommand, RuntimeKind,
-    default_image::{self, DefaultImageBuildContext},
-};
+use super::default_image::{self, DefaultImageBuildContext};
+use super::kind::RuntimeKind;
+use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand};
 
 const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
 
