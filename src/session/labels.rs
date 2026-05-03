@@ -8,13 +8,11 @@
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use std::collections::BTreeMap;
-
 use crate::Error;
 use crate::metadata::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE, REQUIRED_SESSION_LABELS, required_label_value,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_IMAGE,
+    LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA,
+    LABEL_SCHEMA_VALUE,
 };
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::hash12;
@@ -114,13 +112,15 @@ impl SessionLabelReport {
         }
     }
 
-    pub(super) fn status_failure(&self) -> Option<SessionFailure> {
-        self.required.as_ref().err().copied().or_else(|| {
-            self.attach
-                .as_ref()
-                .err()
-                .map(AttachLabelError::session_failure)
-        })
+    pub(super) fn required_failure(&self) -> Option<SessionFailure> {
+        self.required.as_ref().err().copied()
+    }
+
+    pub(super) fn attach_failure(&self) -> Option<SessionFailure> {
+        self.attach
+            .as_ref()
+            .err()
+            .map(AttachLabelError::session_failure)
     }
 
     pub(super) fn canonical_git_root(&self) -> Option<&Utf8Path> {
@@ -140,44 +140,8 @@ impl SessionLabelReport {
 }
 
 impl SessionMetadata {
-    pub fn from_labels(labels: &BTreeMap<String, String>) -> Self {
-        Self {
-            labels: labels.clone(),
-        }
-    }
-
-    pub(crate) fn is_managed(&self) -> bool {
-        self.label(LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE)
-    }
-
-    pub(crate) fn has_all_required_label_values(&self) -> bool {
-        REQUIRED_SESSION_LABELS
-            .iter()
-            .all(|label| self.label(label).is_some())
-    }
-
-    pub(crate) fn canonical_git_root(&self) -> Option<&Utf8Path> {
-        self.label(LABEL_GIT_ROOT).map(Utf8Path::new)
-    }
-
-    pub(crate) fn git_root_hash(&self) -> Option<&str> {
-        self.label(LABEL_GIT_ROOT_HASH)
-    }
-
-    pub(crate) fn runtime(&self) -> Option<&str> {
-        self.label(LABEL_RUNTIME)
-    }
-
-    pub(crate) fn logical_name_or<'a>(&'a self, fallback: &'a str) -> &'a str {
-        self.label(LABEL_LOGICAL_NAME).unwrap_or(fallback)
-    }
-
     pub(super) fn attach_labels(&self) -> std::result::Result<AttachLabels, AttachLabelError> {
         AttachLabels::from_session_labels(self)
-    }
-
-    fn label(&self, name: &str) -> Option<&str> {
-        required_label_value(&self.labels, name)
     }
 }
 

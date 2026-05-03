@@ -131,7 +131,14 @@ pub(super) fn derive_status(
     mounts: &[PodmanContainerMount],
     git: &Git,
 ) -> (SessionStatus, Option<SessionFailure>) {
-    if let Some(failure) = label_report.status_failure() {
+    let Some(canonical_git_root) = label_report.canonical_git_root() else {
+        let failure = label_report
+            .required_failure()
+            .unwrap_or(SessionFailure::MissingRequiredLabels);
+        return (SessionStatus::Failed, Some(failure));
+    };
+
+    if let Some(failure) = label_report.attach_failure() {
         return (SessionStatus::Failed, Some(failure));
     }
 
@@ -149,9 +156,6 @@ pub(super) fn derive_status(
         );
     }
 
-    let canonical_git_root = label_report
-        .canonical_git_root()
-        .expect("valid session labels include a canonical git root");
     if !running {
         return (SessionStatus::Failed, Some(SessionFailure::NotRunning));
     }

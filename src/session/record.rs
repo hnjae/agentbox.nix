@@ -10,6 +10,10 @@ use std::collections::BTreeMap;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use crate::metadata::{
+    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, REQUIRED_SESSION_LABELS, required_label_value,
+};
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 
 use super::status::{SessionFailure, SessionStatus};
@@ -46,6 +50,44 @@ impl SessionRecord {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionMetadata {
     pub(crate) labels: BTreeMap<String, String>,
+}
+
+impl SessionMetadata {
+    pub fn from_labels(labels: &BTreeMap<String, String>) -> Self {
+        Self {
+            labels: labels.clone(),
+        }
+    }
+
+    pub(crate) fn is_managed(&self) -> bool {
+        self.label(LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE)
+    }
+
+    pub(crate) fn has_all_required_label_values(&self) -> bool {
+        REQUIRED_SESSION_LABELS
+            .iter()
+            .all(|label| self.label(label).is_some())
+    }
+
+    pub(crate) fn canonical_git_root(&self) -> Option<&Utf8Path> {
+        self.label(LABEL_GIT_ROOT).map(Utf8Path::new)
+    }
+
+    pub(crate) fn git_root_hash(&self) -> Option<&str> {
+        self.label(LABEL_GIT_ROOT_HASH)
+    }
+
+    pub(crate) fn runtime(&self) -> Option<&str> {
+        self.label(LABEL_RUNTIME)
+    }
+
+    pub(crate) fn logical_name_or<'a>(&'a self, fallback: &'a str) -> &'a str {
+        self.label(LABEL_LOGICAL_NAME).unwrap_or(fallback)
+    }
+
+    pub(super) fn label(&self, name: &str) -> Option<&str> {
+        required_label_value(&self.labels, name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
