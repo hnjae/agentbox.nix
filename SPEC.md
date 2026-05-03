@@ -22,8 +22,9 @@ repository as a detached runtime server container. The container starts the
 selected runtime server for that workspace.
 
 `agentbox attach <directory>` discovers the running server endpoint for the
-resolved repository and runs the selected runtime's host-side client command
-from the canonical target directory.
+resolved repository and runs the running session's runtime host-side client
+command from the session's stored launch directory. The newly requested
+directory is used only to identify the workspace once the session exists.
 
 Managed containers are started with Podman's `--rm` and `--rmi` cleanup flags.
 When the runtime server exits, or when `agentbox stop <directory>` stops it,
@@ -51,8 +52,10 @@ Always-required host tools:
 
 Conditionally required host tools:
 
-- the selected runtime's host client command for `attach`
-- `direnv` when a matching `.envrc` applies to the target directory
+- the running session's runtime host client command for `attach`
+- `direnv` when a matching `.envrc` applies to the directory whose environment
+  is used by the command: the `run` target directory for server startup, or the
+  stored launch directory for `attach`
 
 For `run` and `attach`, `<directory>` must resolve to an existing directory
 inside a git repository. A non-git target fails clearly; the MVP does not create
@@ -89,6 +92,11 @@ canonical git root.
 After resolution, "target directory" means this canonical target directory, not
 the raw path spelling entered by the user.
 
+When `run` successfully launches a session, the canonical target directory
+becomes the session's launch directory. The launch directory is recorded with the
+session and remains the stable working-directory and `direnv` context for later
+attaches to that running session.
+
 Required behavior:
 
 - A symlinked path resolves to the same canonical git root as the real path.
@@ -99,9 +107,13 @@ Required behavior:
 - Moving a repository to a different absolute path creates a new identity.
 - A still-running container whose stored git-root path no longer exists is
   reported as `orphaned` until it is stopped.
-- The target directory is not part of identity. Different `run` or `attach`
-  invocations may target different subdirectories under the same git root while
-  still referring to the same running managed session.
+- The target directory is not part of identity. A `run` invocation may choose any
+  subdirectory under the git root as the launch directory for a new session, and
+  an `attach` invocation may provide any subdirectory under the same git root to
+  find that session.
+- `attach` target directories do not retarget a running session. They identify
+  the workspace session, then the running session's stored launch directory
+  controls host-client working directory and environment.
 
 ## Naming And Visible Podman State
 
@@ -145,6 +157,7 @@ Podman labels that identify at least:
 - a stable git-root identity token
 - the selected runtime
 - the default runtime image reference used for the session
+- the canonical session launch directory
 - the logical name
 - the attach endpoint scheme
 - the runtime server container port and listen address
@@ -176,11 +189,12 @@ Expected behavior:
 6. If exactly one matching managed container exists, fail clearly instead of
    reusing or replacing it. For a healthy running session, suggest
    `agentbox attach <directory>` or `agentbox stop <directory>`.
-7. If none exists, start detached `podman run --rm --rmi` with the required
-   labels, mounts, default runtime image, local-only published attach endpoint,
-   and target-directory working directory.
+7. If none exists, record the canonical target directory as the session launch
+   directory and start detached `podman run --rm --rmi` with the required labels,
+   mounts, default runtime image, local-only published attach endpoint, and
+   launch-directory working directory.
 8. Start the selected runtime server for the session. If `direnv` applies, the
-   server starts with the target directory's `direnv` environment.
+   server starts with the launch directory's `direnv` environment.
 9. Wait until the runtime server endpoint is reachable or the container exits.
 10. Report the discovered attach endpoint and suggest
     `agentbox attach <directory>`.
@@ -210,16 +224,20 @@ Image rules:
 
 Expected behavior:
 
-1. Resolve `<directory>` to a canonical git root and canonical target directory.
+1. Resolve `<directory>` to a canonical git root and canonical requested
+   directory.
 2. Discover the managed container for that canonical git root.
 3. Fail if no matching managed session exists, and suggest
    `agentbox run --runtime <opencode|codex> <directory>`.
 4. Fail as `duplicate` if more than one matching container exists.
 5. Fail if the matching container is not running.
-6. Discover the runtime attach endpoint from managed-container metadata and
-   Podman's published port data.
-7. Execute the runtime host client command from the canonical target directory
-   with stdio inherited.
+6. Discover the runtime attach endpoint and stored launch directory from
+   managed-container metadata and Podman's published port data.
+7. If the canonical requested directory differs from the stored launch
+   directory, report that the requested directory was used only to identify the
+   workspace and that `attach` is using the stored launch directory.
+8. Execute the runtime host client command from the stored launch directory with
+   stdio inherited.
 
 Rules:
 
@@ -230,10 +248,12 @@ Rules:
 - `attach` does not accept or interpret `--image`.
 - `attach` does not use `podman attach` as the user transport in the MVP.
 - `attach` does not open a raw shell through `podman exec`.
-- The host client process current working directory is the canonical target
-  directory.
+- The host client process current working directory is the running session's
+  stored launch directory.
 - The running server process keeps the working directory and environment from
   its original `run`.
+- A different requested directory under the same git root does not change the
+  running server or host client working directory for that `attach`.
 - If the runtime client cannot be found on the host, `attach` fails clearly with
   the required command name.
 
@@ -273,15 +293,16 @@ orphaned live containers. It is not a volume pruning command.
 
 Expected behavior:
 
-1. Resolve `<directory>` to a canonical git root.
-2. If `<directory>` does not exist, allow an exact absolute git-root path string
-   to match an orphaned session directly.
+1. If `<directory>` exists, resolve it to a canonical git root.
+2. If `<directory>` does not exist, require an exact absolute git-root path
+   string and match only a live orphaned session whose stored git-root path is
+   exactly that string.
 3. Ensure concurrent lifecycle operations for the same git root do not race.
 4. Stop the matching container if it is running.
 5. Treat an already-removed matching container as success after verifying it is
    absent.
 6. If no matching managed session exists, report that no session exists for the
-   resolved repository and exit non-zero.
+   resolved repository or exact orphan path and exit non-zero.
 7. Rely on Podman's `--rm --rmi` cleanup for container and image removal after
    the stop.
 8. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
@@ -338,10 +359,13 @@ Example:
 This same absolute path rule is required so file paths emitted by the runtime
 match the host filesystem layout.
 
-### Target Directory CWD
+### Launch Directory CWD
 
-The effective working directory for a given `run` or `attach` invocation is the
-canonical target directory, not always the git root.
+The effective working directory for a running session is the stored launch
+directory, not always the git root. `run` sets the launch directory from its
+canonical target directory. `attach` uses the requested directory only to find
+the workspace session, then runs the host client from the stored launch
+directory.
 
 Examples:
 
@@ -349,16 +373,18 @@ Examples:
 - mounted git root inside container: `/aaa/bbb`
 - working directory seen by the runtime server: `/aaa/bbb/subdir`
 - command: `agentbox attach /aaa/bbb/other`
-- working directory of the host runtime client process: `/aaa/bbb/other`
+- working directory of the host runtime client process: `/aaa/bbb/subdir`
 
 Rules:
 
 - `run` starts the runtime server from the canonical target directory inside the
-  container.
-- `attach` starts the runtime host client from the canonical target directory on
+  container and records that directory as the session launch directory.
+- `attach` starts the runtime host client from the stored launch directory on
   the host.
 - `attach` does not change the already-running server process working
   directory.
+- To use a different launch directory for the same git root, the user stops the
+  current session and runs a new one from the desired directory.
 - Runtime-specific remote project behavior must be provided by the runtime
   client/server protocol, not by `podman attach` or `podman exec`.
 
@@ -393,24 +419,25 @@ Rules:
 
 ### Direnv
 
-When the target directory uses `direnv`, the affected runtime process is
-launched with the environment produced for that target directory.
+When a command uses a directory with `direnv`, the affected runtime process is
+launched with the environment produced for the directory that command actually
+uses.
 
 Rules:
 
-- `direnv` evaluation happens relative to the canonical target directory, not
+- `direnv` evaluation happens relative to the effective command directory, not
   forcibly at the git root.
 - `run` starts the runtime server in the target directory's `direnv`
   environment when a matching `.envrc` applies.
-- `attach` starts the runtime host client in the target directory's `direnv`
-  environment when a host-side `.envrc` applies.
+- `attach` starts the runtime host client in the stored launch directory's
+  host-side `direnv` environment when a matching `.envrc` applies.
 - When `run` launches a session, the server environment is fixed by the
-  canonical target directory used for that `run`.
+  launch directory used for that `run`.
 - `attach` to an already-running session does not reevaluate or replace the
   server environment.
 - The MVP does not persist host-side direnv state for running-session
   compatibility checks.
-- The MVP does not compare the attach target directory against the
+- The MVP does not compare a different requested attach directory against the
   earlier `run` direnv context for that running session.
 - If `.envrc` is present but `direnv` is unavailable, blocked, or fails to load,
   the affected `run` or `attach` fails clearly.
@@ -440,8 +467,8 @@ Endpoint rules:
   executing `attach`.
 - The attach endpoint must be discoverable from live managed-container metadata
   plus Podman's published port data.
-- The host client command is executed with inherited stdio from the canonical
-  target directory.
+- The host client command is executed with inherited stdio from the running
+  session's stored launch directory.
 
 ### Host-Attached Nix Model
 
