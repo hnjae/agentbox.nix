@@ -82,6 +82,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[3].contains("--rm"));
     assert!(log[3].contains("--rmi"));
     assert!(log[3].contains("--detach"));
+    assert!(log[3].contains("--userns keep-id:uid=1000,gid=1000"));
     assert!(!log[3].contains("--interactive"));
     assert!(!log[3].contains("--tty"));
     assert!(log[3].contains("--label io.agentbox.image=localhost/agentbox-opencode:local"));
@@ -96,6 +97,8 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[3].contains(DEFAULT_IMAGE));
     assert!(log[3].contains(" opencode serve --port 4096"));
     assert!(log[3].contains("--publish 127.0.0.1::4096"));
+    assert!(log[3].contains("type=volume"));
+    assert!(log[3].contains("dst=/home/user/.cache/nix,U"));
     assert!(!log[3].contains("direnv exec ."));
     assert!(!log[3].contains("sleep infinity"));
 }

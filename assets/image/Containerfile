@@ -52,7 +52,14 @@ RUN set -eu; \
 
 RUN set -eu; \
 	useradd --create-home --home-dir /home/user --shell /bin/zsh user; \
-	install -d -o user -g user /home/user/.config/direnv; \
+	install -d -o user -g user \
+		/home/user/.cache \
+		/home/user/.config \
+		/home/user/.config/direnv \
+		/home/user/.local \
+		/home/user/.local/bin \
+		/home/user/.local/share \
+		/home/user/.local/state; \
 	printf '%s\n' \
 	'[whitelist]' \
 	'prefix = ["/"]' \

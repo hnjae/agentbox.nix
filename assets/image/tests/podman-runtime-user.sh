@@ -34,6 +34,11 @@ podman run --rm --entrypoint /bin/sh --name "$container_name" "$image_tag" -ceu 
     test "$HOME" = /home/user
     test -d "$HOME"
     test -w "$HOME"
+    test -w "$HOME/.cache"
+    test -w "$HOME/.config"
+    test -w "$HOME/.local"
+    test -w "$HOME/.local/state"
+    mkdir -p "$HOME/.config/opencode"
     test "$PWD" = /workspace
 '
 

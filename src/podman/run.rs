@@ -15,6 +15,7 @@ pub(super) fn run_detached_args(
 ) -> Vec<String> {
     let mut args = PodmanArgs::from(["run", "--detach", "--rm", "--rmi"]);
     args.option("--name", container_name);
+    args.option("--userns", "keep-id:uid=1000,gid=1000");
 
     if let Some(workdir) = workdir {
         args.option("--workdir", workdir);
@@ -93,6 +94,9 @@ fn render_mount(mount: &RuntimeMount) -> String {
     if mount.read_only {
         options.push("ro".to_string());
     }
+    if mount.kind == crate::runtime::RuntimeMountKind::Volume {
+        options.push("U".to_string());
+    }
     options.join(",")
 }
 
@@ -133,6 +137,8 @@ mod tests {
                 "--rmi",
                 "--name",
                 "agentbox-demo",
+                "--userns",
+                "keep-id:uid=1000,gid=1000",
                 "--workdir",
                 "/workspace",
                 "--label",
@@ -142,7 +148,7 @@ mod tests {
                 "--mount",
                 "type=bind,src=/workspace,dst=/workspace,ro",
                 "--mount",
-                "type=volume,src=agentbox-cache,dst=/home/user/.cache/nix",
+                "type=volume,src=agentbox-cache,dst=/home/user/.cache/nix,U",
                 "--env",
                 "NIX_CONFIG=sandbox = false",
                 "--network=none",

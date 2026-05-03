@@ -41,7 +41,7 @@ runtime_contract_resolve_nix_client() {
 
 runtime_contract_prepare_cache_volume_mount() {
     home_mount="type=tmpfs,dst=/home/user,tmpfs-mode=1777"
-    cache_mount="type=volume,dst=/home/user/.cache/nix"
+    cache_mount="type=volume,dst=/home/user/.cache/nix,U"
 }
 
 runtime_contract_build_image() {
