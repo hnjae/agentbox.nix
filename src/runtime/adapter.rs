@@ -19,12 +19,8 @@ pub struct RuntimeAdapter {
 }
 
 impl RuntimeAdapter {
-    pub fn new(kind: RuntimeKind) -> Self {
+    pub(crate) fn new(kind: RuntimeKind) -> Self {
         Self { kind }
-    }
-
-    pub fn kind(self) -> RuntimeKind {
-        self.kind
     }
 
     pub fn name(self) -> &'static str {
@@ -42,18 +38,6 @@ impl RuntimeAdapter {
 
     pub fn attach_spec(self) -> RuntimeAttachSpec {
         self.profile().attach
-    }
-
-    pub fn attach_scheme(self) -> &'static str {
-        self.attach_spec().scheme
-    }
-
-    pub fn container_listen_ip(self) -> &'static str {
-        self.attach_spec().container_listen_ip
-    }
-
-    pub fn container_port(self) -> u16 {
-        self.attach_spec().container_port
     }
 
     pub fn server_command(self) -> RuntimeCommand {
