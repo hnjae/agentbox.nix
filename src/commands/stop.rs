@@ -11,22 +11,17 @@ use std::path::Path;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::cli::StopArgs;
-use crate::lock::lock_git_root;
 use crate::podman::Podman;
-use crate::session::{SessionRecord, discover_sessions_for_git_root};
+use crate::session::SessionRecord;
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
+use super::workspace_flow::with_locked_git_root;
+
 pub fn run(args: StopArgs) -> Result<()> {
     let git_root = resolve_stop_git_root(&args.directory)?;
-    let failures = {
-        let mut workspace_lock = lock_git_root(git_root.as_ref())?;
-        let _workspace_guard = workspace_lock.guard()?;
-        let podman = Podman::new();
-        let sessions = exact_full_root_matches(
-            discover_sessions_for_git_root(&podman, git_root.as_ref())?,
-            git_root.as_ref(),
-        );
+    let failures = with_locked_git_root(git_root.as_ref(), |locked| {
+        let sessions = exact_full_root_matches(locked.discover_sessions()?, locked.git_root());
 
         if sessions.is_empty() {
             return Err(Error::msg(format!(
@@ -41,11 +36,13 @@ pub fn run(args: StopArgs) -> Result<()> {
             )));
         }
 
-        sessions
+        let failures = sessions
             .iter()
-            .filter_map(|session| cleanup_managed_container(&podman, session))
-            .collect::<Vec<_>>()
-    };
+            .filter_map(|session| cleanup_managed_container(locked.podman(), session))
+            .collect::<Vec<_>>();
+
+        Ok(failures)
+    })?;
 
     if failures.is_empty() {
         Ok(())
