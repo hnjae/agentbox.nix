@@ -53,6 +53,12 @@ const CODEX_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTe
     HostClientCommandArg::AttachEndpoint,
 ]);
 
+const OPENCODE_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[RuntimeDefaultEnv {
+    name: "OPENCODE_CONFIG_CONTENT",
+    value: r#"{"autoupdate":false}"#,
+}];
+const CODEX_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[];
+
 const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
     kind: RuntimeKind::Opencode,
     name: "opencode",
@@ -72,6 +78,7 @@ const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
         container_listen_ip: CONTAINER_LISTEN_IP,
         container_port: 4096,
     },
+    default_env: OPENCODE_DEFAULT_ENV,
     server_command: OPENCODE_SERVER_COMMAND,
     host_client_command: OPENCODE_HOST_CLIENT_COMMAND,
 };
@@ -95,6 +102,7 @@ const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
         container_listen_ip: CONTAINER_LISTEN_IP,
         container_port: 1455,
     },
+    default_env: CODEX_DEFAULT_ENV,
     server_command: CODEX_SERVER_COMMAND,
     host_client_command: CODEX_HOST_CLIENT_COMMAND,
 };
@@ -109,6 +117,7 @@ pub(super) struct RuntimeProfile {
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
     pub(super) package: RuntimePackageSpec,
     pub(super) attach: RuntimeAttachSpec,
+    pub(super) default_env: &'static [RuntimeDefaultEnv],
     pub(super) server_command: ServerCommandTemplate,
     pub(super) host_client_command: HostClientCommandTemplate,
 }
@@ -122,6 +131,12 @@ pub(crate) struct RuntimePackageSpec {
     pub(crate) version_label: &'static str,
     pub(crate) install_source_label: &'static str,
     pub(crate) resolved_at_label: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct RuntimeDefaultEnv {
+    pub(super) name: &'static str,
+    pub(super) value: &'static str,
 }
 
 pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {

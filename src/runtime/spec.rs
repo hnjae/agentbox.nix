@@ -157,13 +157,12 @@ impl RuntimeKind {
         mounts.extend(host_nix_mounts.iter().cloned());
         mounts.extend(runtime_mounts.iter().cloned());
 
-        let default_env = match self {
-            RuntimeKind::Opencode => BTreeMap::from([(
-                "OPENCODE_CONFIG_CONTENT".to_string(),
-                r#"{"autoupdate":false}"#.to_string(),
-            )]),
-            RuntimeKind::Codex => BTreeMap::new(),
-        };
+        let default_env = self
+            .profile()
+            .default_env
+            .iter()
+            .map(|entry| (entry.name.to_string(), entry.value.to_string()))
+            .collect::<BTreeMap<_, _>>();
 
         RuntimeCreateSpec {
             image,
