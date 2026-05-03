@@ -15,7 +15,7 @@ mod record;
 mod status;
 
 pub(crate) use conflict::{
-    classify_create_error, duplicate_sessions_error, existing_session_error,
+    classify_create_error_or_else, duplicate_sessions_error, existing_session_error,
 };
 pub use discovery::{
     discover_managed_sessions, discover_managed_sessions_from_ps, discover_sessions_for_git_root,

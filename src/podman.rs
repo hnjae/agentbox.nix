@@ -119,6 +119,19 @@ impl Podman {
         self.run_quiet(&mut command).map(|_| ())
     }
 
+    pub fn logs_tail(&self, container_name: &str, line_count: usize) -> Result<String> {
+        let mut command = self.runner.command("podman")?;
+        command.args(["logs", "--tail", &line_count.to_string(), container_name]);
+        self.run_quiet(&mut command).map(|output| {
+            let mut logs = output.stdout;
+            if !logs.is_empty() && !logs.ends_with('\n') && !output.stderr.is_empty() {
+                logs.push('\n');
+            }
+            logs.push_str(&output.stderr);
+            logs
+        })
+    }
+
     pub fn run_detached(
         &self,
         container_name: &str,

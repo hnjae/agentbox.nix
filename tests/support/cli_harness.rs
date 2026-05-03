@@ -72,6 +72,10 @@ impl CliHarness {
         self.fail_operation(kind, stderr, exit_code);
     }
 
+    pub fn write_logs(&self, name: &str, logs: &str) {
+        fs::write(self.fixtures.path().join(format!("logs-{name}.txt")), logs).unwrap();
+    }
+
     pub fn mark_missing_during_cleanup(&self) {
         fs::write(self.fixtures.path().join("missing-during-cleanup"), "").unwrap();
     }
@@ -208,6 +212,16 @@ case "$cmd" in
     record run "$@"
     maybe_fail run
     printf 'started\n'
+    ;;
+  logs)
+    record logs "$@"
+    target="$(last_arg "$@")"
+    fixture="$fixtures/logs-$target.txt"
+    if [ ! -f "$fixture" ]; then
+      printf 'no logs for %s\n' "$target" >&2
+      exit 125
+    fi
+    cat "$fixture"
     ;;
   stop)
     record stop "$@"

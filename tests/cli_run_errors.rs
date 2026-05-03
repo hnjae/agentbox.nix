@@ -17,8 +17,8 @@ use agentbox::workspace::{hash12, resolve_workspace_identity};
 mod support;
 
 use support::{
-    CliHarness as Harness, managed_labels, managed_ps_entry, operation_names, ps_fixture,
-    running_managed_inspect_fixture as managed_inspect_fixture,
+    CliHarness as Harness, cached_managed_inspect_fixture, managed_labels, managed_ps_entry,
+    operation_names, ps_fixture, running_managed_inspect_fixture as managed_inspect_fixture,
 };
 
 #[test]
@@ -241,6 +241,79 @@ fn create_name_conflict_reports_the_conflicting_root() {
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
+}
+
+#[test]
+fn run_start_failure_includes_container_logs_when_available() {
+    let repo = support::temp_git_repo();
+    let target = repo.path().join("nested");
+    fs::create_dir(&target).unwrap();
+
+    let workspace = resolve_workspace_identity(&target).unwrap();
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("run", "container failed to start", 125);
+    harness.write_logs(&workspace.container_name, "runtime boot failed\n");
+
+    run_command(&harness, &target, &[])
+        .failure()
+        .stderr(predicates::str::contains(
+            "failed to run the runtime server command",
+        ))
+        .stderr(predicates::str::contains(format!(
+            "podman logs --tail 80 {}",
+            workspace.container_name
+        )))
+        .stderr(predicates::str::contains("runtime boot failed"));
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "run", "inspect", "logs"]
+    );
+}
+
+#[test]
+fn run_readiness_failure_includes_container_logs_when_available() {
+    let repo = support::temp_git_repo();
+    let target = repo.path().join("nested");
+    fs::create_dir(&target).unwrap();
+
+    let workspace = resolve_workspace_identity(&target).unwrap();
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.write_inspect(
+        &workspace.container_name,
+        &cached_managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            false,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "opencode",
+                &workspace.container_name,
+            ),
+        ),
+    );
+    harness.write_logs(&workspace.container_name, "runtime crashed before listen\n");
+
+    run_command(&harness, &target, &[])
+        .failure()
+        .stderr(predicates::str::contains(
+            "exited before the `opencode` runtime server became reachable",
+        ))
+        .stderr(predicates::str::contains(format!(
+            "podman logs --tail 80 {}",
+            workspace.container_name
+        )))
+        .stderr(predicates::str::contains("runtime crashed before listen"));
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "run", "inspect", "logs"]
+    );
 }
 
 #[test]

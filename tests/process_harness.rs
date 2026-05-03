@@ -237,3 +237,19 @@ fn podman_stop_ignore_uses_the_adapter_runner() {
         .stop_ignore("agentbox-demo")
         .unwrap();
 }
+
+#[test]
+fn podman_logs_tail_returns_container_output() {
+    let fake_bins = support::FakeBinDir::new();
+    fake_bins.install_exact_response(
+        "podman",
+        &["logs", "--tail", "80", "agentbox-demo"],
+        "runtime failed\n",
+    );
+
+    let logs = Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .logs_tail("agentbox-demo", 80)
+        .unwrap();
+
+    assert_eq!(logs, "runtime failed\n");
+}

@@ -10,7 +10,7 @@ use crate::cli::RunArgs;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites;
 use crate::runtime::{RuntimeCreateSpec, RuntimeKind};
-use crate::session::{classify_create_error, existing_session_error};
+use crate::session::{classify_create_error_or_else, existing_session_error};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
@@ -18,6 +18,8 @@ use super::runtime_command::server_runtime_command;
 use super::server_readiness::wait_for_server_endpoint;
 use super::session_selection::select_single_session;
 use super::workspace_flow::with_locked_workspace;
+
+const RUN_FAILURE_LOG_TAIL_LINES: usize = 80;
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let runtime = args.runtime;
@@ -51,17 +53,17 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             "starting container `{}` for `{}`",
             workspace.container_name, runtime
         ));
-        let endpoint = podman
+        podman
             .run_detached(
                 &workspace.container_name,
                 &run_spec,
                 Some(server_run.workdir.as_str()),
             )
-            .and_then(|_| {
-                diagnostics.phase(format!("waiting for `{runtime}` runtime server"));
-                wait_for_server_endpoint(podman, workspace, runtime)
-            })
-            .map_err(|error| classify_run_error(podman, workspace, &run_spec, error))?;
+            .map_err(|error| classify_run_create_error(podman, workspace, &run_spec, error))?;
+
+        diagnostics.phase(format!("waiting for `{runtime}` runtime server"));
+        let endpoint = wait_for_server_endpoint(podman, workspace, runtime)
+            .map_err(|error| error_with_container_logs(podman, workspace, error))?;
 
         Ok(endpoint)
     })?;
@@ -112,7 +114,7 @@ impl RunDiagnostics {
     }
 }
 
-fn classify_run_error(
+fn classify_run_create_error(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
     create_spec: &RuntimeCreateSpec,
@@ -124,5 +126,33 @@ fn classify_run_error(
         "run the runtime server command",
         &original_error.to_string(),
     );
-    classify_create_error(podman, workspace, create_spec, wrapped)
+    classify_create_error_or_else(podman, workspace, create_spec, wrapped, |error| {
+        error_with_container_logs(podman, workspace, error)
+    })
+}
+
+fn error_with_container_logs(
+    podman: &Podman,
+    workspace: &WorkspaceIdentity,
+    original_error: Error,
+) -> Error {
+    let container_name = &workspace.container_name;
+    let command = format!("podman logs --tail {RUN_FAILURE_LOG_TAIL_LINES} {container_name}");
+    match podman.logs_tail(container_name, RUN_FAILURE_LOG_TAIL_LINES) {
+        Ok(logs) => {
+            let logs = logs.trim_end();
+            if logs.is_empty() {
+                Error::msg(format!(
+                    "{original_error}\n\ncontainer `{container_name}` produced no logs; inspect it with `{command}`"
+                ))
+            } else {
+                Error::msg(format!(
+                    "{original_error}\n\ncontainer logs (`{command}`):\n{logs}"
+                ))
+            }
+        }
+        Err(log_error) => Error::msg(format!(
+            "{original_error}\n\nfailed to read container logs with `{command}`: {log_error}"
+        )),
+    }
 }

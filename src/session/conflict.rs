@@ -46,11 +46,12 @@ pub(crate) fn existing_session_error(
     }
 }
 
-pub(crate) fn classify_create_error(
+pub(crate) fn classify_create_error_or_else(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
     create_spec: &RuntimeCreateSpec,
     original_error: Error,
+    fallback: impl FnOnce(Error) -> Error,
 ) -> Error {
     match podman.inspect_one(&workspace.container_name) {
         Ok(inspect) => classify_named_container_conflict(
@@ -58,7 +59,7 @@ pub(crate) fn classify_create_error(
             &create_spec.labels[LABEL_LOGICAL_NAME],
             &inspect,
         ),
-        Err(_) => original_error,
+        Err(_) => fallback(original_error),
     }
 }
 
