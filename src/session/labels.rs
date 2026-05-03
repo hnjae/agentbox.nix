@@ -126,6 +126,35 @@ impl SessionMetadata {
         }
     }
 
+    pub(super) fn is_managed(&self) -> bool {
+        self.managed.as_deref() == Some(LABEL_MANAGED_VALUE)
+    }
+
+    pub(super) fn has_all_required_label_values(&self) -> bool {
+        self.managed.is_some()
+            && self.schema.is_some()
+            && self.canonical_git_root.is_some()
+            && self.git_root_hash.is_some()
+            && self.runtime.is_some()
+            && self.image.is_some()
+            && self.logical_name.is_some()
+            && self.attach_scheme.is_some()
+            && self.container_port.is_some()
+            && self.container_listen_ip.is_some()
+    }
+
+    pub(super) fn canonical_git_root(&self) -> Option<&Utf8Path> {
+        self.canonical_git_root.as_deref()
+    }
+
+    pub(super) fn git_root_hash(&self) -> Option<&str> {
+        self.git_root_hash.as_deref()
+    }
+
+    pub(super) fn logical_name_or<'a>(&'a self, fallback: &'a str) -> &'a str {
+        self.logical_name.as_deref().unwrap_or(fallback)
+    }
+
     pub(super) fn validate(&self) -> std::result::Result<ValidSessionLabels, SessionFailure> {
         let required = RequiredSessionLabels::from_session_labels(self)?;
 

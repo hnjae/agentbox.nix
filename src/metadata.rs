@@ -21,19 +21,6 @@ pub const LABEL_ATTACH_SCHEME: &str = "io.agentbox.attach_scheme";
 pub const LABEL_CONTAINER_PORT: &str = "io.agentbox.container_port";
 pub const LABEL_CONTAINER_LISTEN_IP: &str = "io.agentbox.container_listen_ip";
 
-pub const REQUIRED_LABEL_NAMES: [&str; 10] = [
-    LABEL_MANAGED,
-    LABEL_SCHEMA,
-    LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH,
-    LABEL_RUNTIME,
-    LABEL_IMAGE,
-    LABEL_LOGICAL_NAME,
-    LABEL_ATTACH_SCHEME,
-    LABEL_CONTAINER_PORT,
-    LABEL_CONTAINER_LISTEN_IP,
-];
-
 pub const LABEL_MANAGED_VALUE: &str = "true";
 pub const LABEL_SCHEMA_VALUE: &str = "1";
 
@@ -80,12 +67,6 @@ pub(crate) fn required_label_value<'a>(
         .get(name)
         .map(String::as_str)
         .filter(|value| !value.trim().is_empty())
-}
-
-pub(crate) fn missing_required_label(labels: &BTreeMap<String, String>) -> bool {
-    REQUIRED_LABEL_NAMES
-        .iter()
-        .any(|name| required_label_value(labels, name).is_none())
 }
 
 pub(crate) fn required_label_string(
