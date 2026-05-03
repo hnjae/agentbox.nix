@@ -401,6 +401,12 @@ Example:
 This same absolute path rule is required so file paths emitted by the runtime
 match the host filesystem layout.
 
+The runtime process runs as the image-local `user` account, and that account's
+UID/GID inside the container must map to the invoking host user. A workspace
+file owned by the invoking host user must therefore appear owned by the runtime
+user inside the container. `agentbox` must not mutate workspace ownership or
+permissions to achieve this.
+
 ### Launch Directory CWD
 
 The effective working directory for a running session is the stored launch
@@ -440,6 +446,8 @@ Rules:
 - The runtime user home inside the container is `/home/user`.
 - `/home/user` itself is writable for runtime state creation, but it is not
   required to persist across container recreation.
+- Standard XDG parent directories under `/home/user`, including `.config`,
+  `.cache`, `.local`, and `.local/state`, are writable by the runtime user.
 - Runtime state outside `/home/user/.cache/nix` is ephemeral in the MVP. Users
   should not expect runtime configuration, login state, shell history, or files
   written elsewhere under `/home/user` to survive container recreation unless
@@ -448,6 +456,9 @@ Rules:
   workspace session.
 - The mounted runtime cache volume stores Nix cache and evaluation artifacts
   that should survive later sessions for the same canonical git root.
+- The mounted runtime cache volume is owned or remapped so the runtime user can
+  create cache files in it, including when a prior session created the volume
+  under a different rootless Podman user namespace mapping.
 - The active runtime profile does not live under the cache volume.
 - The runtime profile default path is `$XDG_STATE_HOME/nix/profile`.
 - If `XDG_STATE_HOME` is unset and `HOME` is set, the runtime falls back to
