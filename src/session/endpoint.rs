@@ -10,20 +10,23 @@ use crate::podman::PodmanContainerInspect;
 use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP};
 use crate::{Error, Result};
 
+use super::labels::AttachLabels;
 use super::record::SessionMetadata;
 
 pub fn discover_attach_endpoint_from_inspect(
     inspect: &PodmanContainerInspect,
 ) -> Result<AttachEndpoint> {
     let metadata = SessionMetadata::from_labels(&inspect.config.labels);
-    derive_attach_endpoint(&metadata, inspect)
+    let attach_labels = metadata
+        .attach_labels()
+        .map_err(|error| error.into_error())?;
+    derive_attach_endpoint(attach_labels, inspect)
 }
 
 pub(super) fn derive_attach_endpoint(
-    labels: &SessionMetadata,
+    attach_labels: AttachLabels,
     inspect: &PodmanContainerInspect,
 ) -> Result<AttachEndpoint> {
-    let attach_labels = labels.attach_labels().map_err(|error| error.into_error())?;
     let container_port = attach_labels.container_port();
 
     let port_key = format!("{container_port}/tcp");

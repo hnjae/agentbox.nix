@@ -15,11 +15,9 @@ use crate::git::Git;
 use crate::podman::PodmanContainerMount;
 use crate::runtime::AttachEndpoint;
 
+use super::labels::SessionLabelReport;
 use super::mounts::has_mount_destination;
-use super::{
-    REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
-    record::{SessionMetadata, SessionRecord},
-};
+use super::{REQUIRED_NIX_CACHE_MOUNT_DESTINATION, record::SessionRecord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionStatus {
@@ -127,16 +125,15 @@ pub fn session_failure_requires_action_error(
 }
 
 pub(super) fn derive_status(
-    session_labels: &SessionMetadata,
+    label_report: &SessionLabelReport,
     attach_endpoint: Option<&AttachEndpoint>,
     running: bool,
     mounts: &[PodmanContainerMount],
     git: &Git,
 ) -> (SessionStatus, Option<SessionFailure>) {
-    let valid_labels = match session_labels.validate() {
-        Ok(valid_labels) => valid_labels,
-        Err(failure) => return (SessionStatus::Failed, Some(failure)),
-    };
+    if let Some(failure) = label_report.status_failure() {
+        return (SessionStatus::Failed, Some(failure));
+    }
 
     if attach_endpoint.is_none() {
         return (
@@ -152,7 +149,9 @@ pub(super) fn derive_status(
         );
     }
 
-    let canonical_git_root = valid_labels.canonical_git_root();
+    let canonical_git_root = label_report
+        .canonical_git_root()
+        .expect("valid session labels include a canonical git root");
     if !running {
         return (SessionStatus::Failed, Some(SessionFailure::NotRunning));
     }

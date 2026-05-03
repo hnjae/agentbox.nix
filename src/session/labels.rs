@@ -23,17 +23,6 @@ use super::record::SessionMetadata;
 use super::status::SessionFailure;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct ValidSessionLabels {
-    required: RequiredSessionLabels,
-}
-
-impl ValidSessionLabels {
-    pub(super) fn canonical_git_root(&self) -> &Utf8Path {
-        &self.required.canonical_git_root
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct RequiredSessionLabels {
     canonical_git_root: Utf8PathBuf,
     git_root_hash: String,
@@ -110,6 +99,41 @@ pub(super) struct AttachLabels {
     attach: RuntimeAttachSpec,
 }
 
+#[derive(Debug)]
+pub(super) struct SessionLabelReport {
+    required: std::result::Result<RequiredSessionLabels, SessionFailure>,
+    attach: std::result::Result<AttachLabels, AttachLabelError>,
+}
+
+impl SessionLabelReport {
+    pub(super) fn from_metadata(metadata: &SessionMetadata) -> Self {
+        Self {
+            required: RequiredSessionLabels::validated(metadata),
+            attach: AttachLabels::from_session_labels(metadata),
+        }
+    }
+
+    pub(super) fn status_failure(&self) -> Option<SessionFailure> {
+        self.required.as_ref().err().copied().or_else(|| {
+            self.attach
+                .as_ref()
+                .err()
+                .map(AttachLabelError::session_failure)
+        })
+    }
+
+    pub(super) fn canonical_git_root(&self) -> Option<&Utf8Path> {
+        self.required
+            .as_ref()
+            .ok()
+            .map(RequiredSessionLabels::canonical_git_root)
+    }
+
+    pub(super) fn attach_labels(&self) -> Option<AttachLabels> {
+        self.attach.as_ref().ok().copied()
+    }
+}
+
 impl SessionMetadata {
     pub fn from_labels(labels: &BTreeMap<String, String>) -> Self {
         Self {
@@ -143,18 +167,6 @@ impl SessionMetadata {
         self.label(LABEL_LOGICAL_NAME).unwrap_or(fallback)
     }
 
-    pub(super) fn validate(&self) -> std::result::Result<ValidSessionLabels, SessionFailure> {
-        let required = RequiredSessionLabels::from_session_labels(self)?;
-
-        if !required.hash_matches_root() {
-            return Err(SessionFailure::DriftedGitRootHash);
-        }
-
-        AttachLabels::from_session_labels(self).map_err(|error| error.session_failure())?;
-
-        Ok(ValidSessionLabels { required })
-    }
-
     pub(super) fn attach_labels(&self) -> std::result::Result<AttachLabels, AttachLabelError> {
         AttachLabels::from_session_labels(self)
     }
@@ -165,6 +177,19 @@ impl SessionMetadata {
 }
 
 impl RequiredSessionLabels {
+    fn validated(labels: &SessionMetadata) -> std::result::Result<Self, SessionFailure> {
+        let required = Self::from_session_labels(labels)?;
+        if required.hash_matches_root() {
+            Ok(required)
+        } else {
+            Err(SessionFailure::DriftedGitRootHash)
+        }
+    }
+
+    fn canonical_git_root(&self) -> &Utf8Path {
+        &self.canonical_git_root
+    }
+
     fn from_session_labels(labels: &SessionMetadata) -> std::result::Result<Self, SessionFailure> {
         if labels.label(LABEL_MANAGED) != Some(LABEL_MANAGED_VALUE)
             || labels.label(LABEL_SCHEMA) != Some(LABEL_SCHEMA_VALUE)

@@ -17,6 +17,7 @@ use crate::workspace::hash12;
 use crate::{Error, Result};
 
 use super::endpoint::derive_attach_endpoint;
+use super::labels::SessionLabelReport;
 use super::record::{SessionGroup, SessionMetadata, SessionRecord};
 use super::status::{derive_status, mark_duplicate_sessions};
 
@@ -209,10 +210,13 @@ fn build_session_record(
         .unwrap_or_else(|| container.id.clone());
 
     let metadata = SessionMetadata::from_labels(labels);
-    let attach_endpoint = derive_attach_endpoint(&metadata, &inspect).ok();
+    let label_report = SessionLabelReport::from_metadata(&metadata);
+    let attach_endpoint = label_report
+        .attach_labels()
+        .and_then(|attach_labels| derive_attach_endpoint(attach_labels, &inspect).ok());
 
     let (status, failure) = derive_status(
-        &metadata,
+        &label_report,
         attach_endpoint.as_ref(),
         inspect.state.running,
         &inspect.mounts,
