@@ -13,8 +13,9 @@ use clap::ValueEnum;
 
 use crate::{Error, Result};
 
-use super::adapter::RuntimeAdapter;
+use super::default_image::DefaultImageBuildContext;
 use super::profile;
+use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 #[value(rename_all = "kebab-case")]
@@ -36,8 +37,31 @@ impl RuntimeKind {
         profile::supported_runtime_values()
     }
 
-    pub fn adapter(self) -> RuntimeAdapter {
-        RuntimeAdapter::new(self)
+    pub fn default_image(self) -> &'static str {
+        self.profile().default_image
+    }
+
+    pub fn materialize_default_image_context(self) -> Result<DefaultImageBuildContext> {
+        let profile = self.profile();
+        (profile.materialize_default_image_context)()
+    }
+
+    pub fn attach_spec(self) -> RuntimeAttachSpec {
+        self.profile().attach
+    }
+
+    pub fn server_command(self) -> RuntimeCommand {
+        let profile = self.profile();
+        profile.server_command.render(profile.attach)
+    }
+
+    pub fn host_client_command(self, endpoint: &AttachEndpoint) -> RuntimeCommand {
+        let profile = self.profile();
+        profile.host_client_command.render(endpoint)
+    }
+
+    pub(super) fn profile(self) -> &'static profile::RuntimeProfile {
+        profile::runtime_profile(self)
     }
 }
 

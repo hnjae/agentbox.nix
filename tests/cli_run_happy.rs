@@ -130,7 +130,7 @@ fn run_launches_codex_server_in_yolo_mode() {
 
     let harness = install_harness(repo.path());
     let workspace = resolve_workspace_identity(&target).unwrap();
-    let image = RuntimeKind::Codex.adapter().default_image();
+    let image = RuntimeKind::Codex.default_image();
     harness.write_codex_inspect(&workspace, image);
     let lock_path = lock_path_in_state_dir(harness.state_home.path(), &workspace.digest64);
 

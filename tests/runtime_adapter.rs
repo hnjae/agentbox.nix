@@ -41,7 +41,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     )
     .unwrap();
 
-    let runtime = RuntimeKind::Opencode.adapter();
+    let runtime = RuntimeKind::Opencode;
     let spec = runtime.create_spec(&workspace, &preflight.host_nix_mounts);
 
     assert_eq!(spec.image, DEFAULT_IMAGE);
@@ -145,7 +145,7 @@ fn opencode_create_spec_matches_mvp_contract() {
 
 #[test]
 fn runtime_adapters_render_host_client_commands() {
-    let opencode = RuntimeKind::Opencode.adapter();
+    let opencode = RuntimeKind::Opencode;
     let opencode_endpoint = AttachEndpoint {
         scheme: "http".to_string(),
         host_ip: "127.0.0.1".to_string(),
@@ -160,7 +160,7 @@ fn runtime_adapters_render_host_client_commands() {
         ]
     );
 
-    let codex = RuntimeKind::Codex.adapter();
+    let codex = RuntimeKind::Codex;
     let codex_endpoint = AttachEndpoint {
         scheme: "ws".to_string(),
         host_ip: "127.0.0.1".to_string(),
@@ -188,14 +188,8 @@ fn runtime_adapters_render_host_client_commands() {
 
 #[test]
 fn runtime_adapters_own_default_image_references() {
-    assert_eq!(
-        RuntimeKind::Opencode.adapter().default_image(),
-        DEFAULT_IMAGE
-    );
-    assert_eq!(
-        RuntimeKind::Codex.adapter().default_image(),
-        CODEX_DEFAULT_IMAGE
-    );
+    assert_eq!(RuntimeKind::Opencode.default_image(), DEFAULT_IMAGE);
+    assert_eq!(RuntimeKind::Codex.default_image(), CODEX_DEFAULT_IMAGE);
 }
 
 #[test]

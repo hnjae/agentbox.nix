@@ -10,7 +10,7 @@ use std::process::Stdio;
 
 use crate::cli::DirectoryArgs;
 use crate::process::{ProcessRunner, format_status, run_command_status};
-use crate::runtime::{AttachEndpoint, RuntimeAdapter};
+use crate::runtime::{AttachEndpoint, RuntimeKind};
 use crate::session::{
     SessionFailure, SessionRecord, SessionStatus, duplicate_sessions_error,
     session_failure_requires_action_error,
@@ -33,7 +33,7 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
 
         let process_runner = ProcessRunner::new();
         let client = attach_session.client_invocation(workspace);
-        let retry_run_command = run_command_hint(Some(attach_session.runtime.name()), workspace);
+        let retry_run_command = run_command_hint(Some(attach_session.runtime.as_str()), workspace);
 
         run_host_client(&process_runner, &client).map_err(|error| {
             Error::msg(format!(
@@ -51,7 +51,7 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
 
 struct AttachSession<'a> {
     session: &'a SessionRecord,
-    runtime: RuntimeAdapter,
+    runtime: RuntimeKind,
     endpoint: &'a AttachEndpoint,
 }
 
@@ -77,14 +77,10 @@ fn prepare_attach_session<'a>(
     })
 }
 
-fn session_runtime(
-    workspace: &WorkspaceIdentity,
-    session: &SessionRecord,
-) -> Result<RuntimeAdapter> {
-    Ok(session
+fn session_runtime(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Result<RuntimeKind> {
+    session
         .runtime_kind()
-        .ok_or_else(|| unsupported_runtime_label_error(workspace, session))?
-        .adapter())
+        .ok_or_else(|| unsupported_runtime_label_error(workspace, session))
 }
 
 fn session_endpoint<'a>(

@@ -10,7 +10,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
 use crate::podman::{Podman, PodmanContainerInspect};
-use crate::runtime::{AttachEndpoint, RuntimeAdapter};
+use crate::runtime::{AttachEndpoint, RuntimeKind};
 use crate::session::discover_attach_endpoint_from_inspect;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
@@ -22,7 +22,7 @@ const ENDPOINT_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 pub(super) fn wait_for_server_endpoint(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
-    runtime: RuntimeAdapter,
+    runtime: RuntimeKind,
 ) -> Result<AttachEndpoint> {
     ServerEndpointWaiter::production().wait(podman, workspace, runtime)
 }
@@ -52,7 +52,7 @@ where
         &self,
         podman: &Podman,
         workspace: &WorkspaceIdentity,
-        runtime: RuntimeAdapter,
+        runtime: RuntimeKind,
     ) -> Result<AttachEndpoint> {
         let deadline = Instant::now() + self.timeout;
         let mut last_error = None::<String>;
@@ -92,7 +92,7 @@ enum ServerEndpointState {
 
 fn inspect_server_endpoint<P>(
     workspace: &WorkspaceIdentity,
-    runtime: RuntimeAdapter,
+    runtime: RuntimeKind,
     inspect: PodmanContainerInspect,
     probe: &P,
 ) -> Result<ServerEndpointState>
@@ -104,7 +104,7 @@ where
             "container `{}` for `{}` exited before the `{}` runtime server became reachable; status: {}, exit code: {}",
             workspace.container_name,
             workspace.canonical_git_root,
-            runtime.name(),
+            runtime.as_str(),
             inspect.state.status,
             inspect.state.exit_code,
         )));

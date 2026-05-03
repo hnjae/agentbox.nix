@@ -13,7 +13,7 @@ use crate::metadata::managed_session_labels;
 use crate::preflight::NIX_CACHE_DESTINATION;
 use crate::workspace::WorkspaceIdentity;
 
-use super::adapter::RuntimeAdapter;
+use super::kind::RuntimeKind;
 
 pub const DEFAULT_HOST_ATTACH_IP: &str = "127.0.0.1";
 
@@ -128,7 +128,7 @@ impl RuntimeAttachSpec {
     }
 }
 
-impl RuntimeAdapter {
+impl RuntimeKind {
     pub fn create_spec(
         self,
         workspace: &WorkspaceIdentity,
@@ -139,7 +139,7 @@ impl RuntimeAdapter {
         let labels = managed_session_labels(
             workspace,
             &image,
-            self.name(),
+            self.as_str(),
             attach.scheme,
             attach.container_port,
             attach.container_listen_ip,

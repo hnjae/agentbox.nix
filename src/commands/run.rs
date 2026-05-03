@@ -9,7 +9,7 @@
 use crate::cli::RunArgs;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites;
-use crate::runtime::{RuntimeAdapter, RuntimeCreateSpec};
+use crate::runtime::{RuntimeCreateSpec, RuntimeKind};
 use crate::session::{classify_create_error, existing_session_error};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
@@ -20,7 +20,7 @@ use super::session_selection::select_single_session;
 use super::workspace_flow::with_locked_workspace;
 
 pub fn run(args: RunArgs) -> Result<()> {
-    let runtime = args.runtime.adapter();
+    let runtime = args.runtime;
     let (workspace, endpoint) = with_locked_workspace(&args.directory, |locked| {
         let workspace = locked.workspace();
         let preflight = check_host_prerequisites(
@@ -65,7 +65,7 @@ pub fn run(args: RunArgs) -> Result<()> {
 
 fn ensure_default_runtime_image(
     podman: &Podman,
-    runtime: RuntimeAdapter,
+    runtime: RuntimeKind,
     workspace: &WorkspaceIdentity,
 ) -> Result<()> {
     let default_image = runtime.default_image();

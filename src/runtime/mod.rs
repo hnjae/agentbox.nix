@@ -6,14 +6,12 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-mod adapter;
 mod command;
 pub mod default_image;
 mod kind;
 mod profile;
 mod spec;
 
-pub use adapter::RuntimeAdapter;
 pub use kind::RuntimeKind;
 pub use spec::{
     AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeAttachSpec, RuntimeCommand, RuntimeCreateSpec,

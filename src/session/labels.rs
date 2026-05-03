@@ -195,7 +195,7 @@ impl AttachLabels {
             .ok_or(AttachLabelError::MissingLabel(LABEL_RUNTIME))?
             .parse::<RuntimeKind>()
             .map_err(AttachLabelError::Runtime)?;
-        let attach = runtime.adapter().attach_spec();
+        let attach = runtime.attach_spec();
 
         let attach_scheme = labels
             .label(LABEL_ATTACH_SCHEME)
