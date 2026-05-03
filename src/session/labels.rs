@@ -10,15 +10,24 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::Error;
 use crate::metadata::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_IMAGE,
-    LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA,
-    LABEL_SCHEMA_VALUE,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LOGICAL_NAME, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::hash12;
 
 use super::record::SessionMetadata;
 use super::status::SessionFailure;
+
+type RequiredLabelsResult<T> = std::result::Result<T, SessionFailure>;
+type AttachLabelsResult<T> = std::result::Result<T, AttachLabelError>;
+
+const REQUIRED_SESSION_MARKER_LABELS: &[(&str, &str)] = &[
+    (LABEL_MANAGED, LABEL_MANAGED_VALUE),
+    (LABEL_SCHEMA, LABEL_SCHEMA_VALUE),
+];
+const REQUIRED_SESSION_IDENTITY_LABELS: &[&str] = &[LABEL_IMAGE, LABEL_LOGICAL_NAME];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RequiredSessionLabels {
@@ -100,8 +109,8 @@ pub(super) struct AttachLabels {
 
 #[derive(Debug)]
 pub(super) struct SessionLabelReport {
-    required: std::result::Result<RequiredSessionLabels, SessionFailure>,
-    attach: std::result::Result<AttachLabels, AttachLabelError>,
+    required: RequiredLabelsResult<RequiredSessionLabels>,
+    attach: AttachLabelsResult<AttachLabels>,
 }
 
 impl SessionLabelReport {
@@ -140,13 +149,13 @@ impl SessionLabelReport {
 }
 
 impl SessionMetadata {
-    pub(super) fn attach_labels(&self) -> std::result::Result<AttachLabels, AttachLabelError> {
+    pub(super) fn attach_labels(&self) -> AttachLabelsResult<AttachLabels> {
         AttachLabels::from_session_labels(self)
     }
 }
 
 impl RequiredSessionLabels {
-    fn validated(labels: &SessionMetadata) -> std::result::Result<Self, SessionFailure> {
+    fn validated(labels: &SessionMetadata) -> RequiredLabelsResult<Self> {
         let required = Self::from_session_labels(labels)?;
         if required.hash_matches_root() {
             Ok(required)
@@ -159,22 +168,18 @@ impl RequiredSessionLabels {
         &self.canonical_git_root
     }
 
-    fn from_session_labels(labels: &SessionMetadata) -> std::result::Result<Self, SessionFailure> {
-        if labels.label(LABEL_MANAGED) != Some(LABEL_MANAGED_VALUE)
-            || labels.label(LABEL_SCHEMA) != Some(LABEL_SCHEMA_VALUE)
-            || labels.label(LABEL_IMAGE).is_none()
-            || labels.label(LABEL_LOGICAL_NAME).is_none()
-        {
-            return Err(SessionFailure::MissingRequiredLabels);
+    fn from_session_labels(labels: &SessionMetadata) -> RequiredLabelsResult<Self> {
+        for (name, expected) in REQUIRED_SESSION_MARKER_LABELS {
+            require_session_label_value(labels, name, expected)?;
         }
 
-        let Some(canonical_git_root) = labels.canonical_git_root().map(Utf8Path::to_path_buf)
-        else {
-            return Err(SessionFailure::MissingRequiredLabels);
-        };
-        let Some(git_root_hash) = labels.git_root_hash().map(str::to_string) else {
-            return Err(SessionFailure::MissingRequiredLabels);
-        };
+        for name in REQUIRED_SESSION_IDENTITY_LABELS {
+            require_session_label(labels, name)?;
+        }
+
+        let canonical_git_root = Utf8PathBuf::from(require_session_label(labels, LABEL_GIT_ROOT)?);
+        let git_root_hash = require_session_label(labels, LABEL_GIT_ROOT_HASH)?.to_string();
+
         Ok(Self {
             canonical_git_root,
             git_root_hash,
@@ -187,19 +192,13 @@ impl RequiredSessionLabels {
 }
 
 impl AttachLabels {
-    fn from_session_labels(
-        labels: &SessionMetadata,
-    ) -> std::result::Result<Self, AttachLabelError> {
-        let runtime = labels
-            .runtime()
-            .ok_or(AttachLabelError::MissingLabel(LABEL_RUNTIME))?
+    fn from_session_labels(labels: &SessionMetadata) -> AttachLabelsResult<Self> {
+        let runtime = require_attach_label(labels, LABEL_RUNTIME)?
             .parse::<RuntimeKind>()
             .map_err(AttachLabelError::Runtime)?;
         let attach = runtime.attach_spec();
 
-        let attach_scheme = labels
-            .label(LABEL_ATTACH_SCHEME)
-            .ok_or(AttachLabelError::MissingLabel(LABEL_ATTACH_SCHEME))?;
+        let attach_scheme = require_attach_label(labels, LABEL_ATTACH_SCHEME)?;
         if attach_scheme != attach.scheme {
             return Err(AttachLabelError::AttachSchemeMismatch {
                 runtime,
@@ -208,9 +207,7 @@ impl AttachLabels {
             });
         }
 
-        let container_port = labels
-            .label(LABEL_CONTAINER_PORT)
-            .ok_or(AttachLabelError::MissingLabel(LABEL_CONTAINER_PORT))?
+        let container_port = require_attach_label(labels, LABEL_CONTAINER_PORT)?
             .parse::<u16>()
             .map_err(|error| AttachLabelError::MalformedContainerPort(error.to_string()))?;
         if container_port != attach.container_port {
@@ -221,9 +218,7 @@ impl AttachLabels {
             });
         }
 
-        let container_listen_ip = labels
-            .label(LABEL_CONTAINER_LISTEN_IP)
-            .ok_or(AttachLabelError::MissingLabel(LABEL_CONTAINER_LISTEN_IP))?;
+        let container_listen_ip = require_attach_label(labels, LABEL_CONTAINER_LISTEN_IP)?;
         if container_listen_ip != attach.container_listen_ip {
             return Err(AttachLabelError::ContainerListenIpMismatch {
                 runtime,
@@ -246,4 +241,33 @@ impl AttachLabels {
     pub(super) fn container_port(self) -> u16 {
         self.attach.container_port
     }
+}
+
+fn require_session_label<'a>(
+    labels: &'a SessionMetadata,
+    name: &'static str,
+) -> RequiredLabelsResult<&'a str> {
+    labels
+        .label(name)
+        .ok_or(SessionFailure::MissingRequiredLabels)
+}
+
+fn require_session_label_value(
+    labels: &SessionMetadata,
+    name: &'static str,
+    expected: &'static str,
+) -> RequiredLabelsResult<()> {
+    match labels.label(name) {
+        Some(actual) if actual == expected => Ok(()),
+        _ => Err(SessionFailure::MissingRequiredLabels),
+    }
+}
+
+fn require_attach_label<'a>(
+    labels: &'a SessionMetadata,
+    name: &'static str,
+) -> AttachLabelsResult<&'a str> {
+    labels
+        .label(name)
+        .ok_or(AttachLabelError::MissingLabel(name))
 }
