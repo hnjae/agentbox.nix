@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use crate::cli::{RuntimeArgs, RuntimeCommand};
 use crate::metadata::{
     LABEL_CODEX_INSTALL_SOURCE, LABEL_CODEX_PACKAGE, LABEL_CODEX_RESOLVED_AT, LABEL_CODEX_VERSION,
+    LABEL_OPENCODE_INSTALL_SOURCE, LABEL_OPENCODE_PACKAGE, LABEL_OPENCODE_RESOLVED_AT,
+    LABEL_OPENCODE_VERSION,
 };
 use crate::podman::{Podman, PodmanBuildOptions};
 use crate::process::ProcessRunner;
@@ -25,8 +27,8 @@ use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
 
 const CODEX_NPM_PACKAGE: &str = "@openai/codex";
-const CODEX_INSTALL_SOURCE: &str = "npm";
-const CODEX_STATE_RELATIVE_PATH: &[&str] = &["agentbox", "runtime", "codex.json"];
+const OPENCODE_NPM_PACKAGE: &str = "opencode-ai";
+const NPM_INSTALL_SOURCE: &str = "npm";
 
 pub fn run(args: RuntimeArgs, verbose: bool) -> Result<()> {
     match args.command {
@@ -43,7 +45,7 @@ pub(super) fn ensure_default_runtime_image(
     let default_image = runtime.default_image();
     if podman.image_exists(default_image)? {
         phase(format!("using runtime image `{default_image}`"));
-        return codex_installed_version_if_known(runtime, default_image);
+        return installed_version_if_known(runtime, default_image);
     }
 
     phase(format!("building runtime image `{default_image}`"));
@@ -56,18 +58,13 @@ pub(super) fn ensure_default_runtime_image(
 }
 
 fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
-    if runtime != RuntimeKind::Codex {
-        return Err(Error::msg(format!(
-            "`agentbox runtime update` supports `codex` only in the MVP; unsupported runtime `{runtime}`"
-        )));
-    }
-
+    let package = runtime_package_spec(runtime);
     let podman = Podman::new().with_verbose(verbose);
-    eprintln!("agentbox: resolving latest `{CODEX_NPM_PACKAGE}` version");
-    let latest_version = resolve_latest_codex_version()?;
-    let image = RuntimeKind::Codex.default_image();
+    eprintln!("agentbox: resolving latest `{}` version", package.name);
+    let latest_version = resolve_latest_runtime_version(package.name)?;
+    let image = runtime.default_image();
     let image_exists = podman.image_exists(image)?;
-    let prior_state = read_codex_image_state()?;
+    let prior_state = read_runtime_image_state(runtime)?;
 
     if image_exists
         && prior_state
@@ -77,69 +74,52 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
         let state = prior_state
             .expect("state exists because the up-to-date predicate was true")
             .with_latest_check(latest_version.clone(), now_unix_seconds()?);
-        write_codex_image_state(&state)?;
-        println!("codex runtime image `{image}` is already up to date at {latest_version}");
+        write_runtime_image_state(runtime, &state)?;
+        println!("{runtime} runtime image `{image}` is already up to date at {latest_version}");
         return Ok(());
     }
 
     eprintln!(
-        "agentbox: building runtime image `{image}` with `{CODEX_NPM_PACKAGE}@{latest_version}`"
+        "agentbox: building runtime image `{image}` with `{}@{latest_version}`",
+        package.name
     );
-    build_codex_runtime_image(&podman, &latest_version)?;
+    build_runtime_image(&podman, runtime, &latest_version)?;
     let now = now_unix_seconds()?;
-    let state = CodexImageState::new(latest_version.clone(), now, now);
-    write_codex_image_state(&state)?;
-    println!("updated codex runtime image `{image}` to {latest_version}");
+    let state = RuntimeImageState::new(runtime, latest_version.clone(), now, now);
+    write_runtime_image_state(runtime, &state)?;
+    println!("updated {runtime} runtime image `{image}` to {latest_version}");
     Ok(())
 }
 
 fn build_default_runtime_image(podman: &Podman, runtime: RuntimeKind) -> Result<Option<String>> {
-    match runtime {
-        RuntimeKind::Opencode => {
-            build_opencode_runtime_image(podman)?;
-            Ok(None)
-        }
-        RuntimeKind::Codex => {
-            let latest_version = resolve_latest_codex_version()?;
-            build_codex_runtime_image(podman, &latest_version)?;
-            let now = now_unix_seconds()?;
-            write_codex_image_state(&CodexImageState::new(latest_version.clone(), now, now))?;
-            Ok(Some(latest_version))
-        }
-    }
+    let package = runtime_package_spec(runtime);
+    let latest_version = resolve_latest_runtime_version(package.name)?;
+    build_runtime_image(podman, runtime, &latest_version)?;
+    let now = now_unix_seconds()?;
+    write_runtime_image_state(
+        runtime,
+        &RuntimeImageState::new(runtime, latest_version.clone(), now, now),
+    )?;
+    Ok(Some(latest_version))
 }
 
-fn build_opencode_runtime_image(podman: &Podman) -> Result<()> {
-    let runtime = RuntimeKind::Opencode;
-    let context = runtime.materialize_default_image_context()?;
-    podman.build_image(
-        runtime.default_image(),
-        context.containerfile().as_ref(),
-        context.root(),
-        &PodmanBuildOptions::default(),
-    )
-}
-
-fn build_codex_runtime_image(podman: &Podman, version: &str) -> Result<()> {
-    let runtime = RuntimeKind::Codex;
+fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> Result<()> {
+    let package = runtime_package_spec(runtime);
     let context = runtime.materialize_default_image_context()?;
     let resolved_at = now_unix_seconds()?.to_string();
     let options = PodmanBuildOptions {
         build_args: BTreeMap::from([
-            ("AGENTBOX_RUNTIME".to_string(), "codex".to_string()),
-            ("CODEX_NPM_VERSION".to_string(), version.to_string()),
+            ("AGENTBOX_RUNTIME".to_string(), runtime.as_str().to_string()),
+            (package.build_arg.to_string(), version.to_string()),
         ]),
         labels: BTreeMap::from([
+            (package.package_label.to_string(), package.name.to_string()),
+            (package.version_label.to_string(), version.to_string()),
             (
-                LABEL_CODEX_PACKAGE.to_string(),
-                CODEX_NPM_PACKAGE.to_string(),
+                package.install_source_label.to_string(),
+                NPM_INSTALL_SOURCE.to_string(),
             ),
-            (LABEL_CODEX_VERSION.to_string(), version.to_string()),
-            (
-                LABEL_CODEX_INSTALL_SOURCE.to_string(),
-                CODEX_INSTALL_SOURCE.to_string(),
-            ),
-            (LABEL_CODEX_RESOLVED_AT.to_string(), resolved_at),
+            (package.resolved_at_label.to_string(), resolved_at),
         ]),
     };
 
@@ -151,32 +131,28 @@ fn build_codex_runtime_image(podman: &Podman, version: &str) -> Result<()> {
     )
 }
 
-fn resolve_latest_codex_version() -> Result<String> {
+fn resolve_latest_runtime_version(package: &str) -> Result<String> {
     let output = ProcessRunner::new().capture("npm", |command| {
-        command.args(["view", CODEX_NPM_PACKAGE, "version", "--silent"]);
+        command.args(["view", package, "version", "--silent"]);
     })?;
     let version = output.stdout.trim();
     if version.is_empty() {
         return Err(Error::msg(format!(
-            "`npm view {CODEX_NPM_PACKAGE} version --silent` returned an empty version"
+            "`npm view {package} version --silent` returned an empty version"
         )));
     }
 
     Ok(version.to_string())
 }
 
-fn codex_installed_version_if_known(runtime: RuntimeKind, image: &str) -> Result<Option<String>> {
-    if runtime != RuntimeKind::Codex {
-        return Ok(None);
-    }
-
-    Ok(read_codex_image_state()?
+fn installed_version_if_known(runtime: RuntimeKind, image: &str) -> Result<Option<String>> {
+    Ok(read_runtime_image_state(runtime)?
         .filter(|state| state.image == image)
         .map(|state| state.installed_version))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-struct CodexImageState {
+struct RuntimeImageState {
     runtime: String,
     package: String,
     install_source: String,
@@ -187,13 +163,19 @@ struct CodexImageState {
     image_built_at: u64,
 }
 
-impl CodexImageState {
-    fn new(version: String, latest_checked_at: u64, image_built_at: u64) -> Self {
+impl RuntimeImageState {
+    fn new(
+        runtime: RuntimeKind,
+        version: String,
+        latest_checked_at: u64,
+        image_built_at: u64,
+    ) -> Self {
+        let package = runtime_package_spec(runtime);
         Self {
-            runtime: RuntimeKind::Codex.as_str().to_string(),
-            package: CODEX_NPM_PACKAGE.to_string(),
-            install_source: CODEX_INSTALL_SOURCE.to_string(),
-            image: RuntimeKind::Codex.default_image().to_string(),
+            runtime: runtime.as_str().to_string(),
+            package: package.name.to_string(),
+            install_source: NPM_INSTALL_SOURCE.to_string(),
+            image: runtime.default_image().to_string(),
             installed_version: version.clone(),
             latest_seen_version: version,
             latest_checked_at,
@@ -208,8 +190,8 @@ impl CodexImageState {
     }
 }
 
-fn read_codex_image_state() -> Result<Option<CodexImageState>> {
-    let path = codex_image_state_path()?;
+fn read_runtime_image_state(runtime: RuntimeKind) -> Result<Option<RuntimeImageState>> {
+    let path = runtime_image_state_path(runtime)?;
     if !path.exists() {
         return Ok(None);
     }
@@ -217,38 +199,68 @@ fn read_codex_image_state() -> Result<Option<CodexImageState>> {
     let contents = fs::read_to_string(&path)?;
     serde_json::from_str(&contents).map(Some).map_err(|error| {
         Error::msg(format!(
-            "failed to parse Codex runtime image state `{}`: {error}",
+            "failed to parse {runtime} runtime image state `{}`: {error}",
             path.display()
         ))
     })
 }
 
-fn write_codex_image_state(state: &CodexImageState) -> Result<()> {
-    let path = codex_image_state_path()?;
+fn write_runtime_image_state(runtime: RuntimeKind, state: &RuntimeImageState) -> Result<()> {
+    let path = runtime_image_state_path(runtime)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let contents = serde_json::to_string_pretty(state).map_err(|error| {
         Error::msg(format!(
-            "failed to serialize Codex runtime image state: {error}"
+            "failed to serialize {runtime} runtime image state: {error}"
         ))
     })?;
     fs::write(path, format!("{contents}\n"))?;
     Ok(())
 }
 
-fn codex_image_state_path() -> Result<PathBuf> {
+fn runtime_image_state_path(runtime: RuntimeKind) -> Result<PathBuf> {
     let base_dirs =
         BaseDirs::new().ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
     let state_dir = base_dirs
         .state_dir()
         .ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
 
-    Ok(CODEX_STATE_RELATIVE_PATH
-        .iter()
-        .fold(state_dir.to_path_buf(), |path, component| {
-            path.join(component)
-        }))
+    Ok(state_dir
+        .join("agentbox")
+        .join("runtime")
+        .join(format!("{}.json", runtime.as_str())))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RuntimePackageSpec {
+    name: &'static str,
+    build_arg: &'static str,
+    package_label: &'static str,
+    version_label: &'static str,
+    install_source_label: &'static str,
+    resolved_at_label: &'static str,
+}
+
+fn runtime_package_spec(runtime: RuntimeKind) -> RuntimePackageSpec {
+    match runtime {
+        RuntimeKind::Opencode => RuntimePackageSpec {
+            name: OPENCODE_NPM_PACKAGE,
+            build_arg: "OPENCODE_NPM_VERSION",
+            package_label: LABEL_OPENCODE_PACKAGE,
+            version_label: LABEL_OPENCODE_VERSION,
+            install_source_label: LABEL_OPENCODE_INSTALL_SOURCE,
+            resolved_at_label: LABEL_OPENCODE_RESOLVED_AT,
+        },
+        RuntimeKind::Codex => RuntimePackageSpec {
+            name: CODEX_NPM_PACKAGE,
+            build_arg: "CODEX_NPM_VERSION",
+            package_label: LABEL_CODEX_PACKAGE,
+            version_label: LABEL_CODEX_VERSION,
+            install_source_label: LABEL_CODEX_INSTALL_SOURCE,
+            resolved_at_label: LABEL_CODEX_RESOLVED_AT,
+        },
+    }
 }
 
 fn now_unix_seconds() -> Result<u64> {

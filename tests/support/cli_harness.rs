@@ -18,6 +18,7 @@ pub struct CliHarness {
     fake_bin: TempDir,
     fixtures: TempDir,
     state_home: TempDir,
+    home: TempDir,
     log_path: std::path::PathBuf,
     original_path: String,
 }
@@ -27,9 +28,13 @@ impl CliHarness {
         let fake_bin = tempfile::tempdir().unwrap();
         let fixtures = tempfile::tempdir().unwrap();
         let state_home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
         let log_path = fixtures.path().join("podman.log");
         let original_path = std::env::var("PATH").unwrap();
 
+        fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
+        fs::create_dir_all(home.path().join(".local/share/opencode")).unwrap();
+        fs::create_dir(home.path().join(".codex")).unwrap();
         fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("podman"), &fake_podman_script());
@@ -42,6 +47,7 @@ impl CliHarness {
             fake_bin,
             fixtures,
             state_home,
+            home,
             log_path,
             original_path,
         }
@@ -96,6 +102,9 @@ impl CliHarness {
         let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
         command
             .env("PATH", self.path_env())
+            .env("HOME", self.home.path())
+            .env("XDG_CONFIG_HOME", self.home.path().join(".config"))
+            .env("XDG_DATA_HOME", self.home.path().join(".local/share"))
             .env("XDG_STATE_HOME", self.state_home.path())
             .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
             .env("AGENTBOX_TEST_LOG", &self.log_path);

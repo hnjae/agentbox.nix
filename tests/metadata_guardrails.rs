@@ -163,6 +163,7 @@ struct Harness {
     fake_bin: tempfile::TempDir,
     fixtures: tempfile::TempDir,
     state_home: tempfile::TempDir,
+    home: tempfile::TempDir,
     original_path: String,
 }
 
@@ -171,8 +172,11 @@ impl Harness {
         let fake_bin = tempfile::tempdir().unwrap();
         let fixtures = tempfile::tempdir().unwrap();
         let state_home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
         let original_path = std::env::var("PATH").unwrap();
 
+        fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
+        fs::create_dir_all(home.path().join(".local/share/opencode")).unwrap();
         fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("git"), fake_git_script());
@@ -183,6 +187,7 @@ impl Harness {
             fake_bin,
             fixtures,
             state_home,
+            home,
             original_path,
         }
     }
@@ -241,6 +246,9 @@ impl Harness {
         let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
         command
             .env("PATH", self.path_env())
+            .env("HOME", self.home.path())
+            .env("XDG_CONFIG_HOME", self.home.path().join(".config"))
+            .env("XDG_DATA_HOME", self.home.path().join(".local/share"))
             .env("XDG_STATE_HOME", self.state_home.path())
             .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
             .args(args);
@@ -251,6 +259,9 @@ impl Harness {
         AssertCommand::cargo_bin("agentbox")
             .unwrap()
             .env("PATH", self.path_env())
+            .env("HOME", self.home.path())
+            .env("XDG_CONFIG_HOME", self.home.path().join(".config"))
+            .env("XDG_DATA_HOME", self.home.path().join(".local/share"))
             .env("XDG_STATE_HOME", self.state_home.path())
             .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
             .args(args)

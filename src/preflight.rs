@@ -21,6 +21,8 @@ pub const ETC_NIX_DESTINATION: &str = "/etc/nix";
 pub const ETC_STATIC_NIX_DESTINATION: &str = "/etc/static/nix";
 pub const NIX_CACHE_DESTINATION: &str = "/home/user/.cache/nix";
 pub const CODEX_CONFIG_DESTINATION: &str = "/home/user/.codex";
+pub const OPENCODE_CONFIG_DESTINATION: &str = "/home/user/.config/opencode";
+pub const OPENCODE_DATA_DESTINATION: &str = "/home/user/.local/share/opencode";
 
 const NIX_CUSTOM_CONF_PATH: &str = "/etc/nix/nix.custom.conf";
 
@@ -42,6 +44,7 @@ pub struct HostPreflightSnapshot {
     pub has_podman: bool,
     pub direnv: DirenvPreflightSnapshot,
     pub codex: CodexPreflightSnapshot,
+    pub opencode: OpenCodePreflightSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +55,21 @@ pub struct DirenvPreflightSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexPreflightSnapshot {
+    pub source: Option<Utf8PathBuf>,
+    pub exists: bool,
+    pub is_directory: bool,
+    pub readable: bool,
+    pub writable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenCodePreflightSnapshot {
+    pub config: OpenCodeDirectoryPreflightSnapshot,
+    pub data: OpenCodeDirectoryPreflightSnapshot,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenCodeDirectoryPreflightSnapshot {
     pub source: Option<Utf8PathBuf>,
     pub exists: bool,
     pub is_directory: bool,
@@ -96,6 +114,7 @@ impl HostPreflightSnapshot {
             has_podman: command_exists("podman"),
             direnv: DirenvPreflightSnapshot::detect(target_directory, git_root),
             codex: CodexPreflightSnapshot::detect(),
+            opencode: OpenCodePreflightSnapshot::detect(),
         }
     }
 }
@@ -118,6 +137,41 @@ impl CodexPreflightSnapshot {
         let source = std::env::var_os("HOME")
             .and_then(|home| Utf8PathBuf::from_path_buf(std::path::PathBuf::from(home)).ok())
             .map(|home| home.join(".codex"));
+        let metadata = source
+            .as_ref()
+            .and_then(|path| fs::metadata(path.as_std_path()).ok());
+        let exists = source
+            .as_ref()
+            .is_some_and(|path| symlink_or_path_exists(path));
+        let is_directory = metadata.as_ref().is_some_and(fs::Metadata::is_dir);
+        let readable = source
+            .as_ref()
+            .is_some_and(|path| fs::read_dir(path.as_std_path()).is_ok());
+        let writable = metadata
+            .as_ref()
+            .is_some_and(|metadata| !metadata.permissions().readonly());
+
+        Self {
+            source,
+            exists,
+            is_directory,
+            readable,
+            writable,
+        }
+    }
+}
+
+impl OpenCodePreflightSnapshot {
+    fn detect() -> Self {
+        Self {
+            config: OpenCodeDirectoryPreflightSnapshot::detect(opencode_config_source()),
+            data: OpenCodeDirectoryPreflightSnapshot::detect(opencode_data_source()),
+        }
+    }
+}
+
+impl OpenCodeDirectoryPreflightSnapshot {
+    fn detect(source: Option<Utf8PathBuf>) -> Self {
         let metadata = source
             .as_ref()
             .and_then(|path| fs::metadata(path.as_std_path()).ok());
@@ -310,9 +364,56 @@ impl PreflightCheck<'_> {
 
     fn runtime_mounts(&self) -> Result<Vec<RuntimeMount>> {
         match self.runtime {
-            RuntimeKind::Opencode => Ok(Vec::new()),
+            RuntimeKind::Opencode => Ok(vec![
+                self.opencode_state_mount(
+                    &self.snapshot.host.opencode.config,
+                    "configuration",
+                    "`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`",
+                    OPENCODE_CONFIG_DESTINATION,
+                )?,
+                self.opencode_state_mount(
+                    &self.snapshot.host.opencode.data,
+                    "data",
+                    "`${XDG_DATA_HOME:-$HOME/.local/share}/opencode`",
+                    OPENCODE_DATA_DESTINATION,
+                )?,
+            ]),
             RuntimeKind::Codex => Ok(vec![self.codex_config_mount()?]),
         }
+    }
+
+    fn opencode_state_mount(
+        &self,
+        state: &OpenCodeDirectoryPreflightSnapshot,
+        description: &str,
+        source_expression: &str,
+        destination: &str,
+    ) -> Result<RuntimeMount> {
+        let Some(source) = state.source.as_ref() else {
+            return Err(Error::msg(format!(
+                "Cannot locate host OpenCode {description} directory {source_expression} for `run --runtime opencode`; set `HOME` or the matching XDG environment variable, then retry."
+            )));
+        };
+
+        if !state.exists {
+            return Err(Error::msg(format!(
+                "Missing host OpenCode {description} directory: {source}. Run `opencode` on the host first so {source_expression} exists, then retry `agentbox run --runtime opencode`."
+            )));
+        }
+
+        if !state.is_directory {
+            return Err(Error::msg(format!(
+                "Host OpenCode {description} path is not a directory: {source}"
+            )));
+        }
+
+        if !state.readable || !state.writable {
+            return Err(Error::msg(format!(
+                "Host OpenCode {description} directory is not readable and writable: {source}"
+            )));
+        }
+
+        Ok(RuntimeMount::bind(source.to_string(), destination))
     }
 
     fn codex_config_mount(&self) -> Result<RuntimeMount> {
@@ -377,6 +478,40 @@ fn host_nix_mounts(
 
 pub fn direnv_applies_to_target(target_directory: &Utf8Path, git_root: &Utf8Path) -> bool {
     envrc_applies_within_git_root(target_directory, git_root)
+}
+
+fn opencode_config_source() -> Option<Utf8PathBuf> {
+    xdg_or_home_relative_source("XDG_CONFIG_HOME", &[".config", "opencode"])
+}
+
+fn opencode_data_source() -> Option<Utf8PathBuf> {
+    xdg_or_home_relative_source("XDG_DATA_HOME", &[".local", "share", "opencode"])
+}
+
+fn xdg_or_home_relative_source(
+    xdg_variable: &str,
+    home_relative_components: &[&str],
+) -> Option<Utf8PathBuf> {
+    if let Some(base) = path_from_environment(xdg_variable) {
+        return utf8_join(base, &["opencode"]);
+    }
+
+    let home = path_from_environment("HOME")?;
+    utf8_join(home, home_relative_components)
+}
+
+fn path_from_environment(variable: &str) -> Option<std::path::PathBuf> {
+    std::env::var_os(variable)
+        .filter(|value| !value.as_os_str().is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+fn utf8_join(base: std::path::PathBuf, components: &[&str]) -> Option<Utf8PathBuf> {
+    let mut path = Utf8PathBuf::from_path_buf(base).ok()?;
+    for component in components {
+        path.push(component);
+    }
+    Some(path)
 }
 
 pub fn required_host_mount_destinations() -> [&'static str; 4] {

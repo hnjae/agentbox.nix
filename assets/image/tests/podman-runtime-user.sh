@@ -38,7 +38,9 @@ podman run --rm --entrypoint /bin/sh --name "$container_name" "$image_tag" -ceu 
     test -w "$HOME/.config"
     test -w "$HOME/.local"
     test -w "$HOME/.local/state"
-    mkdir -p "$HOME/.config/opencode"
+    command -v opencode >/dev/null 2>&1
+    test -s /usr/local/share/agentbox/opencode.version
+    test "$(cat /usr/local/share/agentbox/codex.version)" = not-installed
     test "$PWD" = /workspace
 '
 

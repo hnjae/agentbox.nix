@@ -8,6 +8,7 @@ FROM docker.io/library/debian:stable
 
 ARG AGENTBOX_RUNTIME=opencode
 ARG CODEX_NPM_VERSION=
+ARG OPENCODE_NPM_VERSION=latest
 
 # hadolint ignore=DL3008,DL3009
 RUN set -eux; \
@@ -91,8 +92,15 @@ RUN set -eu; \
 		test -n "$CODEX_NPM_VERSION"; \
 		npm install -g "@openai/codex@$CODEX_NPM_VERSION"; \
 		codex --version > /usr/local/share/agentbox/codex.version; \
-	else \
+		printf '%s\n' 'not-installed' > /usr/local/share/agentbox/opencode.version; \
+	elif [ "$AGENTBOX_RUNTIME" = "opencode" ]; then \
+		test -n "$OPENCODE_NPM_VERSION"; \
+		npm install -g "opencode-ai@$OPENCODE_NPM_VERSION"; \
+		opencode --version > /usr/local/share/agentbox/opencode.version; \
 		printf '%s\n' 'not-installed' > /usr/local/share/agentbox/codex.version; \
+	else \
+		printf 'unsupported AGENTBOX_RUNTIME: %s\n' "$AGENTBOX_RUNTIME" >&2; \
+		exit 1; \
 	fi
 
 USER user

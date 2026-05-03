@@ -46,6 +46,8 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     command
         .env("PATH", harness.path_env())
         .env("HOME", harness.home.path())
+        .env("XDG_CONFIG_HOME", harness.home.path().join(".config"))
+        .env("XDG_DATA_HOME", harness.home.path().join(".local/share"))
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
@@ -79,6 +81,10 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[4].contains("lock=held"));
 
     assert!(log[2].contains(&format!("-t {DEFAULT_IMAGE} -f")));
+    assert!(log[2].contains("--build-arg AGENTBOX_RUNTIME=opencode"));
+    assert!(log[2].contains("--build-arg OPENCODE_NPM_VERSION=0.99.0"));
+    assert!(log[2].contains("--label io.agentbox.opencode.package=opencode-ai"));
+    assert!(log[2].contains("--label io.agentbox.opencode.version=0.99.0"));
 
     assert!(log[3].contains("--rm"));
     assert!(!log[3].contains("--rmi"));
@@ -87,6 +93,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(!log[3].contains("--interactive"));
     assert!(!log[3].contains("--tty"));
     assert!(log[3].contains("--label io.agentbox.image=localhost/agentbox-opencode:local"));
+    assert!(log[3].contains("--label io.agentbox.opencode.version=0.99.0"));
     assert!(log[3].contains("--label io.agentbox.attach_scheme=http"));
     assert!(log[3].contains("--label io.agentbox.container_port=4096"));
     assert!(log[3].contains(&format!(
@@ -98,10 +105,27 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[3].contains(DEFAULT_IMAGE));
     assert!(log[3].contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
     assert!(log[3].contains("--publish 127.0.0.1::4096"));
+    assert!(log[3].contains("--env OPENCODE_CONFIG_CONTENT={\"autoupdate\":false}"));
+    assert!(log[3].contains(&format!(
+        "type=bind,src={},dst=/home/user/.config/opencode",
+        harness.home.path().join(".config/opencode").display()
+    )));
+    assert!(log[3].contains(&format!(
+        "type=bind,src={},dst=/home/user/.local/share/opencode",
+        harness.home.path().join(".local/share/opencode").display()
+    )));
     assert!(log[3].contains("type=volume"));
     assert!(log[3].contains("dst=/home/user/.cache/nix,U"));
     assert!(!log[3].contains("direnv exec ."));
     assert!(!log[3].contains("sleep infinity"));
+
+    let state_path = harness
+        .state_home
+        .path()
+        .join("agentbox/runtime/opencode.json");
+    let state = fs::read_to_string(state_path).unwrap();
+    assert!(state.contains("\"package\": \"opencode-ai\""));
+    assert!(state.contains("\"installed_version\": \"0.99.0\""));
 }
 
 #[test]
@@ -119,6 +143,9 @@ fn run_wraps_server_command_with_direnv_when_envrc_applies() {
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
     command
         .env("PATH", harness.path_env_with_direnv())
+        .env("HOME", harness.home.path())
+        .env("XDG_CONFIG_HOME", harness.home.path().join(".config"))
+        .env("XDG_DATA_HOME", harness.home.path().join(".local/share"))
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
@@ -152,6 +179,8 @@ fn run_launches_codex_server_in_yolo_mode() {
     command
         .env("PATH", harness.path_env())
         .env("HOME", harness.home.path())
+        .env("XDG_CONFIG_HOME", harness.home.path().join(".config"))
+        .env("XDG_DATA_HOME", harness.home.path().join(".local/share"))
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
@@ -210,6 +239,9 @@ fn run_skips_build_when_default_image_already_exists_locally() {
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
     command
         .env("PATH", harness.path_env())
+        .env("HOME", harness.home.path())
+        .env("XDG_CONFIG_HOME", harness.home.path().join(".config"))
+        .env("XDG_DATA_HOME", harness.home.path().join(".local/share"))
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
@@ -240,6 +272,9 @@ fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
     command
         .env("PATH", harness.path_env())
+        .env("HOME", harness.home.path())
+        .env("XDG_CONFIG_HOME", harness.home.path().join(".config"))
+        .env("XDG_DATA_HOME", harness.home.path().join(".local/share"))
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
@@ -275,6 +310,9 @@ fn run_reports_default_image_build_failures_clearly() {
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
     command
         .env("PATH", harness.path_env())
+        .env("HOME", harness.home.path())
+        .env("XDG_CONFIG_HOME", harness.home.path().join(".config"))
+        .env("XDG_DATA_HOME", harness.home.path().join(".local/share"))
         .env("XDG_STATE_HOME", harness.state_home.path())
         .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
         .env("AGENTBOX_TEST_LOG", &harness.log_path)
@@ -315,6 +353,8 @@ fn install_harness(repo_root: &Path) -> Harness {
     let original_path = std::env::var("PATH").unwrap();
 
     fs::create_dir(home.path().join(".codex")).unwrap();
+    fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
+    fs::create_dir_all(home.path().join(".local/share/opencode")).unwrap();
     write_executable(fake_bin.path().join("podman"), &fake_podman_script());
     write_executable(fake_bin.path().join("git"), fake_git_script());
     write_executable(fake_bin.path().join("direnv"), "#!/bin/sh\nexit 0\n");

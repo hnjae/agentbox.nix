@@ -13,8 +13,6 @@ in
   runtime = pkgsRolling.buildEnv {
     name = "container-runtime";
     paths = [
-      pkgsRolling.opencode
-
       # Devtools
       pkgsRolling.gh
       pkgsRolling.just

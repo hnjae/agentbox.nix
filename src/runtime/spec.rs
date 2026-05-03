@@ -157,12 +157,20 @@ impl RuntimeKind {
         mounts.extend(host_nix_mounts.iter().cloned());
         mounts.extend(runtime_mounts.iter().cloned());
 
+        let default_env = match self {
+            RuntimeKind::Opencode => BTreeMap::from([(
+                "OPENCODE_CONFIG_CONTENT".to_string(),
+                r#"{"autoupdate":false}"#.to_string(),
+            )]),
+            RuntimeKind::Codex => BTreeMap::new(),
+        };
+
         RuntimeCreateSpec {
             image,
             labels,
             mounts,
             command: self.server_command().argv,
-            default_env: BTreeMap::new(),
+            default_env,
             network_enabled: true,
             published_ports: vec![attach.published_port(DEFAULT_HOST_ATTACH_IP)],
         }

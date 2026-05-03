@@ -25,6 +25,10 @@ pub const LABEL_CODEX_PACKAGE: &str = "io.agentbox.codex.package";
 pub const LABEL_CODEX_VERSION: &str = "io.agentbox.codex.version";
 pub const LABEL_CODEX_INSTALL_SOURCE: &str = "io.agentbox.codex.install_source";
 pub const LABEL_CODEX_RESOLVED_AT: &str = "io.agentbox.codex.resolved_at";
+pub const LABEL_OPENCODE_PACKAGE: &str = "io.agentbox.opencode.package";
+pub const LABEL_OPENCODE_VERSION: &str = "io.agentbox.opencode.version";
+pub const LABEL_OPENCODE_INSTALL_SOURCE: &str = "io.agentbox.opencode.install_source";
+pub const LABEL_OPENCODE_RESOLVED_AT: &str = "io.agentbox.opencode.resolved_at";
 
 pub const LABEL_MANAGED_VALUE: &str = "true";
 pub const LABEL_SCHEMA_VALUE: &str = "1";

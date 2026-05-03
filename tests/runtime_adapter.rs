@@ -15,8 +15,9 @@ use agentbox::preflight::{
     CODEX_CONFIG_DESTINATION, CodexPreflightSnapshot, DirenvPreflightSnapshot, ETC_NIX_DESTINATION,
     ETC_STATIC_NIX_DESTINATION, HostPreflightSnapshot, NIX_CLIENT_DESTINATION,
     NIX_STORE_DESTINATION, NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot,
-    NixPreflightSnapshot, PreflightSnapshot, check_host_prerequisites_with_snapshot,
-    required_host_mount_destinations,
+    NixPreflightSnapshot, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
+    OpenCodeDirectoryPreflightSnapshot, OpenCodePreflightSnapshot, PreflightSnapshot,
+    check_host_prerequisites_with_snapshot, required_host_mount_destinations,
 };
 use agentbox::runtime::default_image::{
     CODEX_DEFAULT_IMAGE, OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE, embedded_default_image_paths,
@@ -108,7 +109,10 @@ fn opencode_create_spec_matches_mvp_contract() {
     );
     assert!(spec.network_enabled);
     assert_eq!(spec.published_ports, vec!["127.0.0.1::4096".to_string()]);
-    assert!(spec.default_env.is_empty());
+    assert_eq!(
+        spec.default_env.get("OPENCODE_CONFIG_CONTENT"),
+        Some(&r#"{"autoupdate":false}"#.to_string())
+    );
 
     assert_eq!(spec.mounts[0].kind, RuntimeMountKind::Bind);
     assert_eq!(spec.mounts[0].source, workspace.canonical_git_root);
@@ -120,7 +124,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     assert_eq!(spec.mounts[1].destination, "/home/user/.cache/nix");
     assert!(!spec.mounts[1].read_only);
 
-    let host_mounts = &spec.mounts[2..];
+    let host_mounts = &spec.mounts[2..6];
     assert_eq!(
         host_mounts
             .iter()
@@ -134,6 +138,28 @@ fn opencode_create_spec_matches_mvp_contract() {
         ]
     );
     assert!(host_mounts.iter().all(|mount| mount.read_only));
+    let opencode_mounts = &spec.mounts[6..];
+    assert_eq!(
+        opencode_mounts
+            .iter()
+            .map(|mount| (mount.source.as_str(), mount.destination.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "/home/example/.config/opencode",
+                OPENCODE_CONFIG_DESTINATION,
+            ),
+            (
+                "/home/example/.local/share/opencode",
+                OPENCODE_DATA_DESTINATION,
+            ),
+        ]
+    );
+    assert!(
+        opencode_mounts
+            .iter()
+            .all(|mount| mount.kind == RuntimeMountKind::Bind && !mount.read_only)
+    );
     assert_eq!(
         required_host_mount_destinations().as_slice(),
         [
@@ -154,6 +180,31 @@ fn opencode_create_spec_matches_mvp_contract() {
             "--port".to_string(),
             "4096".to_string()
         ]
+    );
+}
+
+#[test]
+fn opencode_preflight_rejects_unusable_state_directories() {
+    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    snapshot.host.opencode.config.exists = false;
+    assert_opencode_preflight_error(snapshot, "Missing host OpenCode configuration directory");
+
+    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    snapshot.host.opencode.data.is_directory = false;
+    assert_opencode_preflight_error(snapshot, "Host OpenCode data path is not a directory");
+
+    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    snapshot.host.opencode.config.readable = false;
+    assert_opencode_preflight_error(
+        snapshot,
+        "Host OpenCode configuration directory is not readable and writable",
+    );
+
+    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    snapshot.host.opencode.data.writable = false;
+    assert_opencode_preflight_error(
+        snapshot,
+        "Host OpenCode data directory is not readable and writable",
     );
 }
 
@@ -303,6 +354,10 @@ fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
                 readable: true,
                 writable: true,
             },
+            opencode: OpenCodePreflightSnapshot {
+                config: opencode_directory("/home/example/.config/opencode"),
+                data: opencode_directory("/home/example/.local/share/opencode"),
+            },
         },
         nix: NixPreflightSnapshot {
             has_daemon_socket: true,
@@ -318,6 +373,22 @@ fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
             },
         },
     }
+}
+
+fn opencode_directory(path: &str) -> OpenCodeDirectoryPreflightSnapshot {
+    OpenCodeDirectoryPreflightSnapshot {
+        source: Some(path.into()),
+        exists: true,
+        is_directory: true,
+        readable: true,
+        writable: true,
+    }
+}
+
+fn assert_opencode_preflight_error(snapshot: PreflightSnapshot, expected: &str) {
+    let error =
+        check_host_prerequisites_with_snapshot(&snapshot, None, RuntimeKind::Opencode).unwrap_err();
+    assert!(error.to_string().contains(expected), "{error}");
 }
 
 #[test]

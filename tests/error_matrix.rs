@@ -12,7 +12,8 @@ use agentbox::metadata::LABEL_RUNTIME;
 use agentbox::preflight::{
     CodexPreflightSnapshot, DirenvPreflightSnapshot, HostPreflightSnapshot,
     NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
-    PreflightSnapshot, check_host_prerequisites_with_snapshot,
+    OpenCodeDirectoryPreflightSnapshot, OpenCodePreflightSnapshot, PreflightSnapshot,
+    check_host_prerequisites_with_snapshot,
 };
 use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
@@ -168,6 +169,30 @@ fn host_preflight_errors_are_actionable() {
             .contains("Missing host Codex configuration directory")
     );
     assert!(error.to_string().contains("Run `codex` on the host first"));
+
+    let error = check_host_prerequisites_with_snapshot(
+        &snapshot_with(|snapshot| snapshot.host.opencode.config.exists = false),
+        Some(target),
+        RuntimeKind::Opencode,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("Missing host OpenCode configuration directory")
+    );
+
+    let error = check_host_prerequisites_with_snapshot(
+        &snapshot_with(|snapshot| snapshot.host.opencode.data.writable = false),
+        Some(target),
+        RuntimeKind::Opencode,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("Host OpenCode data directory is not readable and writable")
+    );
 }
 
 fn attach_side_drift_errors_are_actionable() {
@@ -362,6 +387,10 @@ fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSna
                 readable: true,
                 writable: true,
             },
+            opencode: OpenCodePreflightSnapshot {
+                config: opencode_directory("/home/example/.config/opencode"),
+                data: opencode_directory("/home/example/.local/share/opencode"),
+            },
         },
         nix: NixPreflightSnapshot {
             has_daemon_socket: true,
@@ -379,6 +408,16 @@ fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSna
     };
     configure(&mut snapshot);
     snapshot
+}
+
+fn opencode_directory(path: &str) -> OpenCodeDirectoryPreflightSnapshot {
+    OpenCodeDirectoryPreflightSnapshot {
+        source: Some(path.into()),
+        exists: true,
+        is_directory: true,
+        readable: true,
+        writable: true,
+    }
 }
 
 struct RunFailureCase<'a> {
