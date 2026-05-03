@@ -24,7 +24,7 @@ indent_style = space
 indent_size = 4
 
 [*.md]
-indent_size = 4
+indent_size = unset
 indent_style = space
 
 [{justfile,.justfile}]
@@ -36,5 +36,8 @@ indent_size = 2
 indent_style = space
 
 [*.rs]
-indent_size = 4
+indent_size = unset
 indent_style = space
+
+[{assets/image/Containerfile,assets/image/tests/podman-runtime-compat.sh,assets/image/tests/podman-runtime-user.sh}]
+trim_trailing_whitespace = false
