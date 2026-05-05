@@ -18,7 +18,7 @@ use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
     PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
 };
-use agentbox::runtime::{RuntimeAttachSpec, RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE};
+use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE};
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
 use camino::Utf8Path;
@@ -161,7 +161,7 @@ pub fn managed_container_models_with_hash(
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
         (LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string()),
     ]);
-    let inspect_labels = managed_labels(root.as_str(), git_root_hash, "opencode", name);
+    let inspect_labels = opencode_managed_labels(root.as_str(), git_root_hash, name);
     let mounts = if include_cache_mount {
         vec![PodmanContainerMount {
             kind: "volume".to_string(),
@@ -263,7 +263,7 @@ pub fn inspect_models_by_id(
 pub fn managed_labels(
     git_root: &str,
     git_root_hash: &str,
-    runtime: &str,
+    runtime: RuntimeKind,
     logical_name: &str,
 ) -> BTreeMap<String, String> {
     managed_labels_for_image(
@@ -280,7 +280,7 @@ pub fn opencode_managed_labels(
     git_root_hash: &str,
     logical_name: &str,
 ) -> BTreeMap<String, String> {
-    managed_labels(git_root, git_root_hash, "opencode", logical_name)
+    managed_labels(git_root, git_root_hash, RuntimeKind::Opencode, logical_name)
 }
 
 pub fn opencode_workspace_labels(workspace: &WorkspaceIdentity) -> BTreeMap<String, String> {
@@ -294,18 +294,17 @@ pub fn opencode_workspace_labels(workspace: &WorkspaceIdentity) -> BTreeMap<Stri
 pub fn managed_labels_for_image(
     git_root: &str,
     git_root_hash: &str,
-    runtime: &str,
+    runtime: RuntimeKind,
     image: &str,
     logical_name: &str,
 ) -> BTreeMap<String, String> {
-    managed_labels_with_attach(
+    managed_labels_with_launch_directory(
         git_root,
         git_root,
         git_root_hash,
         runtime,
         image,
         logical_name,
-        fixture_attach_spec(runtime),
     )
 }
 
@@ -315,21 +314,17 @@ fn workspace_managed_labels(
     runtime: RuntimeKind,
 ) -> BTreeMap<String, String> {
     managed_session_labels(ManagedSessionLabelInput::from_workspace(
-        workspace,
-        image,
-        runtime.as_str(),
-        runtime.attach_spec(),
+        workspace, image, runtime,
     ))
 }
 
-fn managed_labels_with_attach(
+fn managed_labels_with_launch_directory(
     git_root: &str,
     launch_directory: &str,
     git_root_hash: &str,
-    runtime: &str,
+    runtime: RuntimeKind,
     image: &str,
     logical_name: &str,
-    attach: RuntimeAttachSpec,
 ) -> BTreeMap<String, String> {
     managed_session_labels(ManagedSessionLabelInput {
         canonical_git_root: git_root,
@@ -338,15 +333,7 @@ fn managed_labels_with_attach(
         image,
         launch_directory,
         logical_name,
-        attach,
     })
-}
-
-fn fixture_attach_spec(runtime: &str) -> RuntimeAttachSpec {
-    runtime
-        .parse::<RuntimeKind>()
-        .map(RuntimeKind::attach_spec)
-        .unwrap_or_else(|_| RuntimeKind::Opencode.attach_spec())
 }
 
 pub fn managed_inspect_fixture(

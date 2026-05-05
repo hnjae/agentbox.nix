@@ -10,6 +10,7 @@ rec {
       repoRoot = toString ../..;
       assetsRoot = "${repoRoot}/assets";
       imageRoot = "${assetsRoot}/image";
+      testFixturesRoot = "${repoRoot}/tests/fixtures";
     in
     pkgs.lib.cleanSourceWith {
       src = ../..;
@@ -21,8 +22,10 @@ rec {
             pathString == assetsRoot
             || pathString == imageRoot
             || pkgs.lib.hasPrefix "${imageRoot}/" pathString;
+          isTestFixture =
+            pathString == testFixturesRoot || pkgs.lib.hasPrefix "${testFixturesRoot}/" pathString;
         in
-        craneLib.filterCargoSources path type || isEmbeddedImageAsset;
+        craneLib.filterCargoSources path type || isEmbeddedImageAsset || isTestFixture;
     };
 
   # Common arguments can be set here to avoid repeating them later

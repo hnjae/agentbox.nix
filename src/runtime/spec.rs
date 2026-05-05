@@ -132,10 +132,7 @@ impl RuntimeKind {
         let image = self.default_image().to_string();
         let attach = self.attach_spec();
         let labels = managed_session_labels(ManagedSessionLabelInput::from_workspace(
-            workspace,
-            &image,
-            self.as_str(),
-            attach,
+            workspace, &image, self,
         ));
 
         let mut mounts = vec![RuntimeMount::bind(

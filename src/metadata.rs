@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::runtime::RuntimeAttachSpec;
+use crate::runtime::RuntimeKind;
 use crate::workspace::WorkspaceIdentity;
 
 pub const LABEL_MANAGED: &str = "io.agentbox.managed";
@@ -56,19 +56,17 @@ pub(crate) fn managed_label_filter() -> String {
 pub struct ManagedSessionLabelInput<'a> {
     pub canonical_git_root: &'a str,
     pub git_root_hash: &'a str,
-    pub runtime: &'a str,
+    pub runtime: RuntimeKind,
     pub image: &'a str,
     pub launch_directory: &'a str,
     pub logical_name: &'a str,
-    pub attach: RuntimeAttachSpec,
 }
 
 impl<'a> ManagedSessionLabelInput<'a> {
     pub fn from_workspace(
         workspace: &'a WorkspaceIdentity,
         image: &'a str,
-        runtime: &'a str,
-        attach: RuntimeAttachSpec,
+        runtime: RuntimeKind,
     ) -> Self {
         Self {
             canonical_git_root: workspace.canonical_git_root.as_str(),
@@ -77,13 +75,14 @@ impl<'a> ManagedSessionLabelInput<'a> {
             image,
             launch_directory: workspace.canonical_target.as_str(),
             logical_name: workspace.container_name.as_str(),
-            attach,
         }
     }
 }
 
 /// Builds the complete label set stored on managed session containers.
 pub fn managed_session_labels(input: ManagedSessionLabelInput<'_>) -> BTreeMap<String, String> {
+    let attach = input.runtime.attach_spec();
+
     BTreeMap::from([
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
         (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
@@ -95,7 +94,10 @@ pub fn managed_session_labels(input: ManagedSessionLabelInput<'_>) -> BTreeMap<S
             LABEL_GIT_ROOT_HASH.to_string(),
             input.git_root_hash.to_string(),
         ),
-        (LABEL_RUNTIME.to_string(), input.runtime.to_string()),
+        (
+            LABEL_RUNTIME.to_string(),
+            input.runtime.as_str().to_string(),
+        ),
         (LABEL_IMAGE.to_string(), input.image.to_string()),
         (
             LABEL_LAUNCH_DIRECTORY.to_string(),
@@ -105,17 +107,14 @@ pub fn managed_session_labels(input: ManagedSessionLabelInput<'_>) -> BTreeMap<S
             LABEL_LOGICAL_NAME.to_string(),
             input.logical_name.to_string(),
         ),
-        (
-            LABEL_ATTACH_SCHEME.to_string(),
-            input.attach.scheme.to_string(),
-        ),
+        (LABEL_ATTACH_SCHEME.to_string(), attach.scheme.to_string()),
         (
             LABEL_CONTAINER_PORT.to_string(),
-            input.attach.container_port.to_string(),
+            attach.container_port.to_string(),
         ),
         (
             LABEL_CONTAINER_LISTEN_IP.to_string(),
-            input.attach.container_listen_ip.to_string(),
+            attach.container_listen_ip.to_string(),
         ),
     ])
 }

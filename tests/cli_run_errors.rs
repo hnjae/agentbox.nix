@@ -17,8 +17,8 @@ use camino::Utf8Path;
 mod support;
 
 use support::{
-    CliHarness as Harness, managed_labels, managed_ps_entry, opencode_workspace_inspect_fixture,
-    opencode_workspace_labels, operation_names, ps_fixture,
+    CliHarness as Harness, managed_ps_entry, opencode_managed_labels as managed_labels,
+    opencode_workspace_inspect_fixture, opencode_workspace_labels, operation_names, ps_fixture,
     running_managed_inspect_fixture as managed_inspect_fixture, workspace_ps_entry,
 };
 
@@ -77,7 +77,6 @@ fn duplicate_sessions_fail_closed() {
             managed_labels(
                 workspace.canonical_git_root.as_str(),
                 &workspace.hash12,
-                "opencode",
                 "dup-a",
             ),
         ),
@@ -91,7 +90,6 @@ fn duplicate_sessions_fail_closed() {
             managed_labels(
                 workspace.canonical_git_root.as_str(),
                 &workspace.hash12,
-                "opencode",
                 "dup-b",
             ),
         ),
@@ -126,11 +124,13 @@ fn unsupported_runtime_label_requires_cleanup_or_recreation() {
             &workspace.container_name,
             workspace.canonical_git_root.as_str(),
             true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
+            labels_with_runtime(
+                managed_labels(
+                    workspace.canonical_git_root.as_str(),
+                    &workspace.hash12,
+                    &workspace.container_name,
+                ),
                 "other-runtime",
-                &workspace.container_name,
             ),
         ),
     );
@@ -165,7 +165,7 @@ fn hash_collision_fails_closed() {
             "collision-name",
             other_root,
             true,
-            managed_labels(other_root, &workspace.hash12, "opencode", "collision-name"),
+            managed_labels(other_root, &workspace.hash12, "collision-name"),
         ),
     );
 
@@ -201,7 +201,6 @@ fn create_name_conflict_reports_the_conflicting_root() {
             managed_labels(
                 other_root,
                 &git_root_hash12(Utf8Path::new(other_root)),
-                "opencode",
                 &workspace.container_name,
             ),
         ),
@@ -236,11 +235,13 @@ fn create_name_conflict_with_malformed_runtime_label_reports_specific_drift() {
             &workspace.container_name,
             workspace.canonical_git_root.as_str(),
             true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
+            labels_with_runtime(
+                managed_labels(
+                    workspace.canonical_git_root.as_str(),
+                    &workspace.hash12,
+                    &workspace.container_name,
+                ),
                 "future-runtime",
-                &workspace.container_name,
             ),
         ),
     );
@@ -405,4 +406,12 @@ fn run_command(
     extra_args: &[&str],
 ) -> assert_cmd::assert::Assert {
     harness.run_assert_with_args(target, extra_args)
+}
+
+fn labels_with_runtime(
+    mut labels: std::collections::BTreeMap<String, String>,
+    runtime: &str,
+) -> std::collections::BTreeMap<String, String> {
+    labels.insert(LABEL_RUNTIME.to_string(), runtime.to_string());
+    labels
 }
