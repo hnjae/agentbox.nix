@@ -83,6 +83,26 @@ fn scoped_discovery_keeps_matching_root_when_identity_hash_is_missing() {
 }
 
 #[test]
+fn scoped_discovery_skips_nonmatching_hash_without_inspect() {
+    let target_repo = support::temp_git_repo();
+    let unrelated_repo = support::temp_git_repo();
+    let target_root = Utf8Path::from_path(target_repo.path()).unwrap();
+    let unrelated_root = Utf8Path::from_path(unrelated_repo.path()).unwrap();
+    let target = managed_container("target", target_root, true, true);
+    let unrelated = managed_container("unrelated", unrelated_root, true, true);
+
+    let sessions = discover_sessions_for_git_root_from_ps(
+        vec![unrelated.0, target.0],
+        target_root,
+        inspect_by_id(vec![target.1]),
+    )
+    .unwrap();
+
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].container_name, "target");
+}
+
+#[test]
 fn missing_cache_mount_marks_failed() {
     let repo = support::temp_git_repo();
     let root = Utf8Path::from_path(repo.path()).unwrap();

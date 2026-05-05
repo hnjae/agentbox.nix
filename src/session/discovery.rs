@@ -11,7 +11,9 @@ use std::collections::BTreeMap;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::git::Git;
-use crate::metadata::{LABEL_MANAGED, LABEL_MANAGED_VALUE, required_label_value};
+use crate::metadata::{
+    LABEL_GIT_ROOT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE, required_label_value,
+};
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
 use crate::runtime::AttachEndpoint;
 use crate::workspace::hash12;
@@ -100,6 +102,13 @@ impl<'a> SessionDiscoveryScope<'a> {
     fn for_git_root(git_root: &'a Utf8Path) -> Self {
         Self::GitRoot(GitRootDiscoveryScope::new(git_root))
     }
+
+    fn should_inspect_ps_candidate(&self, container: &PodmanPsContainer) -> bool {
+        match self {
+            Self::All => true,
+            Self::GitRoot(git_root) => git_root.should_inspect_ps_candidate(container),
+        }
+    }
 }
 
 struct GitRootDiscoveryScope<'a> {
@@ -113,6 +122,11 @@ impl<'a> GitRootDiscoveryScope<'a> {
             git_root,
             git_root_hash: hash12(git_root.as_str().as_bytes()),
         }
+    }
+
+    fn should_inspect_ps_candidate(&self, container: &PodmanPsContainer) -> bool {
+        required_label_value(&container.labels, LABEL_GIT_ROOT_HASH)
+            .is_none_or(|git_root_hash| git_root_hash == self.git_root_hash)
     }
 
     fn classify_session(&self, record: SessionRecord) -> ScopedSessionCandidate {
@@ -196,6 +210,10 @@ fn discover_sessions_from_ps_with_git(
     let mut collector = SessionCollector::new(scope);
 
     for container in containers.into_iter().filter(ps_candidate_is_managed) {
+        if !collector.scope.should_inspect_ps_candidate(&container) {
+            continue;
+        }
+
         let inspect = inspect_container(&container.id)?;
         let record = build_session_record(container, inspect, git);
         collector.collect(record);
