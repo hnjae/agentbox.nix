@@ -22,7 +22,14 @@ use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE};
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
 use camino::Utf8Path;
-use serde_json::{Value, json};
+use serde_json::Value;
+
+const FIXTURE_CREATED_AT: &str = "2026-04-21 00:00:00 +0000 UTC";
+const FIXTURE_CREATED_RFC3339: &str = "2026-04-21T00:00:00.000000000Z";
+const FIXTURE_STARTED_RFC3339: &str = "2026-04-21T00:00:01.000000000Z";
+const FIXTURE_HOST_IP: &str = "127.0.0.1";
+const FIXTURE_HOST_PORT: &str = "49152";
+const OPENCODE_BINARY: &str = "opencode";
 
 pub fn podman_ps_fixture() -> &'static str {
     // Keep both `Created` and `CreatedAt`: Podman emits the unix timestamp and
@@ -111,24 +118,7 @@ pub fn ps_fixture(entries: Vec<Value>) -> String {
 }
 
 pub fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
-    json!({
-        "Id": id,
-        "Image": OPENCODE_DEFAULT_IMAGE,
-        "Command": ["opencode"],
-        "Created": 1713681300,
-        "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
-        "Names": [name],
-        "Ports": [],
-        "Status": "Up 2 minutes",
-        "State": "running",
-        "Labels": {
-            LABEL_MANAGED: LABEL_MANAGED_VALUE,
-            LABEL_GIT_ROOT_HASH: git_root_hash,
-        },
-        "Mounts": [],
-        "Networks": ["podman"],
-        "Namespaces": null,
-    })
+    serde_json::to_value(managed_ps_model(id, name, git_root_hash, true)).unwrap()
 }
 
 pub fn workspace_ps_entry(id: &str, workspace: &WorkspaceIdentity) -> Value {
@@ -157,92 +147,216 @@ pub fn managed_container_models_with_hash(
     running: bool,
     include_cache_mount: bool,
 ) -> (PodmanPsContainer, PodmanContainerInspect) {
-    let ps_labels = BTreeMap::from([
-        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
-        (LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string()),
-    ]);
     let inspect_labels = opencode_managed_labels(root.as_str(), git_root_hash, name);
-    let mounts = if include_cache_mount {
-        vec![PodmanContainerMount {
-            kind: "volume".to_string(),
-            source: "agentbox-cache".to_string(),
-            destination: REQUIRED_NIX_CACHE_MOUNT_DESTINATION.to_string(),
-            rw: true,
-        }]
-    } else {
-        Vec::new()
-    };
+    let id = format!("{name}-id");
 
     (
-        PodmanPsContainer {
-            id: format!("{name}-id"),
-            image: OPENCODE_DEFAULT_IMAGE.to_string(),
-            command: Some(vec!["opencode".to_string()]),
-            created: 0,
-            created_at: "2026-04-21 00:00:00 +0000 UTC".to_string(),
-            names: Some(vec![name.to_string()]),
-            ports: Some(Vec::new()),
-            status: if running {
-                "Up 1 minute".to_string()
-            } else {
-                "Exited (0) 1 minute ago".to_string()
-            },
-            state: if running {
-                "running".to_string()
-            } else {
-                "exited".to_string()
-            },
-            labels: ps_labels,
-            mounts: Some(Vec::new()),
-            networks: Some(vec!["podman".to_string()]),
-            namespaces: None,
+        managed_ps_model(&id, name, git_root_hash, running),
+        ManagedInspectFixture::new(name, root.as_str(), inspect_labels)
+            .id(&id)
+            .running(running)
+            .include_cache_mount(include_cache_mount)
+            .build(),
+    )
+}
+
+fn managed_ps_model(id: &str, name: &str, git_root_hash: &str, running: bool) -> PodmanPsContainer {
+    PodmanPsContainer {
+        id: id.to_string(),
+        image: OPENCODE_DEFAULT_IMAGE.to_string(),
+        command: Some(vec![OPENCODE_BINARY.to_string()]),
+        created: 1713681300,
+        created_at: FIXTURE_CREATED_AT.to_string(),
+        names: Some(vec![name.to_string()]),
+        ports: Some(Vec::new()),
+        status: if running {
+            "Up 2 minutes".to_string()
+        } else {
+            "Exited (137) 1 minute ago".to_string()
         },
+        state: if running {
+            "running".to_string()
+        } else {
+            "exited".to_string()
+        },
+        labels: BTreeMap::from([
+            (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
+            (LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string()),
+        ]),
+        mounts: Some(Vec::new()),
+        networks: Some(vec!["podman".to_string()]),
+        namespaces: None,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ManagedInspectFixture {
+    id: String,
+    container_name: String,
+    git_root: String,
+    image: String,
+    running: bool,
+    include_cache_mount: bool,
+    labels: BTreeMap<String, String>,
+    command: Vec<String>,
+    working_dir: String,
+    auto_remove: bool,
+    path: String,
+}
+
+impl ManagedInspectFixture {
+    fn new(container_name: &str, git_root: &str, labels: BTreeMap<String, String>) -> Self {
+        Self {
+            id: container_name.to_string(),
+            container_name: container_name.to_string(),
+            git_root: git_root.to_string(),
+            image: OPENCODE_DEFAULT_IMAGE.to_string(),
+            running: true,
+            include_cache_mount: true,
+            labels,
+            command: vec![OPENCODE_BINARY.to_string()],
+            working_dir: git_root.to_string(),
+            auto_remove: false,
+            path: format!("/usr/bin/{OPENCODE_BINARY}"),
+        }
+    }
+
+    fn id(mut self, id: &str) -> Self {
+        self.id = id.to_string();
+        self
+    }
+
+    fn image(mut self, image: &str) -> Self {
+        self.image = image.to_string();
+        self
+    }
+
+    fn running(mut self, running: bool) -> Self {
+        self.running = running;
+        self
+    }
+
+    fn include_cache_mount(mut self, include_cache_mount: bool) -> Self {
+        self.include_cache_mount = include_cache_mount;
+        self
+    }
+
+    fn command(mut self, command: Vec<String>) -> Self {
+        self.command = command;
+        self
+    }
+
+    fn working_dir(mut self, working_dir: &str) -> Self {
+        self.working_dir = working_dir.to_string();
+        self
+    }
+
+    fn auto_remove(mut self, auto_remove: bool) -> Self {
+        self.auto_remove = auto_remove;
+        self
+    }
+
+    fn path(mut self, path: impl Into<String>) -> Self {
+        self.path = path.into();
+        self
+    }
+
+    fn build(self) -> PodmanContainerInspect {
         PodmanContainerInspect {
-            id: format!("{name}-id"),
-            created: "2026-04-21T00:00:00.000000000Z".to_string(),
-            path: "/usr/bin/opencode".to_string(),
+            id: self.id,
+            created: FIXTURE_CREATED_RFC3339.to_string(),
+            path: self.path,
             args: Vec::new(),
-            state: PodmanContainerState {
-                status: if running {
-                    "running".to_string()
-                } else {
-                    "exited".to_string()
-                },
-                running,
-                exit_code: 0,
-                pid: if running { 4321 } else { 0 },
-                started_at: Some("2026-04-21T00:00:01.000000000Z".to_string()),
-                finished_at: None,
-                health: None,
-            },
-            image_name: OPENCODE_DEFAULT_IMAGE.to_string(),
+            state: container_state(self.running),
+            image_name: self.image,
             config: PodmanContainerConfig {
                 user: Some("user".to_string()),
                 env: Vec::new(),
-                cmd: vec!["opencode".to_string()],
-                working_dir: Some("/workspace".to_string()),
-                labels: inspect_labels,
+                cmd: self.command,
+                working_dir: Some(self.working_dir),
+                labels: self.labels.clone(),
                 entrypoint: Some(vec!["/entrypoint".to_string()]),
                 stop_signal: Some("SIGTERM".to_string()),
             },
             host_config: PodmanHostConfig {
-                auto_remove: false,
+                auto_remove: self.auto_remove,
                 network_mode: Some("bridge".to_string()),
                 privileged: false,
             },
-            mounts,
+            mounts: managed_container_mounts(
+                &self.git_root,
+                &self.container_name,
+                self.include_cache_mount,
+            ),
             network_settings: PodmanNetworkSettings {
                 networks: BTreeMap::new(),
-                ports: BTreeMap::from([(
-                    "4096/tcp".to_string(),
-                    Some(vec![PodmanPortBinding {
-                        host_ip: Some("127.0.0.1".to_string()),
-                        host_port: Some("49152".to_string()),
-                    }]),
-                )]),
+                ports: published_ports_for_labels(&self.labels),
             },
+        }
+    }
+}
+
+fn container_state(running: bool) -> PodmanContainerState {
+    PodmanContainerState {
+        status: if running {
+            "running".to_string()
+        } else {
+            "exited".to_string()
         },
-    )
+        running,
+        exit_code: if running { 0 } else { 137 },
+        pid: if running { 4321 } else { 0 },
+        started_at: Some(FIXTURE_STARTED_RFC3339.to_string()),
+        finished_at: None,
+        health: None,
+    }
+}
+
+fn managed_container_mounts(
+    git_root: &str,
+    container_name: &str,
+    include_cache_mount: bool,
+) -> Vec<PodmanContainerMount> {
+    let mut mounts = vec![PodmanContainerMount {
+        kind: "bind".to_string(),
+        source: git_root.to_string(),
+        destination: git_root.to_string(),
+        rw: true,
+    }];
+
+    if include_cache_mount {
+        mounts.push(PodmanContainerMount {
+            kind: "volume".to_string(),
+            source: container_name.to_string(),
+            destination: REQUIRED_NIX_CACHE_MOUNT_DESTINATION.to_string(),
+            rw: true,
+        });
+    }
+
+    mounts
+}
+
+fn published_ports_for_labels(
+    labels: &BTreeMap<String, String>,
+) -> BTreeMap<String, Option<Vec<PodmanPortBinding>>> {
+    BTreeMap::from([(
+        port_key_for_labels(labels),
+        Some(vec![PodmanPortBinding {
+            host_ip: Some(FIXTURE_HOST_IP.to_string()),
+            host_port: Some(FIXTURE_HOST_PORT.to_string()),
+        }]),
+    )])
+}
+
+fn port_key_for_labels(labels: &BTreeMap<String, String>) -> String {
+    labels
+        .get(LABEL_CONTAINER_PORT)
+        .map(|port| format!("{port}/tcp"))
+        .unwrap_or_else(|| "4096/tcp".to_string())
+}
+
+fn inspect_fixture_json(inspect: PodmanContainerInspect) -> String {
+    serde_json::to_string(&vec![inspect]).unwrap()
 }
 
 pub fn inspect_models_by_id(
@@ -343,70 +457,12 @@ pub fn managed_inspect_fixture(
     include_cache_mount: bool,
     labels: BTreeMap<String, String>,
 ) -> String {
-    let mut mounts = vec![json!({
-        "Type": "bind",
-        "Source": git_root,
-        "Destination": git_root,
-        "RW": true,
-    })];
-    if include_cache_mount {
-        mounts.push(json!({
-            "Type": "volume",
-            "Source": container_name,
-            "Destination": REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
-            "RW": true,
-        }));
-    }
-    let port_key = labels
-        .get(LABEL_CONTAINER_PORT)
-        .map(|port| format!("{port}/tcp"))
-        .unwrap_or_else(|| "4096/tcp".to_string());
-    let ports = BTreeMap::from([(
-        port_key,
-        json!([
-            {
-                "HostIp": "127.0.0.1",
-                "HostPort": "49152"
-            }
-        ]),
-    )]);
-
-    serde_json::to_string(&vec![json!({
-        "Id": container_name,
-        "Created": "2026-04-21T10:15:00.000000000Z",
-        "Path": "/usr/bin/opencode",
-        "Args": [],
-        "State": {
-            "Status": if running { "running" } else { "exited" },
-            "Running": running,
-            "ExitCode": if running { 0 } else { 137 },
-            "Pid": if running { 4321 } else { 0 },
-            "StartedAt": "2026-04-21T10:15:01.000000000Z",
-            "FinishedAt": null,
-            "Health": null,
-        },
-        "ImageName": OPENCODE_DEFAULT_IMAGE,
-        "Config": {
-            "User": "user",
-            "Env": [],
-            "Cmd": ["opencode"],
-            "WorkingDir": git_root,
-            "Labels": labels,
-            "Entrypoint": ["/entrypoint"],
-            "StopSignal": "SIGTERM",
-        },
-        "HostConfig": {
-            "AutoRemove": false,
-            "NetworkMode": "bridge",
-            "Privileged": false,
-        },
-        "Mounts": mounts,
-        "NetworkSettings": {
-            "Networks": {},
-            "Ports": ports,
-        },
-    })])
-    .unwrap()
+    inspect_fixture_json(
+        ManagedInspectFixture::new(container_name, git_root, labels)
+            .running(running)
+            .include_cache_mount(include_cache_mount)
+            .build(),
+    )
 }
 
 pub fn running_managed_inspect_fixture(
@@ -437,68 +493,21 @@ pub fn running_workspace_inspect_fixture(
     image: &str,
     runtime: RuntimeKind,
 ) -> String {
-    let attach = runtime.attach_spec();
     let labels = workspace_managed_labels(workspace, image, runtime);
-    let command = runtime.server_command().argv;
-    let ports = BTreeMap::from([(
-        format!("{}/tcp", attach.container_port),
-        json!([
-            {
-                "HostIp": "127.0.0.1",
-                "HostPort": "49152"
-            }
-        ]),
-    )]);
 
-    serde_json::to_string(&vec![json!({
-        "Id": workspace.container_name,
-        "Created": "2026-04-21T10:15:00.000000000Z",
-        "Path": format!("/usr/bin/{}", runtime.as_str()),
-        "Args": [],
-        "State": {
-            "Status": "running",
-            "Running": true,
-            "ExitCode": 0,
-            "Pid": 4321,
-            "StartedAt": "2026-04-21T10:15:01.000000000Z",
-            "FinishedAt": null,
-            "Health": null,
-        },
-        "ImageName": image,
-        "Config": {
-            "User": "user",
-            "Env": [],
-            "Cmd": command,
-            "WorkingDir": workspace.canonical_target.as_str(),
-            "Labels": labels,
-            "Entrypoint": ["/entrypoint"],
-            "StopSignal": "SIGTERM",
-        },
-        "HostConfig": {
-            "AutoRemove": true,
-            "NetworkMode": "bridge",
-            "Privileged": false,
-        },
-        "Mounts": [
-            {
-                "Type": "bind",
-                "Source": workspace.canonical_git_root.as_str(),
-                "Destination": workspace.canonical_git_root.as_str(),
-                "RW": true,
-            },
-            {
-                "Type": "volume",
-                "Source": workspace.container_name,
-                "Destination": REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
-                "RW": true,
-            }
-        ],
-        "NetworkSettings": {
-            "Networks": {},
-            "Ports": ports,
-        },
-    })])
-    .unwrap()
+    inspect_fixture_json(
+        ManagedInspectFixture::new(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            labels,
+        )
+        .image(image)
+        .command(runtime.server_command().argv)
+        .working_dir(workspace.canonical_target.as_str())
+        .auto_remove(true)
+        .path(format!("/usr/bin/{}", runtime.as_str()))
+        .build(),
+    )
 }
 
 pub fn cached_managed_inspect_fixture(

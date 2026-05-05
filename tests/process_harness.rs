@@ -142,6 +142,7 @@ fn podman_inspect_parses_stable_json_fields_from_a_fake_binary() {
     );
     assert_eq!(container.config.stop_signal.as_deref(), Some("SIGTERM"));
     assert_eq!(container.mounts[0].destination, "/workspace");
+    assert!(container.mounts[0].rw);
     assert_eq!(
         container
             .network_settings

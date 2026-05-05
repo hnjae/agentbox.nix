@@ -8,12 +8,12 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::{Error, Result};
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanPsContainer {
     pub id: String,
@@ -40,7 +40,7 @@ pub struct PodmanPsContainer {
     pub namespaces: Option<PodmanNamespaces>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PodmanPsPort {
     #[serde(default)]
@@ -55,7 +55,7 @@ pub struct PodmanPsPort {
     pub range: Option<u16>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanNamespaces {
     #[serde(default)]
@@ -74,7 +74,7 @@ pub struct PodmanNamespaces {
     pub uts: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanContainerInspect {
     pub id: String,
@@ -91,7 +91,7 @@ pub struct PodmanContainerInspect {
     pub network_settings: PodmanNetworkSettings,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanContainerState {
     pub status: String,
@@ -109,7 +109,7 @@ pub struct PodmanContainerState {
     pub health: Option<PodmanHealth>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanHealth {
     pub status: String,
@@ -117,7 +117,7 @@ pub struct PodmanHealth {
     pub failing_streak: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanContainerConfig {
     #[serde(default)]
@@ -136,7 +136,7 @@ pub struct PodmanContainerConfig {
     pub stop_signal: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanHostConfig {
     #[serde(default)]
@@ -147,7 +147,7 @@ pub struct PodmanHostConfig {
     pub privileged: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanContainerMount {
     #[serde(rename = "Type")]
@@ -155,10 +155,11 @@ pub struct PodmanContainerMount {
     pub source: String,
     pub destination: String,
     #[serde(default)]
+    #[serde(rename = "RW")]
     pub rw: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanNetworkSettings {
     #[serde(default)]
@@ -167,7 +168,7 @@ pub struct PodmanNetworkSettings {
     pub ports: BTreeMap<String, Option<Vec<PodmanPortBinding>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanNetworkEndpoint {
     #[serde(default)]
@@ -179,7 +180,7 @@ pub struct PodmanNetworkEndpoint {
     pub aliases: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanPortBinding {
     #[serde(default)]
