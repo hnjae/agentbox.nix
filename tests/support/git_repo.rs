@@ -16,16 +16,20 @@ use tempfile::TempDir;
 pub fn temp_git_repo() -> TempDir {
     let repo = tempfile::tempdir().unwrap();
 
+    init_git_repo(repo.path());
+
+    repo
+}
+
+pub fn init_git_repo(path: &Path) {
     let status = Command::new("git")
         .arg("init")
         .arg("--quiet")
-        .arg(repo.path())
+        .arg(path)
         .status()
         .expect("failed to run `git init` for test repository");
     assert!(status.success(), "`git init` failed with {status}");
-    fs::write(repo.path().join(".gitignore"), "\n").unwrap();
-
-    repo
+    fs::write(path.join(".gitignore"), "\n").unwrap();
 }
 
 pub fn tempdir_outside_git() -> TempDir {

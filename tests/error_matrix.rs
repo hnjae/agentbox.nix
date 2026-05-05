@@ -9,11 +9,7 @@
 use std::fs;
 
 use agentbox::metadata::LABEL_RUNTIME;
-use agentbox::preflight::{
-    DirenvPreflightSnapshot, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
-    NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
-    OpenCodePreflightSnapshot, PreflightSnapshot, check_host_prerequisites_with_snapshot,
-};
+use agentbox::preflight::check_host_prerequisites_with_snapshot;
 use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::resolve_workspace_identity;
@@ -24,6 +20,7 @@ mod support;
 
 use support::{
     CliHarness as Harness, managed_inspect_fixture, managed_labels, managed_ps_entry, ps_fixture,
+    snapshot_with,
 };
 
 #[test]
@@ -367,55 +364,6 @@ fn assert_run_failure_case(case: RunFailureCase<'_>) {
     let mut assert = assert.failure();
     for expected in case.expected {
         assert = assert.stderr(predicates::str::contains(expected));
-    }
-}
-
-fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSnapshot {
-    let mut snapshot = PreflightSnapshot {
-        host: HostPreflightSnapshot {
-            has_git: true,
-            has_podman: true,
-            direnv: DirenvPreflightSnapshot {
-                required: false,
-                available: true,
-            },
-            codex: HostDirectoryPreflightSnapshot {
-                source: Some("/home/example/.codex".into()),
-                exists: true,
-                is_directory: true,
-                readable: true,
-                writable: true,
-            },
-            opencode: OpenCodePreflightSnapshot {
-                config: host_directory("/home/example/.config/opencode"),
-                data: host_directory("/home/example/.local/share/opencode"),
-            },
-        },
-        nix: NixPreflightSnapshot {
-            has_daemon_socket: true,
-            client_source: Some("/run/current-system/sw/bin/nix".into()),
-            config: NixConfigPreflightSnapshot {
-                has_etc_nix_mount: true,
-                has_readable_nix_conf: true,
-                custom_conf: NixCustomConfPreflightSnapshot {
-                    present: false,
-                    has_readable_target: true,
-                    needs_static_mount: false,
-                },
-            },
-        },
-    };
-    configure(&mut snapshot);
-    snapshot
-}
-
-fn host_directory(path: &str) -> HostDirectoryPreflightSnapshot {
-    HostDirectoryPreflightSnapshot {
-        source: Some(path.into()),
-        exists: true,
-        is_directory: true,
-        readable: true,
-        writable: true,
     }
 }
 

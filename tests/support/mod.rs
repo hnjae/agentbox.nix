@@ -12,13 +12,14 @@ mod cli_harness;
 mod fake_bins;
 mod git_repo;
 mod podman_fixtures;
+mod preflight_fixtures;
 
 pub use cli_harness::CliHarness;
 pub use fake_bins::{
     FakeBinDir, fake_git_script, operation_names, path_with_prepend, read_log_lines,
     write_executable,
 };
-pub use git_repo::{temp_git_repo, tempdir_outside_git};
+pub use git_repo::{init_git_repo, temp_git_repo, tempdir_outside_git};
 pub use podman_fixtures::{
     cached_managed_inspect_fixture, inspect_models_by_id, managed_container_models,
     managed_container_models_with_hash, managed_inspect_fixture, managed_labels,
@@ -26,3 +27,4 @@ pub use podman_fixtures::{
     podman_ps_fixture, ps_fixture, running_managed_inspect_fixture,
     running_workspace_inspect_fixture,
 };
+pub use preflight_fixtures::{passing_preflight_snapshot_with_static_nix_mount, snapshot_with};

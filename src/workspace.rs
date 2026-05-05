@@ -48,9 +48,8 @@ pub fn resolve_workspace_identity_with_git(
         ));
     }
 
-    let digest = sha256_bytes(canonical_git_root.as_str().as_bytes());
-    let digest64 = hex_digest(&digest);
-    let hash12 = hash12(canonical_git_root.as_str().as_bytes());
+    let digest64 = digest64_for_bytes(canonical_git_root.as_str().as_bytes());
+    let hash12 = hash12_from_digest64(&digest64);
     let container_name = container_name_from_canonical_root(&canonical_git_root);
 
     Ok(WorkspaceIdentity {
@@ -74,7 +73,15 @@ pub fn hex_digest(bytes: &[u8; 32]) -> String {
 }
 
 pub fn hash12(bytes: &[u8]) -> String {
-    hex_digest(&sha256_bytes(bytes))[..12].to_string()
+    hash12_from_digest64(&digest64_for_bytes(bytes))
+}
+
+fn digest64_for_bytes(bytes: &[u8]) -> String {
+    hex_digest(&sha256_bytes(bytes))
+}
+
+fn hash12_from_digest64(digest64: &str) -> String {
+    digest64.chars().take(12).collect()
 }
 
 pub fn container_name_from_canonical_root(root: impl AsRef<str>) -> String {

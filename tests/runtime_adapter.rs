@@ -12,11 +12,9 @@ use agentbox::metadata::{
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::preflight::{
-    CODEX_CONFIG_DESTINATION, DirenvPreflightSnapshot, ETC_NIX_DESTINATION,
-    ETC_STATIC_NIX_DESTINATION, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
-    NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION, NixConfigPreflightSnapshot,
-    NixCustomConfPreflightSnapshot, NixPreflightSnapshot, OPENCODE_CONFIG_DESTINATION,
-    OPENCODE_DATA_DESTINATION, OpenCodePreflightSnapshot, PreflightSnapshot,
+    CODEX_CONFIG_DESTINATION, ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION,
+    NIX_CLIENT_DESTINATION, NIX_STORE_DESTINATION, NixCustomConfPreflightSnapshot,
+    OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION, PreflightSnapshot,
     check_host_prerequisites_with_snapshot, required_host_mount_destinations,
 };
 use agentbox::runtime::default_image::{
@@ -24,8 +22,8 @@ use agentbox::runtime::default_image::{
     materialize_default_image_context,
 };
 use agentbox::runtime::{AttachEndpoint, RuntimeKind, RuntimeMountKind};
+use std::fs;
 use std::path::Path;
-use std::{fs, process::Command};
 
 use agentbox::workspace::resolve_workspace_identity;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -38,7 +36,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     let repo = support::temp_git_repo();
     let workspace = resolve_workspace_identity(repo.path()).unwrap();
     let preflight = check_host_prerequisites_with_snapshot(
-        &passing_preflight_snapshot_with_static_nix_mount(),
+        &support::passing_preflight_snapshot_with_static_nix_mount(),
         Some(Utf8Path::from_path(repo.path()).unwrap()),
         RuntimeKind::Opencode,
     )
@@ -185,22 +183,22 @@ fn opencode_create_spec_matches_mvp_contract() {
 
 #[test]
 fn opencode_preflight_rejects_unusable_state_directories() {
-    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
     snapshot.host.opencode.config.exists = false;
     assert_opencode_preflight_error(snapshot, "Missing host OpenCode configuration directory");
 
-    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
     snapshot.host.opencode.data.is_directory = false;
     assert_opencode_preflight_error(snapshot, "Host OpenCode data path is not a directory");
 
-    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
     snapshot.host.opencode.config.readable = false;
     assert_opencode_preflight_error(
         snapshot,
         "Host OpenCode configuration directory is not readable and writable",
     );
 
-    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
     snapshot.host.opencode.data.writable = false;
     assert_opencode_preflight_error(
         snapshot,
@@ -256,7 +254,7 @@ fn codex_create_spec_includes_host_codex_config_mount() {
     let repo = support::temp_git_repo();
     let workspace = resolve_workspace_identity(repo.path()).unwrap();
     let preflight = check_host_prerequisites_with_snapshot(
-        &passing_preflight_snapshot_with_static_nix_mount(),
+        &support::passing_preflight_snapshot_with_static_nix_mount(),
         Some(Utf8Path::from_path(repo.path()).unwrap()),
         RuntimeKind::Codex,
     )
@@ -301,7 +299,7 @@ fn supported_runtime_strings_are_derived_from_profiles() {
 
 #[test]
 fn preflight_missing_nix_conf_reports_exact_message() {
-    let mut snapshot = passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
     snapshot.nix.config.has_readable_nix_conf = false;
     snapshot.nix.config.custom_conf = NixCustomConfPreflightSnapshot {
         present: false,
@@ -325,7 +323,7 @@ fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
     let nested = repo.join("nested");
 
     fs::create_dir(&repo).unwrap();
-    init_git_repo(&repo);
+    support::init_git_repo(&repo);
     fs::create_dir(&nested).unwrap();
     fs::write(sandbox.path().join(".envrc"), "use nix\n").unwrap();
 
@@ -336,53 +334,6 @@ fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
     );
 
     assert!(!snapshot.host.direnv.required);
-}
-
-fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
-    PreflightSnapshot {
-        host: HostPreflightSnapshot {
-            has_git: true,
-            has_podman: true,
-            direnv: DirenvPreflightSnapshot {
-                required: false,
-                available: false,
-            },
-            codex: HostDirectoryPreflightSnapshot {
-                source: Some("/home/example/.codex".into()),
-                exists: true,
-                is_directory: true,
-                readable: true,
-                writable: true,
-            },
-            opencode: OpenCodePreflightSnapshot {
-                config: host_directory("/home/example/.config/opencode"),
-                data: host_directory("/home/example/.local/share/opencode"),
-            },
-        },
-        nix: NixPreflightSnapshot {
-            has_daemon_socket: true,
-            client_source: Some("/run/current-system/sw/bin/nix".into()),
-            config: NixConfigPreflightSnapshot {
-                has_etc_nix_mount: true,
-                has_readable_nix_conf: true,
-                custom_conf: NixCustomConfPreflightSnapshot {
-                    present: true,
-                    has_readable_target: true,
-                    needs_static_mount: true,
-                },
-            },
-        },
-    }
-}
-
-fn host_directory(path: &str) -> HostDirectoryPreflightSnapshot {
-    HostDirectoryPreflightSnapshot {
-        source: Some(path.into()),
-        exists: true,
-        is_directory: true,
-        readable: true,
-        writable: true,
-    }
 }
 
 fn assert_opencode_preflight_error(snapshot: PreflightSnapshot, expected: &str) {
@@ -416,17 +367,6 @@ fn materialized_default_image_context_matches_repo_assets() {
         let source = fs::read(asset_root.join(relative_path).as_std_path()).unwrap();
         assert_eq!(materialized, source, "mismatch for {relative_path}");
     }
-}
-
-fn init_git_repo(path: &std::path::Path) {
-    let status = Command::new("git")
-        .arg("init")
-        .arg("--quiet")
-        .arg(path)
-        .status()
-        .expect("failed to run `git init` for test repository");
-    assert!(status.success(), "`git init` failed with {status}");
-    fs::write(path.join(".gitignore"), "\n").unwrap();
 }
 
 fn collect_relative_files(root: &Path, current: &Path) -> Vec<String> {

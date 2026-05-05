@@ -12,15 +12,14 @@ use agentbox::workspace::{
 };
 use agentbox::{git::Git, process::ProcessRunner};
 use camino::Utf8PathBuf;
-use std::{fs, process::Command};
-use tempfile::TempDir;
+use std::fs;
 
 #[path = "support/mod.rs"]
 mod support;
 
 #[test]
 fn resolves_canonical_root_and_target() {
-    let repo = temp_git_repo();
+    let repo = support::temp_git_repo();
     let nested = repo.path().join("nested");
     fs::create_dir(&nested).unwrap();
 
@@ -33,11 +32,12 @@ fn resolves_canonical_root_and_target() {
     assert_eq!(identity.absolute_target, nested_canon);
     assert_eq!(identity.canonical_target, nested_canon);
     assert_eq!(identity.canonical_git_root, root_canon);
+    assert!(identity.digest64.starts_with(&identity.hash12));
 }
 
 #[test]
 fn symlinked_path_keeps_same_identity() {
-    let repo = temp_git_repo();
+    let repo = support::temp_git_repo();
     let alias = repo.path().join("alias-repo");
     #[cfg(unix)]
     std::os::unix::fs::symlink(repo.path(), &alias).unwrap();
@@ -54,7 +54,7 @@ fn symlinked_path_keeps_same_identity() {
 
 #[test]
 fn rejects_escaped_target_outside_repo_root() {
-    let repo = temp_git_repo();
+    let repo = support::temp_git_repo();
     let outside = tempfile::tempdir_in(repo.path().parent().unwrap()).unwrap();
     let escaped = repo.path().join("escape");
     #[cfg(unix)]
@@ -106,17 +106,4 @@ fn overlong_paths_preserve_rightmost_suffix() {
     assert!(name.starts_with("agentbox-"));
     assert!(name.ends_with(&format!("-{}", hash12(root.as_bytes()))));
     assert!(name.contains("-z"));
-}
-
-fn temp_git_repo() -> TempDir {
-    let repo = tempfile::tempdir().unwrap();
-    let status = Command::new("git")
-        .arg("init")
-        .arg("--quiet")
-        .arg(repo.path())
-        .status()
-        .expect("failed to run `git init` for test repository");
-    assert!(status.success(), "`git init` failed with {status}");
-    fs::write(repo.path().join(".gitignore"), "\n").unwrap();
-    repo
 }
