@@ -9,7 +9,6 @@
 use std::fs;
 
 use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE};
-use agentbox::workspace::resolve_workspace_identity;
 use predicates::prelude::*;
 
 #[path = "support/mod.rs"]
@@ -19,20 +18,18 @@ use support::{CliHarness as Harness, operation_names, running_workspace_inspect_
 
 #[test]
 fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.mark_default_image_absent();
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(&workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
+        &running_workspace_inspect_fixture(workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
     );
 
-    let mut command = harness.locked_agentbox_command(&workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(&target);
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
 
     command.assert().success().stderr(
         predicate::str::contains("agentbox: checking workspace prerequisites")
@@ -107,21 +104,19 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
 
 #[test]
 fn run_wraps_server_command_with_direnv_when_envrc_applies() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-    fs::write(repo.path().join(".envrc"), "use nix\n").unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
     let harness = Harness::new();
     harness.mark_default_image_absent();
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(&workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
+        &running_workspace_inspect_fixture(workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
     );
 
-    let mut command = harness.locked_agentbox_command(&workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(&target);
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
 
     command.assert().success();
 
@@ -134,21 +129,19 @@ fn run_wraps_server_command_with_direnv_when_envrc_applies() {
 
 #[test]
 fn run_launches_codex_server_in_yolo_mode() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let image = RuntimeKind::Codex.default_image();
     let harness = Harness::new();
     harness.mark_default_image_absent();
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(&workspace, image, RuntimeKind::Codex),
+        &running_workspace_inspect_fixture(workspace, image, RuntimeKind::Codex),
     );
 
-    let mut command = harness.locked_agentbox_command(&workspace);
-    command.args(["run", "--runtime", "codex"]).arg(&target);
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "codex"]).arg(target);
 
     command.assert().success();
 
@@ -186,19 +179,17 @@ fn run_launches_codex_server_in_yolo_mode() {
 
 #[test]
 fn run_skips_build_when_default_image_already_exists_locally() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(&workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
+        &running_workspace_inspect_fixture(workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
     );
 
-    let mut command = harness.locked_agentbox_command(&workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(&target);
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
 
     command.assert().success();
 
@@ -210,22 +201,20 @@ fn run_skips_build_when_default_image_already_exists_locally() {
 
 #[test]
 fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.mark_default_image_absent();
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(&workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
+        &running_workspace_inspect_fixture(workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
     );
 
-    let mut command = harness.locked_agentbox_command(&workspace);
+    let mut command = harness.locked_agentbox_command(workspace);
     command
         .args(["--verbose", "run", "--runtime", "opencode"])
-        .arg(&target);
+        .arg(target);
 
     command.assert().success().stderr(
         predicate::str::contains("agentbox: running podman ps")
@@ -242,17 +231,15 @@ fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
 
 #[test]
 fn run_reports_default_image_build_failures_clearly() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.mark_default_image_absent();
     harness.fail_operation("build", "podman build exploded", 125);
 
-    let mut command = harness.locked_agentbox_command(&workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(&target);
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
 
     command
         .assert()

@@ -6,8 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fs;
-
 use agentbox::metadata::LABEL_RUNTIME;
 use agentbox::preflight::{
     CODEX_CONFIG_DESTINATION, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
@@ -22,8 +20,8 @@ use camino::Utf8Path;
 mod support;
 
 use support::{
-    CliHarness as Harness, managed_inspect_fixture, managed_labels, managed_ps_entry, ps_fixture,
-    snapshot_with,
+    CliHarness as Harness, managed_inspect_fixture, opencode_workspace_inspect_fixture,
+    opencode_workspace_labels, ps_fixture, snapshot_with, workspace_ps_entry,
 };
 
 #[test]
@@ -201,24 +199,16 @@ fn host_preflight_errors_are_actionable() {
 }
 
 fn attach_side_drift_errors_are_actionable() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
 
     let missing_labels = Harness::new();
-    missing_labels.write_ps(&ps_fixture(vec![managed_ps_entry(
+    missing_labels.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "failed-labels-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
-    let mut labels = managed_labels(
-        workspace.canonical_git_root.as_str(),
-        &workspace.hash12,
-        "opencode",
-        &workspace.container_name,
-    );
+    let mut labels = opencode_workspace_labels(workspace);
     labels.remove(LABEL_RUNTIME);
     missing_labels.write_inspect(
         "failed-labels-id",
@@ -232,7 +222,7 @@ fn attach_side_drift_errors_are_actionable() {
     );
 
     missing_labels
-        .attach_assert(&target)
+        .attach_assert(target)
         .failure()
         .stderr(predicates::str::contains("missing required session labels"))
         .stderr(predicates::str::contains(
@@ -243,29 +233,17 @@ fn attach_side_drift_errors_are_actionable() {
         ));
 
     let missing_cache = Harness::new();
-    missing_cache.write_ps(&ps_fixture(vec![managed_ps_entry(
+    missing_cache.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "failed-cache-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     missing_cache.write_inspect(
         "failed-cache-id",
-        &managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            true,
-            false,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                "opencode",
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, true, false),
     );
 
     missing_cache
-        .attach_assert(&target)
+        .attach_assert(target)
         .failure()
         .stderr(predicates::str::contains("missing required cache mount"))
         .stderr(predicates::str::contains(
@@ -357,9 +335,8 @@ fn runtime_command_failures_are_actionable() {
 }
 
 fn assert_run_failure_case(case: RunFailureCase<'_>) {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join(case.target_subdir);
-    fs::create_dir(&target).unwrap();
+    let fixture = support::temp_workspace(case.target_subdir);
+    let target = fixture.target.as_path();
 
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(Vec::new()));
@@ -369,7 +346,7 @@ fn assert_run_failure_case(case: RunFailureCase<'_>) {
         case.failure.exit_code,
     );
 
-    let assert = harness.run_assert(&target);
+    let assert = harness.run_assert(target);
     let mut assert = assert.failure();
     for expected in case.expected {
         assert = assert.stderr(predicates::str::contains(expected));

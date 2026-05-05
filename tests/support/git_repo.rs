@@ -11,7 +11,34 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use agentbox::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use tempfile::TempDir;
+
+pub struct TempWorkspace {
+    pub repo: TempDir,
+    pub target: PathBuf,
+    pub workspace: WorkspaceIdentity,
+}
+
+impl TempWorkspace {
+    pub fn new(relative_target: impl AsRef<Path>) -> Self {
+        let repo = temp_git_repo();
+        let target = repo.path().join(relative_target);
+        fs::create_dir_all(&target).unwrap();
+        let workspace = resolve_workspace_identity(&target).unwrap();
+
+        Self {
+            repo,
+            target,
+            workspace,
+        }
+    }
+}
+
+pub fn temp_workspace(relative_target: impl AsRef<Path>) -> TempWorkspace {
+    TempWorkspace::new(relative_target)
+}
 
 pub fn temp_git_repo() -> TempDir {
     let repo = tempfile::tempdir().unwrap();

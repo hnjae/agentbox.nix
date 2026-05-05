@@ -16,21 +16,19 @@ mod support;
 
 use support::{
     CliHarness as Harness, managed_inspect_fixture, managed_ps_entry,
-    opencode_managed_labels as managed_labels, operation_names, ps_fixture,
+    opencode_managed_labels as managed_labels, opencode_workspace_labels, operation_names,
+    ps_fixture, workspace_ps_entry,
 };
 
 #[test]
 fn attach_to_a_running_session_attaches_to_container_stdio() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = Harness::new();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "running-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     harness.write_inspect(
         "running-id",
@@ -40,18 +38,14 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
             true,
             true,
             labels_with_launch_directory(
-                managed_labels(
-                    workspace.canonical_git_root.as_str(),
-                    &workspace.hash12,
-                    &workspace.container_name,
-                ),
+                opencode_workspace_labels(workspace),
                 workspace.canonical_target.as_str(),
             ),
         ),
     );
 
-    let mut command = harness.locked_agentbox_command(&workspace);
-    command.arg("attach").arg(&target);
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("attach").arg(target);
 
     command.assert().success().stderr("");
 
@@ -116,16 +110,13 @@ fn attach_uses_stored_launch_directory_when_requesting_another_subdirectory() {
 
 #[test]
 fn attach_to_a_stopped_session_reports_the_running_only_model() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = Harness::new();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "stopped-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     harness.write_inspect(
         "stopped-id",
@@ -135,18 +126,14 @@ fn attach_to_a_stopped_session_reports_the_running_only_model() {
             false,
             true,
             labels_with_launch_directory(
-                managed_labels(
-                    workspace.canonical_git_root.as_str(),
-                    &workspace.hash12,
-                    &workspace.container_name,
-                ),
+                opencode_workspace_labels(workspace),
                 workspace.canonical_target.as_str(),
             ),
         ),
     );
 
-    let mut command = harness.locked_agentbox_command(&workspace);
-    command.arg("attach").arg(&target);
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("attach").arg(target);
 
     command
         .assert()
@@ -178,16 +165,14 @@ fn labels_with_launch_directory(
 
 #[test]
 fn attach_without_an_existing_session_suggests_run() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(Vec::new()));
 
-    let mut command = harness.locked_agentbox_command(&workspace);
-    command.arg("attach").arg(&target);
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("attach").arg(target);
 
     command
         .assert()

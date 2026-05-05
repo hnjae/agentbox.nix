@@ -9,26 +9,25 @@
 use std::fs;
 
 use agentbox::lock::lock_path_in_state_dir;
-use agentbox::workspace::{WorkspaceIdentity, hash12, resolve_workspace_identity};
+use agentbox::workspace::{WorkspaceIdentity, hash12};
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
     CliHarness as Harness, cached_managed_inspect_fixture as managed_inspect_fixture,
-    managed_ps_entry, opencode_managed_labels as managed_labels, ps_fixture,
+    managed_ps_entry, opencode_managed_labels as managed_labels,
+    opencode_workspace_inspect_fixture, ps_fixture, workspace_ps_entry,
 };
 
 #[test]
 fn no_extra_host_metadata_is_written_beyond_locks() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(Vec::new()));
-    write_workspace_inspect(&harness, &workspace);
+    write_workspace_inspect(&harness, workspace);
     harness
         .agentbox_assert(&["run", "--runtime", "opencode", target.to_str().unwrap()])
         .success();
@@ -72,13 +71,12 @@ fn no_extra_host_metadata_is_written_beyond_locks() {
 
 #[test]
 fn stale_lock_file_is_reused_in_run_and_attach_flows() {
-    let run_repo = support::temp_git_repo();
-    let run_target = run_repo.path().join("run-nested");
-    fs::create_dir(&run_target).unwrap();
-    let run_workspace = resolve_workspace_identity(&run_target).unwrap();
+    let run_fixture = support::temp_workspace("run-nested");
+    let run_target = run_fixture.target.as_path();
+    let run_workspace = &run_fixture.workspace;
     let run_harness = Harness::new();
     run_harness.write_ps(&ps_fixture(Vec::new()));
-    write_workspace_inspect(&run_harness, &run_workspace);
+    write_workspace_inspect(&run_harness, run_workspace);
     let run_lock = lock_path_in_state_dir(run_harness.state_home_path(), &run_workspace.digest64);
     fs::create_dir_all(run_lock.parent().unwrap()).unwrap();
     fs::write(&run_lock, b"stale-lock").unwrap();
@@ -88,32 +86,21 @@ fn stale_lock_file_is_reused_in_run_and_attach_flows() {
         .success();
     assert_eq!(fs::read(&run_lock).unwrap(), b"stale-lock");
 
-    let attach_repo = support::temp_git_repo();
-    let attach_target = attach_repo.path().join("attach-nested");
-    fs::create_dir(&attach_target).unwrap();
-    let attach_workspace = resolve_workspace_identity(&attach_target).unwrap();
+    let attach_fixture = support::temp_workspace("attach-nested");
+    let attach_target = attach_fixture.target.as_path();
+    let attach_workspace = &attach_fixture.workspace;
     let attach_harness = Harness::new();
     let attach_lock =
         lock_path_in_state_dir(attach_harness.state_home_path(), &attach_workspace.digest64);
     fs::create_dir_all(attach_lock.parent().unwrap()).unwrap();
     fs::write(&attach_lock, b"stale-lock").unwrap();
-    attach_harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    attach_harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "attach-id",
-        &attach_workspace.container_name,
-        &attach_workspace.hash12,
+        attach_workspace,
     )]));
     attach_harness.write_inspect(
         "attach-id",
-        &managed_inspect_fixture(
-            &attach_workspace.container_name,
-            attach_workspace.canonical_git_root.as_str(),
-            true,
-            managed_labels(
-                attach_workspace.canonical_git_root.as_str(),
-                &attach_workspace.hash12,
-                &attach_workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(attach_workspace, true, true),
     );
 
     attach_harness
@@ -177,15 +164,6 @@ fn write_live_session(harness: &Harness, name: &str, git_root: &str) {
 fn write_workspace_inspect(harness: &Harness, workspace: &WorkspaceIdentity) {
     harness.write_inspect(
         &workspace.container_name,
-        &managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, true, true),
     );
 }

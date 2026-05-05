@@ -131,6 +131,10 @@ pub fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
     })
 }
 
+pub fn workspace_ps_entry(id: &str, workspace: &WorkspaceIdentity) -> Value {
+    managed_ps_entry(id, &workspace.container_name, &workspace.hash12)
+}
+
 pub fn managed_container_models(
     name: &str,
     root: &Utf8Path,
@@ -279,6 +283,14 @@ pub fn opencode_managed_labels(
     managed_labels(git_root, git_root_hash, "opencode", logical_name)
 }
 
+pub fn opencode_workspace_labels(workspace: &WorkspaceIdentity) -> BTreeMap<String, String> {
+    opencode_managed_labels(
+        workspace.canonical_git_root.as_str(),
+        &workspace.hash12,
+        &workspace.container_name,
+    )
+}
+
 pub fn managed_labels_for_image(
     git_root: &str,
     git_root_hash: &str,
@@ -417,6 +429,20 @@ pub fn running_managed_inspect_fixture(
     labels: BTreeMap<String, String>,
 ) -> String {
     managed_inspect_fixture(container_name, git_root, true, include_cache_mount, labels)
+}
+
+pub fn opencode_workspace_inspect_fixture(
+    workspace: &WorkspaceIdentity,
+    running: bool,
+    include_cache_mount: bool,
+) -> String {
+    managed_inspect_fixture(
+        &workspace.container_name,
+        workspace.canonical_git_root.as_str(),
+        running,
+        include_cache_mount,
+        opencode_workspace_labels(workspace),
+    )
 }
 
 pub fn running_workspace_inspect_fixture(

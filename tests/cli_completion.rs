@@ -13,40 +13,27 @@ use assert_cmd::Command as AssertCommand;
 use agentbox::cli::CompletionShell;
 use agentbox::metadata::LABEL_ATTACH_SCHEME;
 use agentbox::runtime::RuntimeKind;
-use agentbox::workspace::resolve_workspace_identity;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
-    CliHarness as LiveHarness, managed_inspect_fixture, managed_labels, managed_ps_entry,
-    ps_fixture,
+    CliHarness as LiveHarness, managed_inspect_fixture, opencode_workspace_inspect_fixture,
+    opencode_workspace_labels, ps_fixture, workspace_ps_entry,
 };
 
 #[test]
 fn helper_returns_live_roots_with_runtime_and_status_metadata() {
-    let repo = support::temp_git_repo();
-    let workspace = resolve_workspace_identity(repo.path()).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let workspace = &fixture.workspace;
     let harness = LiveHarness::new();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "running-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     harness.write_inspect(
         "running-id",
-        &managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            true,
-            true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                "opencode",
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, true, true),
     );
 
     let output = harness
@@ -63,45 +50,21 @@ fn helper_returns_live_roots_with_runtime_and_status_metadata() {
 
 #[test]
 fn helper_filters_attach_and_stop_candidates_by_command() {
-    let running_repo = support::temp_git_repo();
-    let failed_repo = support::temp_git_repo();
-    let running_workspace = resolve_workspace_identity(running_repo.path()).unwrap();
-    let failed_workspace = resolve_workspace_identity(failed_repo.path()).unwrap();
+    let running_fixture = support::temp_workspace("running");
+    let failed_fixture = support::temp_workspace("failed");
+    let running_workspace = &running_fixture.workspace;
+    let failed_workspace = &failed_fixture.workspace;
     let harness = LiveHarness::new();
 
     harness.write_ps(&ps_fixture(vec![
-        managed_ps_entry(
-            "running-id",
-            &running_workspace.container_name,
-            &running_workspace.hash12,
-        ),
-        managed_ps_entry(
-            "failed-id",
-            &failed_workspace.container_name,
-            &failed_workspace.hash12,
-        ),
+        workspace_ps_entry("running-id", running_workspace),
+        workspace_ps_entry("failed-id", failed_workspace),
     ]));
     harness.write_inspect(
         "running-id",
-        &managed_inspect_fixture(
-            &running_workspace.container_name,
-            running_workspace.canonical_git_root.as_str(),
-            true,
-            true,
-            managed_labels(
-                running_workspace.canonical_git_root.as_str(),
-                &running_workspace.hash12,
-                "opencode",
-                &running_workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(running_workspace, true, true),
     );
-    let mut failed_labels = managed_labels(
-        failed_workspace.canonical_git_root.as_str(),
-        &failed_workspace.hash12,
-        "opencode",
-        &failed_workspace.container_name,
-    );
+    let mut failed_labels = opencode_workspace_labels(failed_workspace);
     failed_labels.remove(LABEL_ATTACH_SCHEME);
     harness.write_inspect(
         "failed-id",

@@ -6,50 +6,37 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fs;
 use std::path::Path;
 
 use agentbox::metadata::LABEL_RUNTIME;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
-use agentbox::workspace::{hash12, resolve_workspace_identity};
+use agentbox::workspace::hash12;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
-    CliHarness as Harness, cached_managed_inspect_fixture, managed_labels, managed_ps_entry,
-    operation_names, ps_fixture, running_managed_inspect_fixture as managed_inspect_fixture,
+    CliHarness as Harness, managed_labels, managed_ps_entry, opencode_workspace_inspect_fixture,
+    opencode_workspace_labels, operation_names, ps_fixture,
+    running_managed_inspect_fixture as managed_inspect_fixture, workspace_ps_entry,
 };
 
 #[test]
 fn existing_managed_session_suggests_attach_before_image_work() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "existing-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     harness.write_inspect(
         "existing-id",
-        &managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                "opencode",
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, true, true),
     );
 
-    let assert = run_command(&harness, &target, &[]);
+    let assert = run_command(&harness, target, &[]);
 
     assert
         .failure()
@@ -72,11 +59,9 @@ fn existing_managed_session_suggests_attach_before_image_work() {
 
 #[test]
 fn duplicate_sessions_fail_closed() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
     harness.write_ps(&ps_fixture(vec![
         managed_ps_entry("dup-a-id", "dup-a", &workspace.hash12),
@@ -111,7 +96,7 @@ fn duplicate_sessions_fail_closed() {
         ),
     );
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "duplicate managed sessions exist",
@@ -126,16 +111,13 @@ fn duplicate_sessions_fail_closed() {
 
 #[test]
 fn unsupported_runtime_label_requires_cleanup_or_recreation() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "mismatch-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     harness.write_inspect(
         "mismatch-id",
@@ -152,7 +134,7 @@ fn unsupported_runtime_label_requires_cleanup_or_recreation() {
         ),
     );
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "unsupported or malformed `io.agentbox.runtime` label",
@@ -164,12 +146,10 @@ fn unsupported_runtime_label_requires_cleanup_or_recreation() {
 
 #[test]
 fn hash_collision_fails_closed() {
-    let target_repo = support::temp_git_repo();
+    let fixture = support::temp_workspace("nested");
     let other_repo = support::temp_git_repo();
-    let target = target_repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let other_root = other_repo.path().canonicalize().unwrap();
     let other_root = other_root.to_str().unwrap();
     let harness = install_harness();
@@ -188,7 +168,7 @@ fn hash_collision_fails_closed() {
         ),
     );
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains("managed identity collision"))
         .stderr(predicates::str::contains(
@@ -202,12 +182,10 @@ fn hash_collision_fails_closed() {
 
 #[test]
 fn create_name_conflict_reports_the_conflicting_root() {
-    let repo = support::temp_git_repo();
+    let fixture = support::temp_workspace("nested");
     let other_repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let other_root = other_repo.path().canonicalize().unwrap();
     let other_root = other_root.to_str().unwrap();
     let harness = install_harness();
@@ -228,7 +206,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
         ),
     );
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(format!(
             "container name `{}` is already used by managed session",
@@ -245,17 +223,15 @@ fn create_name_conflict_reports_the_conflicting_root() {
 
 #[test]
 fn run_start_failure_includes_container_logs_when_available() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
     harness.write_ps(&ps_fixture(Vec::new()));
     harness.fail_operation("run", "container failed to start", 125);
     harness.write_logs(&workspace.container_name, "runtime boot failed\n");
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "failed to run the runtime server command",
@@ -275,30 +251,18 @@ fn run_start_failure_includes_container_logs_when_available() {
 
 #[test]
 fn run_readiness_failure_includes_container_logs_when_available() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
     harness.write_ps(&ps_fixture(Vec::new()));
     harness.write_inspect(
         &workspace.container_name,
-        &cached_managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            false,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                "opencode",
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, false, true),
     );
     harness.write_logs(&workspace.container_name, "runtime crashed before listen\n");
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "exited before the `opencode` runtime server became reachable",
@@ -318,23 +282,15 @@ fn run_readiness_failure_includes_container_logs_when_available() {
 
 #[test]
 fn failed_session_with_missing_labels_requires_cleanup_or_recreation() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "failed-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
-    let mut labels = managed_labels(
-        workspace.canonical_git_root.as_str(),
-        &workspace.hash12,
-        "opencode",
-        &workspace.container_name,
-    );
+    let mut labels = opencode_workspace_labels(workspace);
     labels.remove(LABEL_RUNTIME);
     harness.write_inspect(
         "failed-id",
@@ -351,19 +307,14 @@ fn failed_session_with_missing_labels_requires_cleanup_or_recreation() {
             &workspace.container_name,
             workspace.canonical_git_root.as_str(),
             true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                "opencode",
-                &workspace.container_name,
-            )
-            .into_iter()
-            .filter(|(key, _)| key != LABEL_RUNTIME)
-            .collect(),
+            opencode_workspace_labels(workspace)
+                .into_iter()
+                .filter(|(key, _)| key != LABEL_RUNTIME)
+                .collect(),
         ),
     );
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains("missing required session labels"))
         .stderr(predicates::str::contains(
@@ -376,47 +327,24 @@ fn failed_session_with_missing_labels_requires_cleanup_or_recreation() {
 
 #[test]
 fn failed_session_with_missing_cache_mount_requires_recreation() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "missing-cache-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     harness.write_inspect(
         "missing-cache-id",
-        &managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            false,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                "opencode",
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, true, false),
     );
     harness.write_inspect(
         &workspace.container_name,
-        &managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            false,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                "opencode",
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, true, false),
     );
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains("missing required cache mount"))
         .stderr(predicates::str::contains(

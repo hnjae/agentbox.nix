@@ -6,47 +6,35 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fs;
 use std::path::Path;
 
-use agentbox::workspace::{hash12, resolve_workspace_identity};
+use agentbox::workspace::hash12;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
     CliHarness as Harness, cached_managed_inspect_fixture as managed_inspect_fixture,
-    managed_ps_entry, opencode_managed_labels as managed_labels, operation_names, ps_fixture,
+    managed_ps_entry, opencode_managed_labels as managed_labels,
+    opencode_workspace_inspect_fixture, operation_names, ps_fixture, workspace_ps_entry,
 };
 
 #[test]
 fn stop_stops_the_container_and_leaves_the_volume_and_workspace_untouched() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "session-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     harness.write_inspect(
         "session-id",
-        &managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, true, true),
     );
 
-    run_command(&harness, &target, &[]).success();
+    run_command(&harness, target, &[]).success();
 
     let log = harness.read_log();
     assert_eq!(
@@ -67,33 +55,21 @@ fn stop_stops_the_container_and_leaves_the_volume_and_workspace_untouched() {
 
 #[test]
 fn stop_is_idempotent_when_the_container_disappears_during_cleanup() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
-    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "session-id",
-        &workspace.container_name,
-        &workspace.hash12,
+        workspace,
     )]));
     harness.write_inspect(
         "session-id",
-        &managed_inspect_fixture(
-            &workspace.container_name,
-            workspace.canonical_git_root.as_str(),
-            true,
-            managed_labels(
-                workspace.canonical_git_root.as_str(),
-                &workspace.hash12,
-                &workspace.container_name,
-            ),
-        ),
+        &opencode_workspace_inspect_fixture(workspace, true, true),
     );
     harness.mark_missing_during_cleanup();
 
-    run_command(&harness, &target, &[]).success();
+    run_command(&harness, target, &[]).success();
 
     let log = harness.read_log();
     assert_eq!(
@@ -105,11 +81,9 @@ fn stop_is_idempotent_when_the_container_disappears_during_cleanup() {
 
 #[test]
 fn stop_force_removes_all_exact_duplicate_root_matches() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
     harness.write_ps(&ps_fixture(vec![
         managed_ps_entry("dup-a-id", "dup-a", &workspace.hash12),
@@ -142,7 +116,7 @@ fn stop_force_removes_all_exact_duplicate_root_matches() {
         ),
     );
 
-    run_command(&harness, &target, &["--force"]).success();
+    run_command(&harness, target, &["--force"]).success();
 
     let log = harness.read_log();
     assert_eq!(
@@ -161,11 +135,9 @@ fn stop_force_removes_all_exact_duplicate_root_matches() {
 
 #[test]
 fn stop_duplicate_root_requires_force_before_cleanup() {
-    let repo = support::temp_git_repo();
-    let target = repo.path().join("nested");
-    fs::create_dir(&target).unwrap();
-
-    let workspace = resolve_workspace_identity(&target).unwrap();
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
     let harness = install_harness();
     harness.write_ps(&ps_fixture(vec![
         managed_ps_entry("dup-a-id", "dup-a", &workspace.hash12),
@@ -198,7 +170,7 @@ fn stop_duplicate_root_requires_force_before_cleanup() {
         ),
     );
 
-    run_command(&harness, &target, &[])
+    run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "duplicate managed sessions exist",
