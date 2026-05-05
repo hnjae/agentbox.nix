@@ -1,7 +1,9 @@
 use crate::Result;
 use crate::runtime::RuntimeKind;
-use crate::session::{SessionRecord, duplicate_sessions_error};
 use crate::workspace::WorkspaceIdentity;
+
+use super::conflict::duplicate_sessions_error;
+use super::record::SessionRecord;
 
 pub(crate) fn select_single_session<'a>(
     sessions: &'a [SessionRecord],

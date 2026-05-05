@@ -6,23 +6,25 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+mod attachable;
 mod conflict;
 mod discovery;
 mod endpoint;
 mod labels;
 mod mounts;
 mod record;
+mod selection;
 mod status;
 
-pub(crate) use conflict::{
-    classify_create_error_or_else, duplicate_sessions_error, existing_session_error,
-};
+pub(crate) use attachable::prepare_attach_session;
+pub(crate) use conflict::{classify_create_error_or_else, existing_session_error};
 pub use discovery::{
     discover_managed_sessions, discover_managed_sessions_from_ps, discover_sessions_for_git_root,
     discover_sessions_for_git_root_from_ps, group_sessions_by_git_root,
 };
 pub use endpoint::discover_attach_endpoint_from_inspect;
 pub use record::{SessionGroup, SessionMetadata, SessionRecord};
+pub(crate) use selection::{run_command_hint, select_single_session};
 
 pub use status::{
     SessionFailure, SessionStatus, failed_session_requires_action_error,

@@ -10,14 +10,15 @@ use crate::cli::RunArgs;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites_for_runtime;
 use crate::runtime::RuntimeCreateSpec;
-use crate::session::{classify_create_error_or_else, existing_session_error};
+use crate::session::{
+    classify_create_error_or_else, existing_session_error, select_single_session,
+};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::runtime::ensure_default_runtime_image;
 use super::runtime_command::server_runtime_command;
 use super::server_readiness::wait_for_server_endpoint;
-use super::session_selection::select_single_session;
 use super::workspace_flow::with_locked_workspace;
 
 const RUN_FAILURE_LOG_TAIL_LINES: usize = 80;
