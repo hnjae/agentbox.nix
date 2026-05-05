@@ -184,22 +184,22 @@ fn opencode_create_spec_matches_mvp_contract() {
 #[test]
 fn opencode_preflight_rejects_unusable_state_directories() {
     let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
-    snapshot.host.opencode.config.exists = false;
+    support::host_state_mut(&mut snapshot, OPENCODE_CONFIG_DESTINATION).exists = false;
     assert_opencode_preflight_error(snapshot, "Missing host OpenCode configuration directory");
 
     let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
-    snapshot.host.opencode.data.is_directory = false;
+    support::host_state_mut(&mut snapshot, OPENCODE_DATA_DESTINATION).is_directory = false;
     assert_opencode_preflight_error(snapshot, "Host OpenCode data path is not a directory");
 
     let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
-    snapshot.host.opencode.config.readable = false;
+    support::host_state_mut(&mut snapshot, OPENCODE_CONFIG_DESTINATION).readable = false;
     assert_opencode_preflight_error(
         snapshot,
         "Host OpenCode configuration directory is not readable and writable",
     );
 
     let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
-    snapshot.host.opencode.data.writable = false;
+    support::host_state_mut(&mut snapshot, OPENCODE_DATA_DESTINATION).writable = false;
     assert_opencode_preflight_error(
         snapshot,
         "Host OpenCode data directory is not readable and writable",

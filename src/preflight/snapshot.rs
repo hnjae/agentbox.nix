@@ -6,9 +6,12 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
 use std::fs;
 
 use camino::{Utf8Path, Utf8PathBuf};
+
+use crate::runtime::{RuntimeHostStateSource, all_host_state_mounts};
 
 use super::path::{
     envrc_applies_within_git_root, path_reaches_mount_root, resolve_path, symlink_or_path_exists,
@@ -28,20 +31,13 @@ pub struct HostPreflightSnapshot {
     pub has_git: bool,
     pub has_podman: bool,
     pub direnv: DirenvPreflightSnapshot,
-    pub codex: HostDirectoryPreflightSnapshot,
-    pub opencode: OpenCodePreflightSnapshot,
+    pub runtime_state: BTreeMap<String, HostDirectoryPreflightSnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirenvPreflightSnapshot {
     pub required: bool,
     pub available: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpenCodePreflightSnapshot {
-    pub config: HostDirectoryPreflightSnapshot,
-    pub data: HostDirectoryPreflightSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,8 +85,7 @@ impl HostPreflightSnapshot {
             has_git: test_fixtures_enabled() || command_exists("git"),
             has_podman: command_exists("podman"),
             direnv: DirenvPreflightSnapshot::detect(target_directory, git_root),
-            codex: HostDirectoryPreflightSnapshot::detect(codex_config_source()),
-            opencode: OpenCodePreflightSnapshot::detect(),
+            runtime_state: detect_runtime_state(),
         }
     }
 }
@@ -104,15 +99,6 @@ impl DirenvPreflightSnapshot {
                     envrc_applies_within_git_root(target_directory, git_root)
                 }),
             available: command_exists("direnv"),
-        }
-    }
-}
-
-impl OpenCodePreflightSnapshot {
-    fn detect() -> Self {
-        Self {
-            config: HostDirectoryPreflightSnapshot::detect(opencode_config_source()),
-            data: HostDirectoryPreflightSnapshot::detect(opencode_data_source()),
         }
     }
 }
@@ -181,28 +167,37 @@ impl NixCustomConfPreflightSnapshot {
     }
 }
 
-fn codex_config_source() -> Option<Utf8PathBuf> {
-    path_from_environment("HOME").and_then(|home| utf8_join(home, &[".codex"]))
+fn detect_runtime_state() -> BTreeMap<String, HostDirectoryPreflightSnapshot> {
+    all_host_state_mounts()
+        .map(|mount| {
+            (
+                mount.destination.to_string(),
+                HostDirectoryPreflightSnapshot::detect(host_state_source(mount.source)),
+            )
+        })
+        .collect()
 }
 
-fn opencode_config_source() -> Option<Utf8PathBuf> {
-    xdg_or_home_relative_source("XDG_CONFIG_HOME", &[".config", "opencode"])
-}
+fn host_state_source(source: RuntimeHostStateSource) -> Option<Utf8PathBuf> {
+    match source {
+        RuntimeHostStateSource::HomeOnly {
+            home_relative_components,
+        } => {
+            path_from_environment("HOME").and_then(|home| utf8_join(home, home_relative_components))
+        }
+        RuntimeHostStateSource::XdgOrHome {
+            xdg_variable,
+            xdg_relative_components,
+            home_relative_components,
+        } => {
+            if let Some(base) = path_from_environment(xdg_variable) {
+                return utf8_join(base, xdg_relative_components);
+            }
 
-fn opencode_data_source() -> Option<Utf8PathBuf> {
-    xdg_or_home_relative_source("XDG_DATA_HOME", &[".local", "share", "opencode"])
-}
-
-fn xdg_or_home_relative_source(
-    xdg_variable: &str,
-    home_relative_components: &[&str],
-) -> Option<Utf8PathBuf> {
-    if let Some(base) = path_from_environment(xdg_variable) {
-        return utf8_join(base, &["opencode"]);
+            let home = path_from_environment("HOME")?;
+            utf8_join(home, home_relative_components)
+        }
     }
-
-    let home = path_from_environment("HOME")?;
-    utf8_join(home, home_relative_components)
 }
 
 fn path_from_environment(variable: &str) -> Option<std::path::PathBuf> {

@@ -64,16 +64,22 @@ const CODEX_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[];
 
 const OPENCODE_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[
     RuntimeHostStateMount {
-        source: RuntimeHostStateSource::OpenCodeConfig,
-        source_lookup: RuntimeHostStateSourceLookup::XdgOrHome,
+        source: RuntimeHostStateSource::XdgOrHome {
+            xdg_variable: "XDG_CONFIG_HOME",
+            xdg_relative_components: &["opencode"],
+            home_relative_components: &[".config", "opencode"],
+        },
         product_name: "OpenCode",
         description: "configuration",
         source_expression: "`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`",
         destination: OPENCODE_CONFIG_DESTINATION,
     },
     RuntimeHostStateMount {
-        source: RuntimeHostStateSource::OpenCodeData,
-        source_lookup: RuntimeHostStateSourceLookup::XdgOrHome,
+        source: RuntimeHostStateSource::XdgOrHome {
+            xdg_variable: "XDG_DATA_HOME",
+            xdg_relative_components: &["opencode"],
+            home_relative_components: &[".local", "share", "opencode"],
+        },
         product_name: "OpenCode",
         description: "data",
         source_expression: "`${XDG_DATA_HOME:-$HOME/.local/share}/opencode`",
@@ -81,8 +87,9 @@ const OPENCODE_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[
     },
 ];
 const CODEX_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[RuntimeHostStateMount {
-    source: RuntimeHostStateSource::CodexConfig,
-    source_lookup: RuntimeHostStateSourceLookup::HomeOnly,
+    source: RuntimeHostStateSource::HomeOnly {
+        home_relative_components: &[".codex"],
+    },
     product_name: "Codex",
     description: "configuration",
     source_expression: "`${HOME}/.codex`",
@@ -175,7 +182,6 @@ pub(super) struct RuntimeDefaultEnv {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RuntimeHostStateMount {
     pub(crate) source: RuntimeHostStateSource,
-    pub(crate) source_lookup: RuntimeHostStateSourceLookup,
     pub(crate) product_name: &'static str,
     pub(crate) description: &'static str,
     pub(crate) source_expression: &'static str,
@@ -184,9 +190,23 @@ pub(crate) struct RuntimeHostStateMount {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RuntimeHostStateSource {
-    CodexConfig,
-    OpenCodeConfig,
-    OpenCodeData,
+    HomeOnly {
+        home_relative_components: &'static [&'static str],
+    },
+    XdgOrHome {
+        xdg_variable: &'static str,
+        xdg_relative_components: &'static [&'static str],
+        home_relative_components: &'static [&'static str],
+    },
+}
+
+impl RuntimeHostStateSource {
+    pub(crate) fn lookup(self) -> RuntimeHostStateSourceLookup {
+        match self {
+            Self::HomeOnly { .. } => RuntimeHostStateSourceLookup::HomeOnly,
+            Self::XdgOrHome { .. } => RuntimeHostStateSourceLookup::XdgOrHome,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,6 +220,12 @@ pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
         RuntimeKind::Opencode => &OPENCODE_PROFILE,
         RuntimeKind::Codex => &CODEX_PROFILE,
     }
+}
+
+pub(crate) fn all_host_state_mounts() -> impl Iterator<Item = &'static RuntimeHostStateMount> {
+    RUNTIME_PROFILES
+        .iter()
+        .flat_map(|profile| profile.host_state_mounts.iter())
 }
 
 pub(super) fn runtime_kind_from_name(value: &str) -> Option<RuntimeKind> {
@@ -242,6 +268,8 @@ fn runtime_kinds() -> &'static [RuntimeKind] {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     #[test]
@@ -257,5 +285,18 @@ mod tests {
         value_enum_kinds.sort_by_key(|kind| kind.as_str());
 
         assert_eq!(profile_kinds, value_enum_kinds);
+    }
+
+    #[test]
+    fn runtime_host_state_mount_destinations_are_unique() {
+        let mut destinations = BTreeSet::new();
+
+        for mount in all_host_state_mounts() {
+            assert!(
+                destinations.insert(mount.destination),
+                "duplicate runtime host-state mount destination `{}`",
+                mount.destination,
+            );
+        }
     }
 }

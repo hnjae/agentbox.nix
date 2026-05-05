@@ -6,10 +6,13 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
+
 use agentbox::preflight::{
-    DirenvPreflightSnapshot, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
-    NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
-    OpenCodePreflightSnapshot, PreflightSnapshot,
+    CODEX_CONFIG_DESTINATION, DirenvPreflightSnapshot, HostDirectoryPreflightSnapshot,
+    HostPreflightSnapshot, NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot,
+    NixPreflightSnapshot, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
+    PreflightSnapshot,
 };
 
 pub fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSnapshot {
@@ -26,6 +29,17 @@ pub fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
             needs_static_mount: true,
         };
     })
+}
+
+pub fn host_state_mut<'a>(
+    snapshot: &'a mut PreflightSnapshot,
+    destination: &str,
+) -> &'a mut HostDirectoryPreflightSnapshot {
+    snapshot
+        .host
+        .runtime_state
+        .get_mut(destination)
+        .unwrap_or_else(|| panic!("missing host-state fixture for `{destination}`"))
 }
 
 fn host_directory(path: &str) -> HostDirectoryPreflightSnapshot {
@@ -47,11 +61,20 @@ fn passing_preflight_snapshot() -> PreflightSnapshot {
                 required: false,
                 available: true,
             },
-            codex: host_directory("/home/example/.codex"),
-            opencode: OpenCodePreflightSnapshot {
-                config: host_directory("/home/example/.config/opencode"),
-                data: host_directory("/home/example/.local/share/opencode"),
-            },
+            runtime_state: BTreeMap::from([
+                (
+                    CODEX_CONFIG_DESTINATION.to_string(),
+                    host_directory("/home/example/.codex"),
+                ),
+                (
+                    OPENCODE_CONFIG_DESTINATION.to_string(),
+                    host_directory("/home/example/.config/opencode"),
+                ),
+                (
+                    OPENCODE_DATA_DESTINATION.to_string(),
+                    host_directory("/home/example/.local/share/opencode"),
+                ),
+            ]),
         },
         nix: NixPreflightSnapshot {
             has_daemon_socket: true,

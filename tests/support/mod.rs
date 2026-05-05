@@ -27,4 +27,6 @@ pub use podman_fixtures::{
     podman_ps_fixture, ps_fixture, running_managed_inspect_fixture,
     running_workspace_inspect_fixture,
 };
-pub use preflight_fixtures::{passing_preflight_snapshot_with_static_nix_mount, snapshot_with};
+pub use preflight_fixtures::{
+    host_state_mut, passing_preflight_snapshot_with_static_nix_mount, snapshot_with,
+};

@@ -9,8 +9,7 @@
 use camino::Utf8Path;
 
 use crate::runtime::{
-    RuntimeHostStateMount, RuntimeHostStateSource, RuntimeHostStateSourceLookup, RuntimeKind,
-    RuntimeMount,
+    RuntimeHostStateMount, RuntimeHostStateSourceLookup, RuntimeKind, RuntimeMount,
 };
 use crate::{Error, Result};
 
@@ -158,10 +157,11 @@ impl PreflightCheck<'_> {
             .host_state_mounts()
             .iter()
             .map(|spec| {
+                let state = self.host_state_snapshot(spec)?;
                 HostStateMountRequirement {
                     runtime: self.runtime,
                     spec,
-                    state: self.host_state_snapshot(spec.source),
+                    state,
                 }
                 .validate()
             })
@@ -170,13 +170,18 @@ impl PreflightCheck<'_> {
 
     fn host_state_snapshot(
         &self,
-        source: RuntimeHostStateSource,
-    ) -> &HostDirectoryPreflightSnapshot {
-        match source {
-            RuntimeHostStateSource::CodexConfig => &self.snapshot.host.codex,
-            RuntimeHostStateSource::OpenCodeConfig => &self.snapshot.host.opencode.config,
-            RuntimeHostStateSource::OpenCodeData => &self.snapshot.host.opencode.data,
-        }
+        spec: &RuntimeHostStateMount,
+    ) -> Result<&HostDirectoryPreflightSnapshot> {
+        self.snapshot
+            .host
+            .runtime_state
+            .get(spec.destination)
+            .ok_or_else(|| {
+                Error::msg(format!(
+                    "missing preflight snapshot for runtime host-state mount `{}`",
+                    spec.destination
+                ))
+            })
     }
 }
 
@@ -224,7 +229,7 @@ impl<'a> HostStateMountRequirement<'a> {
     }
 
     fn missing_source_error(&self) -> Error {
-        match self.spec.source_lookup {
+        match self.spec.source.lookup() {
             RuntimeHostStateSourceLookup::HomeOnly => Error::msg(format!(
                 "`HOME` is not set; cannot locate host {} {} directory {} for `run --runtime {}`",
                 self.spec.product_name,

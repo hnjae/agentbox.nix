@@ -9,7 +9,10 @@
 use std::fs;
 
 use agentbox::metadata::LABEL_RUNTIME;
-use agentbox::preflight::check_host_prerequisites_with_snapshot;
+use agentbox::preflight::{
+    CODEX_CONFIG_DESTINATION, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
+    check_host_prerequisites_with_snapshot,
+};
 use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::resolve_workspace_identity;
@@ -154,7 +157,9 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.host.codex.exists = false),
+        &snapshot_with(|snapshot| {
+            support::host_state_mut(snapshot, CODEX_CONFIG_DESTINATION).exists = false;
+        }),
         Some(target),
         RuntimeKind::Codex,
     )
@@ -167,7 +172,9 @@ fn host_preflight_errors_are_actionable() {
     assert!(error.to_string().contains("Run `codex` on the host first"));
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.host.opencode.config.exists = false),
+        &snapshot_with(|snapshot| {
+            support::host_state_mut(snapshot, OPENCODE_CONFIG_DESTINATION).exists = false;
+        }),
         Some(target),
         RuntimeKind::Opencode,
     )
@@ -179,7 +186,9 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.host.opencode.data.writable = false),
+        &snapshot_with(|snapshot| {
+            support::host_state_mut(snapshot, OPENCODE_DATA_DESTINATION).writable = false;
+        }),
         Some(target),
         RuntimeKind::Opencode,
     )

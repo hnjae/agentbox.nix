@@ -19,7 +19,7 @@ pub use check::{
 pub use snapshot::{
     DirenvPreflightSnapshot, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
     NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
-    OpenCodePreflightSnapshot, PreflightSnapshot,
+    PreflightSnapshot,
 };
 
 pub const NIX_DAEMON_SOCKET_PATH: &str = "/nix/var/nix/daemon-socket/socket";
