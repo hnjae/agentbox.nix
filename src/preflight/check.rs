@@ -28,7 +28,7 @@ pub fn check_host_prerequisites_for_runtime(
     git_root: Option<&Utf8Path>,
 ) -> Result<PreflightReport> {
     check_host_prerequisites_with_snapshot(
-        &PreflightSnapshot::detect(target_directory, git_root),
+        &PreflightSnapshot::detect(target_directory, git_root, runtime),
         target_directory,
         runtime,
     )

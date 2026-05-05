@@ -14,15 +14,19 @@ use agentbox::preflight::{
     NixPreflightSnapshot, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
     PreflightSnapshot,
 };
+use agentbox::runtime::RuntimeKind;
 
-pub fn snapshot_with(configure: impl FnOnce(&mut PreflightSnapshot)) -> PreflightSnapshot {
-    let mut snapshot = passing_preflight_snapshot();
+pub fn snapshot_with(
+    runtime: RuntimeKind,
+    configure: impl FnOnce(&mut PreflightSnapshot),
+) -> PreflightSnapshot {
+    let mut snapshot = passing_preflight_snapshot(runtime);
     configure(&mut snapshot);
     snapshot
 }
 
-pub fn passing_preflight_snapshot_with_static_nix_mount() -> PreflightSnapshot {
-    snapshot_with(|snapshot| {
+pub fn passing_preflight_snapshot_with_static_nix_mount(runtime: RuntimeKind) -> PreflightSnapshot {
+    snapshot_with(runtime, |snapshot| {
         snapshot.nix.config.custom_conf = NixCustomConfPreflightSnapshot {
             present: true,
             has_readable_target: true,
@@ -52,7 +56,7 @@ fn host_directory(path: &str) -> HostDirectoryPreflightSnapshot {
     }
 }
 
-fn passing_preflight_snapshot() -> PreflightSnapshot {
+fn passing_preflight_snapshot(runtime: RuntimeKind) -> PreflightSnapshot {
     PreflightSnapshot {
         host: HostPreflightSnapshot {
             has_git: true,
@@ -61,20 +65,7 @@ fn passing_preflight_snapshot() -> PreflightSnapshot {
                 required: false,
                 available: true,
             },
-            runtime_state: BTreeMap::from([
-                (
-                    CODEX_CONFIG_DESTINATION.to_string(),
-                    host_directory("/home/example/.codex"),
-                ),
-                (
-                    OPENCODE_CONFIG_DESTINATION.to_string(),
-                    host_directory("/home/example/.config/opencode"),
-                ),
-                (
-                    OPENCODE_DATA_DESTINATION.to_string(),
-                    host_directory("/home/example/.local/share/opencode"),
-                ),
-            ]),
+            runtime_state: runtime_state(runtime),
         },
         nix: NixPreflightSnapshot {
             has_daemon_socket: true,
@@ -89,5 +80,24 @@ fn passing_preflight_snapshot() -> PreflightSnapshot {
                 },
             },
         },
+    }
+}
+
+fn runtime_state(runtime: RuntimeKind) -> BTreeMap<String, HostDirectoryPreflightSnapshot> {
+    match runtime {
+        RuntimeKind::Opencode => BTreeMap::from([
+            (
+                OPENCODE_CONFIG_DESTINATION.to_string(),
+                host_directory("/home/example/.config/opencode"),
+            ),
+            (
+                OPENCODE_DATA_DESTINATION.to_string(),
+                host_directory("/home/example/.local/share/opencode"),
+            ),
+        ]),
+        RuntimeKind::Codex => BTreeMap::from([(
+            CODEX_CONFIG_DESTINATION.to_string(),
+            host_directory("/home/example/.codex"),
+        )]),
     }
 }

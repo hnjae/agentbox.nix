@@ -58,7 +58,9 @@ fn host_preflight_errors_are_actionable() {
     let target = Utf8Path::new("/workspace/demo/nested");
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.host.has_git = false),
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
+            snapshot.host.has_git = false
+        }),
         Some(target),
         RuntimeKind::Opencode,
     )
@@ -70,7 +72,9 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.host.has_podman = false),
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
+            snapshot.host.has_podman = false
+        }),
         Some(target),
         RuntimeKind::Opencode,
     )
@@ -82,7 +86,7 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| {
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.host.direnv.required = true;
             snapshot.host.direnv.available = false;
         }),
@@ -102,7 +106,9 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.nix.has_daemon_socket = false),
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
+            snapshot.nix.has_daemon_socket = false
+        }),
         Some(target),
         RuntimeKind::Opencode,
     )
@@ -112,7 +118,9 @@ fn host_preflight_errors_are_actionable() {
     ));
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.nix.client_source = None),
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
+            snapshot.nix.client_source = None
+        }),
         Some(target),
         RuntimeKind::Opencode,
     )
@@ -120,7 +128,9 @@ fn host_preflight_errors_are_actionable() {
     assert!(error.to_string().contains("`nix` was not found on PATH"));
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.nix.config.has_etc_nix_mount = false),
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
+            snapshot.nix.config.has_etc_nix_mount = false
+        }),
         Some(target),
         RuntimeKind::Opencode,
     )
@@ -128,7 +138,9 @@ fn host_preflight_errors_are_actionable() {
     assert!(error.to_string().contains("Missing /etc/nix host mount"));
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| snapshot.nix.config.has_readable_nix_conf = false),
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
+            snapshot.nix.config.has_readable_nix_conf = false
+        }),
         Some(target),
         RuntimeKind::Opencode,
     )
@@ -140,7 +152,7 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| {
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.nix.config.custom_conf.present = true;
             snapshot.nix.config.custom_conf.has_readable_target = false;
         }),
@@ -155,7 +167,7 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| {
+        &snapshot_with(RuntimeKind::Codex, |snapshot| {
             support::host_state_mut(snapshot, CODEX_CONFIG_DESTINATION).exists = false;
         }),
         Some(target),
@@ -170,7 +182,7 @@ fn host_preflight_errors_are_actionable() {
     assert!(error.to_string().contains("Run `codex` on the host first"));
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| {
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             support::host_state_mut(snapshot, OPENCODE_CONFIG_DESTINATION).exists = false;
         }),
         Some(target),
@@ -184,7 +196,7 @@ fn host_preflight_errors_are_actionable() {
     );
 
     let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(|snapshot| {
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             support::host_state_mut(snapshot, OPENCODE_DATA_DESTINATION).writable = false;
         }),
         Some(target),

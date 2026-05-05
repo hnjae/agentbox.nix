@@ -250,7 +250,8 @@ pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
         .unwrap_or_else(|| panic!("missing runtime profile for `{kind:?}`"))
 }
 
-pub(crate) fn all_host_state_mounts() -> impl Iterator<Item = &'static RuntimeHostStateMount> {
+#[cfg(test)]
+fn all_host_state_mounts() -> impl Iterator<Item = &'static RuntimeHostStateMount> {
     RUNTIME_PROFILES
         .iter()
         .flat_map(|profile| profile.host_state_mounts.iter())

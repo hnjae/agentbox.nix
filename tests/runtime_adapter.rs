@@ -36,7 +36,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     let repo = support::temp_git_repo();
     let workspace = resolve_workspace_identity(repo.path()).unwrap();
     let preflight = check_host_prerequisites_with_snapshot(
-        &support::passing_preflight_snapshot_with_static_nix_mount(),
+        &support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode),
         Some(Utf8Path::from_path(repo.path()).unwrap()),
         RuntimeKind::Opencode,
     )
@@ -184,22 +184,26 @@ fn opencode_create_spec_matches_mvp_contract() {
 
 #[test]
 fn opencode_preflight_rejects_unusable_state_directories() {
-    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot =
+        support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode);
     support::host_state_mut(&mut snapshot, OPENCODE_CONFIG_DESTINATION).exists = false;
     assert_opencode_preflight_error(snapshot, "Missing host OpenCode configuration directory");
 
-    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot =
+        support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode);
     support::host_state_mut(&mut snapshot, OPENCODE_DATA_DESTINATION).is_directory = false;
     assert_opencode_preflight_error(snapshot, "Host OpenCode data path is not a directory");
 
-    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot =
+        support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode);
     support::host_state_mut(&mut snapshot, OPENCODE_CONFIG_DESTINATION).readable = false;
     assert_opencode_preflight_error(
         snapshot,
         "Host OpenCode configuration directory is not readable and writable",
     );
 
-    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot =
+        support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode);
     support::host_state_mut(&mut snapshot, OPENCODE_DATA_DESTINATION).writable = false;
     assert_opencode_preflight_error(
         snapshot,
@@ -255,7 +259,7 @@ fn codex_create_spec_includes_host_codex_config_mount() {
     let repo = support::temp_git_repo();
     let workspace = resolve_workspace_identity(repo.path()).unwrap();
     let preflight = check_host_prerequisites_with_snapshot(
-        &support::passing_preflight_snapshot_with_static_nix_mount(),
+        &support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Codex),
         Some(Utf8Path::from_path(repo.path()).unwrap()),
         RuntimeKind::Codex,
     )
@@ -301,7 +305,8 @@ fn supported_runtime_strings_are_derived_from_profiles() {
 
 #[test]
 fn preflight_missing_nix_conf_reports_exact_message() {
-    let mut snapshot = support::passing_preflight_snapshot_with_static_nix_mount();
+    let mut snapshot =
+        support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode);
     snapshot.nix.config.has_readable_nix_conf = false;
     snapshot.nix.config.custom_conf = NixCustomConfPreflightSnapshot {
         present: false,
@@ -333,6 +338,7 @@ fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
     let snapshot = PreflightSnapshot::detect(
         Some(workspace.canonical_target.as_ref()),
         Some(workspace.canonical_git_root.as_ref()),
+        RuntimeKind::Opencode,
     );
 
     assert!(!snapshot.host.direnv.required);

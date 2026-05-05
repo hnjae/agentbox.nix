@@ -11,7 +11,7 @@ use std::fs;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::runtime::{RuntimeHostStateSource, all_host_state_mounts};
+use crate::runtime::{RuntimeHostStateSource, RuntimeKind};
 
 use super::path::{
     envrc_applies_within_git_root, path_reaches_mount_root, resolve_path, symlink_or_path_exists,
@@ -71,21 +71,29 @@ pub struct NixCustomConfPreflightSnapshot {
 }
 
 impl PreflightSnapshot {
-    pub fn detect(target_directory: Option<&Utf8Path>, git_root: Option<&Utf8Path>) -> Self {
+    pub fn detect(
+        target_directory: Option<&Utf8Path>,
+        git_root: Option<&Utf8Path>,
+        runtime: RuntimeKind,
+    ) -> Self {
         Self {
-            host: HostPreflightSnapshot::detect(target_directory, git_root),
+            host: HostPreflightSnapshot::detect(target_directory, git_root, runtime),
             nix: NixPreflightSnapshot::detect(),
         }
     }
 }
 
 impl HostPreflightSnapshot {
-    fn detect(target_directory: Option<&Utf8Path>, git_root: Option<&Utf8Path>) -> Self {
+    fn detect(
+        target_directory: Option<&Utf8Path>,
+        git_root: Option<&Utf8Path>,
+        runtime: RuntimeKind,
+    ) -> Self {
         Self {
             has_git: test_fixtures_enabled() || command_exists("git"),
             has_podman: command_exists("podman"),
             direnv: DirenvPreflightSnapshot::detect(target_directory, git_root),
-            runtime_state: detect_runtime_state(),
+            runtime_state: detect_runtime_state(runtime),
         }
     }
 }
@@ -167,8 +175,10 @@ impl NixCustomConfPreflightSnapshot {
     }
 }
 
-fn detect_runtime_state() -> BTreeMap<String, HostDirectoryPreflightSnapshot> {
-    all_host_state_mounts()
+fn detect_runtime_state(runtime: RuntimeKind) -> BTreeMap<String, HostDirectoryPreflightSnapshot> {
+    runtime
+        .host_state_mounts()
+        .iter()
         .map(|mount| {
             (
                 mount.destination.to_string(),
