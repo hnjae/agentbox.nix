@@ -10,7 +10,8 @@ use std::path::Path;
 
 use agentbox::metadata::LABEL_RUNTIME;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
-use agentbox::workspace::hash12;
+use agentbox::workspace::git_root_hash12;
+use camino::Utf8Path;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -199,7 +200,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
             true,
             managed_labels(
                 other_root,
-                &hash12(other_root.as_bytes()),
+                &git_root_hash12(Utf8Path::new(other_root)),
                 "opencode",
                 &workspace.container_name,
             ),

@@ -15,7 +15,7 @@ use crate::metadata::{
     REQUIRED_SESSION_MARKER_LABEL_VALUES,
 };
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
-use crate::workspace::hash12;
+use crate::workspace::git_root_hash12;
 
 use super::record::SessionMetadata;
 use super::status::SessionFailure;
@@ -201,7 +201,7 @@ impl RequiredSessionLabels {
     }
 
     fn hash_matches_root(&self) -> bool {
-        self.git_root_hash == hash12(self.canonical_git_root.as_str().as_bytes())
+        self.git_root_hash == git_root_hash12(&self.canonical_git_root)
     }
 
     fn launch_directory_is_valid(&self) -> bool {

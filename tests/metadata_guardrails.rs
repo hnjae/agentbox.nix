@@ -9,7 +9,8 @@
 use std::fs;
 
 use agentbox::lock::lock_path_in_state_dir;
-use agentbox::workspace::{WorkspaceIdentity, hash12};
+use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
+use camino::Utf8Path;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -144,7 +145,7 @@ fn completion_uses_live_discovery_instead_of_cached_files() {
 }
 
 fn write_live_session(harness: &Harness, name: &str, git_root: &str) {
-    let git_root_hash = hash12(git_root.as_bytes());
+    let git_root_hash = git_root_hash12(Utf8Path::new(git_root));
     harness.write_ps(&ps_fixture(vec![managed_ps_entry(
         name,
         name,

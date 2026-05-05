@@ -48,7 +48,7 @@ pub fn resolve_workspace_identity_with_git(
         ));
     }
 
-    let digest64 = digest64_for_bytes(canonical_git_root.as_str().as_bytes());
+    let digest64 = git_root_digest64(canonical_git_root.as_ref());
     let hash12 = hash12_from_digest64(&digest64);
     let container_name = container_name_from_canonical_root(&canonical_git_root);
 
@@ -76,6 +76,14 @@ pub fn hash12(bytes: &[u8]) -> String {
     hash12_from_digest64(&digest64_for_bytes(bytes))
 }
 
+pub fn git_root_digest64(canonical_git_root: &Utf8Path) -> String {
+    digest64_for_bytes(canonical_git_root.as_str().as_bytes())
+}
+
+pub fn git_root_hash12(canonical_git_root: &Utf8Path) -> String {
+    hash12_from_digest64(&git_root_digest64(canonical_git_root))
+}
+
 fn digest64_for_bytes(bytes: &[u8]) -> String {
     hex_digest(&sha256_bytes(bytes))
 }
@@ -87,7 +95,7 @@ fn hash12_from_digest64(digest64: &str) -> String {
 pub fn container_name_from_canonical_root(root: impl AsRef<str>) -> String {
     let root = root.as_ref();
     let escaped = escape_root(root);
-    let hash = hash12(root.as_bytes());
+    let hash = git_root_hash12(Utf8Path::new(root));
     let separator_len = 1 + hash.len();
     let max_suffix_len = MAX_CONTAINER_NAME_LEN - CONTAINER_PREFIX.len() - separator_len;
     let suffix = if escaped.len() <= max_suffix_len {

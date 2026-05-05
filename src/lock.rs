@@ -14,7 +14,7 @@ use fd_lock::{RwLock, RwLockWriteGuard};
 
 use crate::error::Result;
 use crate::state::AgentboxStateRoot;
-use crate::workspace::{WorkspaceIdentity, hex_digest, sha256_bytes};
+use crate::workspace::{WorkspaceIdentity, git_root_digest64};
 
 const LOCKS_DIR: &str = "locks";
 
@@ -117,10 +117,6 @@ pub fn lock_path_for_digest(digest64: impl AsRef<str>) -> Result<PathBuf> {
 
 pub fn lock_path_in_state_dir(state_dir: impl AsRef<Path>, digest64: impl AsRef<str>) -> PathBuf {
     WorkspaceLockStore::in_state_dir(state_dir).lock_path_for_digest(digest64)
-}
-
-fn git_root_digest64(canonical_git_root: &Utf8Path) -> String {
-    hex_digest(&sha256_bytes(canonical_git_root.as_str().as_bytes()))
 }
 
 fn open_lock_file(path: &Path) -> Result<File> {

@@ -7,11 +7,11 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::workspace::{
-    container_name_from_canonical_root, hash12, resolve_workspace_identity,
-    resolve_workspace_identity_with_git, sha256_bytes,
+    container_name_from_canonical_root, git_root_digest64, git_root_hash12, hash12,
+    resolve_workspace_identity, resolve_workspace_identity_with_git, sha256_bytes,
 };
 use agentbox::{git::Git, process::ProcessRunner};
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use std::fs;
 
 #[path = "support/mod.rs"]
@@ -90,7 +90,12 @@ fn hashes_and_names_match_spec_example() {
         agentbox::workspace::hex_digest(&digest),
         "9ae5447864f74f9137f1ebb8bfe3ff1122f09548caf8b31fde5315f21222dbff"
     );
+    assert_eq!(
+        git_root_digest64(Utf8Path::new("/aaa/bbb")),
+        "9ae5447864f74f9137f1ebb8bfe3ff1122f09548caf8b31fde5315f21222dbff"
+    );
     assert_eq!(hash12(b"/aaa/bbb"), "9ae5447864f7");
+    assert_eq!(git_root_hash12(Utf8Path::new("/aaa/bbb")), "9ae5447864f7");
     assert_eq!(
         container_name_from_canonical_root("/aaa/bbb"),
         "agentbox-_aaa_bbb-9ae5447864f7"
@@ -104,6 +109,6 @@ fn overlong_paths_preserve_rightmost_suffix() {
 
     assert!(name.len() <= 63);
     assert!(name.starts_with("agentbox-"));
-    assert!(name.ends_with(&format!("-{}", hash12(root.as_bytes()))));
+    assert!(name.ends_with(&format!("-{}", git_root_hash12(Utf8Path::new(&root)))));
     assert!(name.contains("-z"));
 }

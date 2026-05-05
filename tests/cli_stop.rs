@@ -8,7 +8,8 @@
 
 use std::path::Path;
 
-use agentbox::workspace::hash12;
+use agentbox::workspace::git_root_hash12;
+use camino::Utf8Path;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -186,7 +187,7 @@ fn stop_allows_exact_missing_path_match_for_orphaned_root_identity() {
     let repo = support::temp_git_repo();
     let root = repo.path().canonicalize().unwrap();
     let root_string = root.to_str().unwrap().to_string();
-    let hash = hash12(root_string.as_bytes());
+    let hash = git_root_hash12(Utf8Path::new(&root_string));
     let container_name = "orphaned-session";
     let harness = install_harness();
     harness.write_ps(&ps_fixture(vec![managed_ps_entry(

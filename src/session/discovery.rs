@@ -16,7 +16,7 @@ use crate::metadata::{
 };
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
 use crate::runtime::AttachEndpoint;
-use crate::workspace::hash12;
+use crate::workspace::git_root_hash12;
 use crate::{Error, Result};
 
 use super::endpoint::derive_attach_endpoint;
@@ -120,7 +120,7 @@ impl<'a> GitRootDiscoveryScope<'a> {
     fn new(git_root: &'a Utf8Path) -> Self {
         Self {
             git_root,
-            git_root_hash: hash12(git_root.as_str().as_bytes()),
+            git_root_hash: git_root_hash12(git_root),
         }
     }
 

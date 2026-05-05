@@ -20,7 +20,7 @@ use agentbox::podman::{
 };
 use agentbox::runtime::{RuntimeAttachSpec, RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE};
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
-use agentbox::workspace::{WorkspaceIdentity, hash12};
+use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
 use camino::Utf8Path;
 use serde_json::{Value, json};
 
@@ -144,7 +144,7 @@ pub fn managed_container_models(
     managed_container_models_with_hash(
         name,
         root,
-        hash12(root.as_str().as_bytes()).as_str(),
+        git_root_hash12(root).as_str(),
         running,
         include_cache_mount,
     )

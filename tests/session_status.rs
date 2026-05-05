@@ -13,7 +13,7 @@ use agentbox::session::{
     SessionFailure, SessionStatus, discover_managed_sessions_from_ps,
     discover_sessions_for_git_root_from_ps, group_sessions_by_git_root,
 };
-use agentbox::workspace::hash12;
+use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
 
 #[path = "support/mod.rs"]
@@ -228,7 +228,7 @@ fn hash_collision_between_different_roots_fails_clearly() {
     let other_repo = support::temp_git_repo();
     let target_root = Utf8Path::from_path(target_repo.path()).unwrap();
     let other_root = Utf8Path::from_path(other_repo.path()).unwrap();
-    let forced_hash = hash12(target_root.as_str().as_bytes());
+    let forced_hash = git_root_hash12(target_root);
     let target =
         managed_container_with_hash("target", target_root, forced_hash.as_str(), true, true);
     let other = managed_container_with_hash("other", other_root, forced_hash.as_str(), true, true);
