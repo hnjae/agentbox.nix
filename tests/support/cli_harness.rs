@@ -7,7 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use assert_cmd::Command as AssertCommand;
 use tempfile::TempDir;
@@ -42,6 +42,8 @@ impl CliHarness {
             fake_bin.path().join("npm"),
             "#!/bin/sh\nprintf '%s\\n' '0.99.0'\n",
         );
+        write_executable(fake_bin.path().join("opencode"), "#!/bin/sh\nexit 0\n");
+        write_executable(fake_bin.path().join("codex"), "#!/bin/sh\nexit 0\n");
 
         Self {
             fake_bin,
@@ -98,6 +100,13 @@ impl CliHarness {
         self.state_home.path()
     }
 
+    pub fn state_files(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        collect_files(self.state_home.path(), self.state_home.path(), &mut files);
+        files.sort();
+        files
+    }
+
     pub fn agentbox_command(&self) -> AssertCommand {
         let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
         command
@@ -109,6 +118,16 @@ impl CliHarness {
             .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
             .env("AGENTBOX_TEST_LOG", &self.log_path);
         command
+    }
+
+    pub fn agentbox_assert(&self, args: &[&str]) -> assert_cmd::assert::Assert {
+        let mut command = self.agentbox_command();
+        command.args(args);
+        command.assert()
+    }
+
+    pub fn agentbox_output(&self, args: &[&str]) -> std::process::Output {
+        self.agentbox_command().args(args).output().unwrap()
     }
 
     pub fn run_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
@@ -138,6 +157,18 @@ impl CliHarness {
         let mut command = self.agentbox_command();
         command.arg("stop").args(extra_args).arg(target);
         command.assert()
+    }
+}
+
+fn collect_files(root: &Path, current: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(current).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(root, &path, files);
+        } else {
+            files.push(path.strip_prefix(root).unwrap().to_path_buf());
+        }
     }
 }
 

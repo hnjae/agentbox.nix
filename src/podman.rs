@@ -83,28 +83,24 @@ impl Podman {
     pub fn image_exists(&self, image: &str) -> Result<bool> {
         let mut command = self.runner.command("podman")?;
         command.args(["image", "exists", image]);
-        let status = self.status(&mut command)?;
-
-        match status.code() {
-            Some(0) => Ok(true),
-            Some(1) => Ok(false),
-            _ => Err(Error::msg(format!(
-                "`podman image exists {image}` exited with {}",
-                format_status(status),
-            ))),
-        }
+        self.exists_status(&mut command)
     }
 
     pub fn container_exists(&self, container_name: &str) -> Result<bool> {
         let mut command = self.runner.command("podman")?;
         command.args(["container", "exists", container_name]);
-        let status = self.status(&mut command)?;
+        self.exists_status(&mut command)
+    }
+
+    fn exists_status(&self, command: &mut Command) -> Result<bool> {
+        let description = describe_command(command);
+        let status = self.status(command)?;
 
         match status.code() {
             Some(0) => Ok(true),
             Some(1) => Ok(false),
             _ => Err(Error::msg(format!(
-                "`podman container exists {container_name}` exited with {}",
+                "`{description}` exited with {}",
                 format_status(status),
             ))),
         }
