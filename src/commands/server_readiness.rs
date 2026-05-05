@@ -129,10 +129,6 @@ struct HostTcpEndpointProbe;
 
 impl EndpointProbe for HostTcpEndpointProbe {
     fn is_reachable(&self, endpoint: &AttachEndpoint) -> bool {
-        if std::env::var_os("AGENTBOX_TEST_FIXTURES").is_some() {
-            return true;
-        }
-
         let Ok(addresses) = (endpoint.host_ip.as_str(), endpoint.host_port).to_socket_addrs()
         else {
             return false;

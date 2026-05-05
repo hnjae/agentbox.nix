@@ -9,6 +9,7 @@
 use std::fs;
 
 use agentbox::lock::lock_path_in_state_dir;
+use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE};
 use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
 use camino::Utf8Path;
 
@@ -16,9 +17,10 @@ use camino::Utf8Path;
 mod support;
 
 use support::{
-    CliHarness as Harness, cached_managed_inspect_fixture as managed_inspect_fixture,
-    managed_ps_entry, opencode_managed_labels as managed_labels,
-    opencode_workspace_inspect_fixture, ps_fixture, workspace_ps_entry,
+    CliHarness as Harness, ReadyEndpoint,
+    cached_managed_inspect_fixture as managed_inspect_fixture, managed_ps_entry,
+    opencode_managed_labels as managed_labels, opencode_workspace_inspect_fixture, ps_fixture,
+    running_workspace_inspect_fixture_with_host_port, workspace_ps_entry,
 };
 
 #[test]
@@ -28,10 +30,11 @@ fn no_extra_host_metadata_is_written_beyond_locks() {
     let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(Vec::new()));
-    write_workspace_inspect(&harness, workspace);
+    let endpoint = write_workspace_inspect(&harness, workspace);
     harness
         .agentbox_assert(&["run", "--runtime", "opencode", target.to_str().unwrap()])
         .success();
+    endpoint.wait();
 
     harness.write_ps(&ps_fixture(vec![managed_ps_entry(
         "completion-id",
@@ -77,7 +80,7 @@ fn stale_lock_file_is_reused_in_run_and_attach_flows() {
     let run_workspace = &run_fixture.workspace;
     let run_harness = Harness::new();
     run_harness.write_ps(&ps_fixture(Vec::new()));
-    write_workspace_inspect(&run_harness, run_workspace);
+    let endpoint = write_workspace_inspect(&run_harness, run_workspace);
     let run_lock = lock_path_in_state_dir(run_harness.state_home_path(), &run_workspace.digest64);
     fs::create_dir_all(run_lock.parent().unwrap()).unwrap();
     fs::write(&run_lock, b"stale-lock").unwrap();
@@ -85,6 +88,7 @@ fn stale_lock_file_is_reused_in_run_and_attach_flows() {
     run_harness
         .agentbox_assert(&["run", "--runtime", "opencode", run_target.to_str().unwrap()])
         .success();
+    endpoint.wait();
     assert_eq!(fs::read(&run_lock).unwrap(), b"stale-lock");
 
     let attach_fixture = support::temp_workspace("attach-nested");
@@ -162,9 +166,16 @@ fn write_live_session(harness: &Harness, name: &str, git_root: &str) {
     );
 }
 
-fn write_workspace_inspect(harness: &Harness, workspace: &WorkspaceIdentity) {
+fn write_workspace_inspect(harness: &Harness, workspace: &WorkspaceIdentity) -> ReadyEndpoint {
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
     harness.write_inspect(
         &workspace.container_name,
-        &opencode_workspace_inspect_fixture(workspace, true, true),
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            DEFAULT_IMAGE,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
     );
+    endpoint
 }

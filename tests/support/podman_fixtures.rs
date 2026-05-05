@@ -28,7 +28,7 @@ const FIXTURE_CREATED_AT: &str = "2026-04-21 00:00:00 +0000 UTC";
 const FIXTURE_CREATED_RFC3339: &str = "2026-04-21T00:00:00.000000000Z";
 const FIXTURE_STARTED_RFC3339: &str = "2026-04-21T00:00:01.000000000Z";
 const FIXTURE_HOST_IP: &str = "127.0.0.1";
-const FIXTURE_HOST_PORT: &str = "49152";
+const FIXTURE_HOST_PORT: u16 = 49152;
 const OPENCODE_BINARY: &str = "opencode";
 
 pub fn podman_ps_fixture() -> &'static str {
@@ -202,6 +202,7 @@ struct ManagedInspectFixture {
     working_dir: String,
     auto_remove: bool,
     path: String,
+    host_port: u16,
 }
 
 impl ManagedInspectFixture {
@@ -218,6 +219,7 @@ impl ManagedInspectFixture {
             working_dir: git_root.to_string(),
             auto_remove: false,
             path: format!("/usr/bin/{OPENCODE_BINARY}"),
+            host_port: FIXTURE_HOST_PORT,
         }
     }
 
@@ -261,6 +263,11 @@ impl ManagedInspectFixture {
         self
     }
 
+    fn host_port(mut self, host_port: u16) -> Self {
+        self.host_port = host_port;
+        self
+    }
+
     fn build(self) -> PodmanContainerInspect {
         PodmanContainerInspect {
             id: self.id,
@@ -290,7 +297,7 @@ impl ManagedInspectFixture {
             ),
             network_settings: PodmanNetworkSettings {
                 networks: BTreeMap::new(),
-                ports: published_ports_for_labels(&self.labels),
+                ports: published_ports_for_labels(&self.labels, self.host_port),
             },
         }
     }
@@ -338,12 +345,13 @@ fn managed_container_mounts(
 
 fn published_ports_for_labels(
     labels: &BTreeMap<String, String>,
+    host_port: u16,
 ) -> BTreeMap<String, Option<Vec<PodmanPortBinding>>> {
     BTreeMap::from([(
         port_key_for_labels(labels),
         Some(vec![PodmanPortBinding {
             host_ip: Some(FIXTURE_HOST_IP.to_string()),
-            host_port: Some(FIXTURE_HOST_PORT.to_string()),
+            host_port: Some(host_port.to_string()),
         }]),
     )])
 }
@@ -493,6 +501,15 @@ pub fn running_workspace_inspect_fixture(
     image: &str,
     runtime: RuntimeKind,
 ) -> String {
+    running_workspace_inspect_fixture_with_host_port(workspace, image, runtime, FIXTURE_HOST_PORT)
+}
+
+pub fn running_workspace_inspect_fixture_with_host_port(
+    workspace: &WorkspaceIdentity,
+    image: &str,
+    runtime: RuntimeKind,
+    host_port: u16,
+) -> String {
     let labels = workspace_managed_labels(workspace, image, runtime);
 
     inspect_fixture_json(
@@ -506,6 +523,7 @@ pub fn running_workspace_inspect_fixture(
         .working_dir(workspace.canonical_target.as_str())
         .auto_remove(true)
         .path(format!("/usr/bin/{}", runtime.as_str()))
+        .host_port(host_port)
         .build(),
     )
 }

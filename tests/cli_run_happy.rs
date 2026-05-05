@@ -14,7 +14,10 @@ use predicates::prelude::*;
 #[path = "support/mod.rs"]
 mod support;
 
-use support::{CliHarness as Harness, operation_names, running_workspace_inspect_fixture};
+use support::{
+    CliHarness as Harness, ReadyEndpoint, operation_names,
+    running_workspace_inspect_fixture_with_host_port,
+};
 
 #[test]
 fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
@@ -23,9 +26,15 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.mark_default_image_absent();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            DEFAULT_IMAGE,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
@@ -42,6 +51,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
                 "agentbox: waiting for `opencode` runtime server",
             )),
     );
+    endpoint.wait();
 
     let log = harness.read_log();
     assert_eq!(
@@ -110,15 +120,22 @@ fn run_wraps_server_command_with_direnv_when_envrc_applies() {
     fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
     let harness = Harness::new();
     harness.mark_default_image_absent();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            DEFAULT_IMAGE,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
     command.args(["run", "--runtime", "opencode"]).arg(target);
 
     command.assert().success();
+    endpoint.wait();
 
     let log = harness.read_log();
     let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
@@ -135,15 +152,22 @@ fn run_launches_codex_server_in_yolo_mode() {
     let image = RuntimeKind::Codex.default_image();
     let harness = Harness::new();
     harness.mark_default_image_absent();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Codex);
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(workspace, image, RuntimeKind::Codex),
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            image,
+            RuntimeKind::Codex,
+            endpoint.port(),
+        ),
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
     command.args(["run", "--runtime", "codex"]).arg(target);
 
     command.assert().success();
+    endpoint.wait();
 
     let log = harness.read_log();
     assert_eq!(
@@ -183,15 +207,22 @@ fn run_skips_build_when_default_image_already_exists_locally() {
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
     let harness = Harness::new();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            DEFAULT_IMAGE,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
     command.args(["run", "--runtime", "opencode"]).arg(target);
 
     command.assert().success();
+    endpoint.wait();
 
     let log = harness.read_log();
     let operations = operation_names(&log);
@@ -206,9 +237,15 @@ fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
     let workspace = &fixture.workspace;
     let harness = Harness::new();
     harness.mark_default_image_absent();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
     harness.write_inspect(
         &workspace.container_name,
-        &running_workspace_inspect_fixture(workspace, DEFAULT_IMAGE, RuntimeKind::Opencode),
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            DEFAULT_IMAGE,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
@@ -227,6 +264,7 @@ fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
                 "agentbox: waiting for `opencode` runtime server",
             )),
     );
+    endpoint.wait();
 }
 
 #[test]
