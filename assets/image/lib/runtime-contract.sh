@@ -167,24 +167,24 @@ activate_profile_env() {
     unset default_profile_path profile_link
 }
 
-runtime_entrypoint_main() {
+activate_runtime_base_env() {
     validate_runtime_transport
     validate_runtime_config
     validate_runtime_trust
     resolve_runtime_paths
     activate_ca_bundle_env
+}
+
+runtime_entrypoint_main() {
+    activate_runtime_base_env
     activate_profile_env
 
     exec "$@"
 }
 
 runtime_bootstrap_main() {
-    validate_runtime_transport
-    validate_runtime_config
-    validate_runtime_trust
-    resolve_runtime_paths
+    activate_runtime_base_env
     resolve_runtime_manifest_path
-    activate_ca_bundle_env
     materialize_profile
 
     exec /entrypoint "$@"
