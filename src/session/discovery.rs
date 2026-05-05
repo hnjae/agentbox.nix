@@ -23,53 +23,51 @@ use super::record::{SessionGroup, SessionMetadata, SessionRecord};
 use super::status::{SessionStatusInput, derive_status, mark_duplicate_sessions};
 
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
-    let git = Git::new();
-    discover_sessions_from_ps_with_git(
-        podman.ps()?,
-        SessionDiscoveryScope::All,
-        |container_id| podman.inspect_one(container_id),
-        &git,
-    )
+    discover_scoped_sessions_from_podman(podman, SessionDiscoveryScope::All)
 }
 
 pub fn discover_managed_sessions_from_ps(
     containers: Vec<PodmanPsContainer>,
-    mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
 ) -> Result<Vec<SessionRecord>> {
-    let git = Git::new();
-    discover_sessions_from_ps_with_git(
-        containers,
-        SessionDiscoveryScope::All,
-        |container_id| inspect_container(container_id),
-        &git,
-    )
+    discover_scoped_sessions_from_ps(containers, SessionDiscoveryScope::All, inspect_container)
 }
 
 pub fn discover_sessions_for_git_root(
     podman: &Podman,
     git_root: &Utf8Path,
 ) -> Result<Vec<SessionRecord>> {
-    let git = Git::new();
-    discover_sessions_from_ps_with_git(
-        podman.ps()?,
-        SessionDiscoveryScope::for_git_root(git_root),
-        |container_id| podman.inspect_one(container_id),
-        &git,
-    )
+    discover_scoped_sessions_from_podman(podman, SessionDiscoveryScope::for_git_root(git_root))
 }
 
 pub fn discover_sessions_for_git_root_from_ps(
     containers: Vec<PodmanPsContainer>,
     git_root: &Utf8Path,
-    mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
 ) -> Result<Vec<SessionRecord>> {
-    let git = Git::new();
-    discover_sessions_from_ps_with_git(
+    discover_scoped_sessions_from_ps(
         containers,
         SessionDiscoveryScope::for_git_root(git_root),
-        |container_id| inspect_container(container_id),
-        &git,
+        inspect_container,
     )
+}
+
+fn discover_scoped_sessions_from_podman(
+    podman: &Podman,
+    scope: SessionDiscoveryScope<'_>,
+) -> Result<Vec<SessionRecord>> {
+    discover_scoped_sessions_from_ps(podman.ps()?, scope, |container_id| {
+        podman.inspect_one(container_id)
+    })
+}
+
+fn discover_scoped_sessions_from_ps(
+    containers: Vec<PodmanPsContainer>,
+    scope: SessionDiscoveryScope<'_>,
+    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+) -> Result<Vec<SessionRecord>> {
+    let git = Git::new();
+    discover_sessions_from_ps_with_git(containers, scope, inspect_container, &git)
 }
 
 pub fn group_sessions_by_git_root(sessions: &[SessionRecord]) -> Vec<SessionGroup> {

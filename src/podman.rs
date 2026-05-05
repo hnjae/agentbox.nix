@@ -28,6 +28,8 @@ pub use model::{
     PodmanPortBinding, PodmanPsContainer, PodmanPsPort,
 };
 
+const PODMAN_PROGRAM: &str = "podman";
+
 #[derive(Debug, Clone, Default)]
 pub struct Podman {
     runner: ProcessRunner,
@@ -52,19 +54,19 @@ impl Podman {
     }
 
     pub fn ps(&self) -> Result<Vec<PodmanPsContainer>> {
-        let mut command = self.runner.command("podman")?;
-        command.args(["ps", "--all", "--filter"]);
-        command.arg(managed_label_filter());
-        command.args(["--format", "json"]);
-        let output = self.run_quiet(&mut command)?;
+        let output = self.run_podman_quiet(|command| {
+            command.args(["ps", "--all", "--filter"]);
+            command.arg(managed_label_filter());
+            command.args(["--format", "json"]);
+        })?;
 
         parse_json("`podman ps --all --format json`", &output.stdout)
     }
 
     pub fn inspect(&self, name: &str) -> Result<Vec<PodmanContainerInspect>> {
-        let mut command = self.runner.command("podman")?;
-        command.args(["inspect", name]);
-        let output = self.run_quiet(&mut command)?;
+        let output = self.run_podman_quiet(|command| {
+            command.args(["inspect", name]);
+        })?;
 
         parse_json("`podman inspect`", &output.stdout)
     }
@@ -81,20 +83,21 @@ impl Podman {
     }
 
     pub fn image_exists(&self, image: &str) -> Result<bool> {
-        let mut command = self.runner.command("podman")?;
-        command.args(["image", "exists", image]);
-        self.exists_status(&mut command)
+        self.exists_status(|command| {
+            command.args(["image", "exists", image]);
+        })
     }
 
     pub fn container_exists(&self, container_name: &str) -> Result<bool> {
-        let mut command = self.runner.command("podman")?;
-        command.args(["container", "exists", container_name]);
-        self.exists_status(&mut command)
+        self.exists_status(|command| {
+            command.args(["container", "exists", container_name]);
+        })
     }
 
-    fn exists_status(&self, command: &mut Command) -> Result<bool> {
-        let description = describe_command(command);
-        let status = self.status(command)?;
+    fn exists_status(&self, configure: impl FnOnce(&mut Command)) -> Result<bool> {
+        let mut command = self.podman_command(configure)?;
+        let description = describe_command(&command);
+        let status = self.status(&mut command)?;
 
         match status.code() {
             Some(0) => Ok(true),
@@ -113,31 +116,35 @@ impl Podman {
         context_dir: &Utf8Path,
         options: &PodmanBuildOptions,
     ) -> Result<()> {
-        let mut command = self.runner.command("podman")?;
-        command.args(["build", "-t", image, "-f", containerfile.as_str()]);
-        for (name, value) in &options.build_args {
-            command.arg("--build-arg");
-            command.arg(format!("{name}={value}"));
-        }
-        for (name, value) in &options.labels {
-            command.arg("--label");
-            command.arg(format!("{name}={value}"));
-        }
-        command.arg(context_dir.as_str());
-        self.run_forwarding_output_when_verbose(&mut command)
-            .map(|_| ())
+        self.run_podman_forwarding_output_when_verbose(|command| {
+            command.args(["build", "-t", image, "-f", containerfile.as_str()]);
+            for (name, value) in &options.build_args {
+                command.arg("--build-arg");
+                command.arg(format!("{name}={value}"));
+            }
+            for (name, value) in &options.labels {
+                command.arg("--label");
+                command.arg(format!("{name}={value}"));
+            }
+            command.arg(context_dir.as_str());
+        })
+        .map(|_| ())
     }
 
     pub fn stop_ignore(&self, container_name: &str) -> Result<()> {
-        let mut command = self.runner.command("podman")?;
-        command.args(["stop", "--ignore", container_name]);
-        self.run_quiet(&mut command).map(|_| ())
+        self.run_podman_quiet(|command| {
+            command.args(["stop", "--ignore", container_name]);
+        })
+        .map(|_| ())
     }
 
     pub fn logs_tail(&self, container_name: &str, line_count: usize) -> Result<String> {
-        let mut command = self.runner.command("podman")?;
-        command.args(["logs", "--tail", &line_count.to_string(), container_name]);
-        self.run_quiet(&mut command).map(|output| {
+        self.run_podman_quiet(|command| {
+            command.args(["logs", "--tail"]);
+            command.arg(line_count.to_string());
+            command.arg(container_name);
+        })
+        .map(|output| {
             let mut logs = output.stdout;
             if !logs.is_empty() && !logs.ends_with('\n') && !output.stderr.is_empty() {
                 logs.push('\n');
@@ -153,10 +160,29 @@ impl Podman {
         spec: &RuntimeCreateSpec,
         workdir: Option<&str>,
     ) -> Result<()> {
-        let mut command = self.runner.command("podman")?;
-        command.args(run::run_detached_args(container_name, spec, workdir));
+        self.run_podman_forwarding_output_when_verbose(|command| {
+            command.args(run::run_detached_args(container_name, spec, workdir));
+        })
+        .map(|_| ())
+    }
+
+    fn podman_command(&self, configure: impl FnOnce(&mut Command)) -> Result<Command> {
+        let mut command = self.runner.command(PODMAN_PROGRAM)?;
+        configure(&mut command);
+        Ok(command)
+    }
+
+    fn run_podman_quiet(&self, configure: impl FnOnce(&mut Command)) -> Result<ProcessOutput> {
+        let mut command = self.podman_command(configure)?;
+        self.run_quiet(&mut command)
+    }
+
+    fn run_podman_forwarding_output_when_verbose(
+        &self,
+        configure: impl FnOnce(&mut Command),
+    ) -> Result<ProcessOutput> {
+        let mut command = self.podman_command(configure)?;
         self.run_forwarding_output_when_verbose(&mut command)
-            .map(|_| ())
     }
 
     fn run_quiet(&self, command: &mut Command) -> Result<ProcessOutput> {
