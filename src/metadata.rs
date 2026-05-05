@@ -103,15 +103,3 @@ pub(crate) fn required_label_value<'a>(
         .map(String::as_str)
         .filter(|value| !value.trim().is_empty())
 }
-
-pub(crate) fn has_all_required_session_label_values(labels: &BTreeMap<String, String>) -> bool {
-    required_session_labels().all(|label| required_label_value(labels, label).is_some())
-}
-
-fn required_session_labels() -> impl Iterator<Item = &'static str> {
-    REQUIRED_SESSION_MARKER_LABEL_VALUES
-        .iter()
-        .map(|(label, _)| *label)
-        .chain(REQUIRED_SESSION_IDENTITY_LABELS.iter().copied())
-        .chain(REQUIRED_SESSION_ATTACH_LABELS.iter().copied())
-}
