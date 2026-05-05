@@ -6,8 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::io::ErrorKind;
-
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::process::{ProcessRunner, format_status};
@@ -36,26 +34,18 @@ impl Git {
         &self,
         directory: &Utf8Path,
     ) -> std::result::Result<Utf8PathBuf, GitRootError> {
-        let mut command = self.runner.command("git").map_err(GitRootError::Failed)?;
-        command
-            .arg("-C")
-            .arg(directory.as_str())
-            .args(["rev-parse", "--show-toplevel"]);
+        let output = self
+            .runner
+            .capture_status("git", |command| {
+                command
+                    .arg("-C")
+                    .arg(directory.as_str())
+                    .args(["rev-parse", "--show-toplevel"]);
+            })
+            .map_err(GitRootError::Failed)?;
 
-        let output = command.output().map_err(|error| {
-            if error.kind() == ErrorKind::NotFound {
-                GitRootError::GitNotFound
-            } else {
-                GitRootError::Failed(Error::msg(format!(
-                    "failed to run `git -C {directory} rev-parse --show-toplevel`: {error}"
-                )))
-            }
-        })?;
-
-        let stderr =
-            String::from_utf8(output.stderr).map_err(|error| GitRootError::Failed(error.into()))?;
         if !output.status.success() {
-            let detail = stderr.trim();
+            let detail = output.stderr.trim();
             if detail.contains("not a git repository") {
                 return Err(GitRootError::NotRepository);
             }
@@ -70,9 +60,7 @@ impl Git {
             ))));
         }
 
-        let stdout =
-            String::from_utf8(output.stdout).map_err(|error| GitRootError::Failed(error.into()))?;
-        let root = stdout.trim();
+        let root = output.stdout.trim();
         if root.is_empty() {
             return Err(GitRootError::Failed(Error::msg(
                 "`git rev-parse --show-toplevel` returned an empty path",
@@ -85,7 +73,6 @@ impl Git {
 
 #[derive(Debug)]
 pub(crate) enum GitRootError {
-    GitNotFound,
     NotRepository,
     Failed(Error),
 }
@@ -93,9 +80,6 @@ pub(crate) enum GitRootError {
 impl GitRootError {
     pub(crate) fn into_error(self, directory: &Utf8Path) -> Error {
         match self {
-            Self::GitNotFound => {
-                Error::msg("`git` was not found on PATH; install `git` or add it to PATH")
-            }
             Self::NotRepository => Error::non_git_target(directory),
             Self::Failed(error) => error,
         }

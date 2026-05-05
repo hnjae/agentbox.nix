@@ -19,6 +19,13 @@ pub struct ProcessOutput {
     pub stderr: String,
 }
 
+#[derive(Debug)]
+pub(crate) struct ProcessStatusOutput {
+    pub(crate) status: ExitStatus,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProcessRunner {
     path_prepend: Vec<PathBuf>,
@@ -63,9 +70,35 @@ impl ProcessRunner {
         configure(&mut command);
         run_command(&mut command)
     }
+
+    pub(crate) fn capture_status(
+        &self,
+        program: &str,
+        configure: impl FnOnce(&mut Command),
+    ) -> Result<ProcessStatusOutput> {
+        let mut command = self.command(program)?;
+        configure(&mut command);
+        run_command_capture_status(&mut command)
+    }
 }
 
 pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {
+    let output = run_command_capture_status(command)?;
+    let ProcessStatusOutput {
+        status,
+        stdout,
+        stderr,
+    } = output;
+
+    if !status.success() {
+        let context = CommandContext::from_command(command);
+        return Err(context.exit_error(status, &stdout, &stderr));
+    }
+
+    Ok(ProcessOutput { stdout, stderr })
+}
+
+fn run_command_capture_status(command: &mut Command) -> Result<ProcessStatusOutput> {
     let context = CommandContext::from_command(command);
     let output = command
         .output()
@@ -74,11 +107,11 @@ pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {
     let stdout = String::from_utf8(output.stdout)?;
     let stderr = String::from_utf8(output.stderr)?;
 
-    if !output.status.success() {
-        return Err(context.exit_error(output.status, &stdout, &stderr));
-    }
-
-    Ok(ProcessOutput { stdout, stderr })
+    Ok(ProcessStatusOutput {
+        status: output.status,
+        stdout,
+        stderr,
+    })
 }
 
 pub fn run_command_status(command: &mut Command) -> Result<ExitStatus> {
