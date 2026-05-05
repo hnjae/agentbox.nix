@@ -19,16 +19,36 @@ pub enum CompletionShell {
     Fish,
 }
 
+impl CompletionShell {
+    fn variants() -> &'static [Self] {
+        &[Self::Bash, Self::Zsh, Self::Fish]
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+        }
+    }
+
+    pub fn supported_values() -> Vec<&'static str> {
+        Self::variants()
+            .iter()
+            .map(|shell| shell.as_str())
+            .collect()
+    }
+}
+
 impl std::str::FromStr for CompletionShell {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "bash" => Ok(Self::Bash),
-            "zsh" => Ok(Self::Zsh),
-            "fish" => Ok(Self::Fish),
-            other => Err(format!("unsupported shell `{other}`")),
-        }
+        Self::variants()
+            .iter()
+            .copied()
+            .find(|shell| shell.as_str() == value)
+            .ok_or_else(|| format!("unsupported shell `{value}`"))
     }
 }
 

@@ -10,7 +10,9 @@ use std::fs;
 
 use assert_cmd::Command as AssertCommand;
 
+use agentbox::cli::CompletionShell;
 use agentbox::metadata::LABEL_ATTACH_SCHEME;
+use agentbox::runtime::RuntimeKind;
 use agentbox::workspace::resolve_workspace_identity;
 
 #[path = "support/mod.rs"]
@@ -166,6 +168,31 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     assert!(!script.contains("__generate-completion"));
     assert!(!script.contains("__generate-man"));
     assert!(!script.contains("__generate-manpages"));
+}
+
+#[test]
+fn completion_scripts_expand_shared_value_placeholders() {
+    let runtime_values = RuntimeKind::supported_values().join(" ");
+    let shell_values = CompletionShell::supported_values().join(" ");
+
+    for shell in CompletionShell::supported_values() {
+        let script = capture_completion_script_shell(shell);
+
+        for placeholder in [
+            "@RUNTIME_VALUES@",
+            "@SHELL_VALUES@",
+            "@SUBCOMMAND_NAMES@",
+            "@ZSH_SUBCOMMAND_SPECS@",
+        ] {
+            assert!(
+                !script.contains(placeholder),
+                "{shell} completion still contains {placeholder}"
+            );
+        }
+
+        assert!(script.contains(&runtime_values));
+        assert!(script.contains(&shell_values));
+    }
 }
 
 #[test]
