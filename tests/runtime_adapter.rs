@@ -47,6 +47,7 @@ fn opencode_create_spec_matches_mvp_contract() {
         &workspace,
         &preflight.host_nix_mounts,
         &preflight.runtime_mounts,
+        runtime.server_command().argv,
     );
 
     assert_eq!(spec.image, DEFAULT_IMAGE);
@@ -264,6 +265,7 @@ fn codex_create_spec_includes_host_codex_config_mount() {
         &workspace,
         &preflight.host_nix_mounts,
         &preflight.runtime_mounts,
+        RuntimeKind::Codex.server_command().argv,
     );
     let codex_mount = spec
         .mounts

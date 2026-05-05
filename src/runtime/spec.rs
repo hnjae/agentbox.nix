@@ -84,13 +84,6 @@ pub struct RuntimeCreateSpec {
     pub published_ports: Vec<String>,
 }
 
-impl RuntimeCreateSpec {
-    pub fn with_command(mut self, command: impl Into<Vec<String>>) -> Self {
-        self.command = command.into();
-        self
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachEndpoint {
     pub scheme: String,
@@ -134,6 +127,7 @@ impl RuntimeKind {
         workspace: &WorkspaceIdentity,
         host_nix_mounts: &[RuntimeMount],
         runtime_mounts: &[RuntimeMount],
+        command: impl Into<Vec<String>>,
     ) -> RuntimeCreateSpec {
         let image = self.default_image().to_string();
         let attach = self.attach_spec();
@@ -161,7 +155,7 @@ impl RuntimeKind {
             image,
             labels,
             mounts,
-            command: self.server_command().argv,
+            command: command.into(),
             default_env,
             network_enabled: true,
             published_ports: vec![attach.published_port(DEFAULT_HOST_ATTACH_IP)],

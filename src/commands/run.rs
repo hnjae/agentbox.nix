@@ -53,13 +53,12 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             workspace.canonical_target.as_ref(),
             workspace.canonical_git_root.as_ref(),
         );
-        let mut run_spec = runtime
-            .create_spec(
-                workspace,
-                &preflight.host_nix_mounts,
-                &preflight.runtime_mounts,
-            )
-            .with_command(server_run.argv);
+        let mut run_spec = runtime.create_spec(
+            workspace,
+            &preflight.host_nix_mounts,
+            &preflight.runtime_mounts,
+            server_run.argv,
+        );
         if let Some(version) = runtime_version {
             run_spec
                 .labels
