@@ -6,6 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -77,58 +78,67 @@ pub enum SessionFailure {
 
 impl SessionFailure {
     pub fn requires_action_error(self, git_root: &Utf8Path, container_name: &str) -> Error {
+        let action = self.action();
+
+        Error::managed_session_requires_action(
+            git_root,
+            container_name,
+            action.detail.as_ref(),
+            action.next_step,
+        )
+    }
+
+    fn action(self) -> FailureAction {
         match self {
-            Self::MissingRequiredLabels => Error::managed_session_requires_action(
-                git_root,
-                container_name,
+            Self::MissingRequiredLabels => FailureAction::new(
                 "is missing required session labels",
                 "clean up or recreate it before retrying",
             ),
-            Self::DriftedGitRootHash => Error::managed_session_requires_action(
-                git_root,
-                container_name,
+            Self::DriftedGitRootHash => FailureAction::new(
                 "has a drifted `io.agentbox.git_root_hash`",
                 "clean up or recreate it before retrying",
             ),
-            Self::MissingCacheMount => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                &format!(
+            Self::MissingCacheMount => FailureAction::new(
+                format!(
                     "is missing required cache mount `{}`",
                     REQUIRED_NIX_CACHE_MOUNT_DESTINATION
                 ),
                 "recreate the container before retrying",
             ),
-            Self::NotRunning => Error::managed_session_requires_action(
-                git_root,
-                container_name,
-                "is not running",
-                "stop it or recreate it before retrying",
-            ),
-            Self::UnsupportedRuntimeLabel => Error::managed_session_requires_action(
-                git_root,
-                container_name,
+            Self::NotRunning => {
+                FailureAction::new("is not running", "stop it or recreate it before retrying")
+            }
+            Self::UnsupportedRuntimeLabel => FailureAction::new(
                 "has an unsupported or malformed `io.agentbox.runtime` label",
                 "clean up or recreate it before retrying",
             ),
-            Self::MalformedLaunchDirectory => Error::managed_session_requires_action(
-                git_root,
-                container_name,
+            Self::MalformedLaunchDirectory => FailureAction::new(
                 "has a missing or malformed `io.agentbox.launch_directory` label",
                 "clean up or recreate it before retrying",
             ),
-            Self::MalformedEndpointLabels => Error::managed_session_requires_action(
-                git_root,
-                container_name,
+            Self::MalformedEndpointLabels => FailureAction::new(
                 "has missing or inconsistent attach endpoint labels",
                 "clean up or recreate it before retrying",
             ),
-            Self::MissingPublishedAttachPort => Error::managed_session_requires_action(
-                git_root,
-                container_name,
+            Self::MissingPublishedAttachPort => FailureAction::new(
                 "has no published attach endpoint port",
                 "clean up or recreate it before retrying",
             ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FailureAction {
+    detail: Cow<'static, str>,
+    next_step: &'static str,
+}
+
+impl FailureAction {
+    fn new(detail: impl Into<Cow<'static, str>>, next_step: &'static str) -> Self {
+        Self {
+            detail: detail.into(),
+            next_step,
         }
     }
 }

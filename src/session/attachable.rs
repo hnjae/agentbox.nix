@@ -61,61 +61,27 @@ pub(crate) fn prepare_attach_session<'a>(
 }
 
 fn session_runtime(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Result<RuntimeKind> {
-    session
-        .runtime_kind()
-        .ok_or_else(|| unsupported_runtime_label_error(workspace, session))
+    session.runtime_kind().ok_or_else(|| {
+        session_failure_error(workspace, session, SessionFailure::UnsupportedRuntimeLabel)
+    })
 }
 
 fn session_endpoint<'a>(
     workspace: &WorkspaceIdentity,
     session: &'a SessionRecord,
 ) -> Result<&'a AttachEndpoint> {
-    session
-        .attach_endpoint
-        .as_ref()
-        .ok_or_else(|| malformed_endpoint_labels_error(workspace, session))
+    session.attach_endpoint.as_ref().ok_or_else(|| {
+        session_failure_error(workspace, session, SessionFailure::MalformedEndpointLabels)
+    })
 }
 
 fn session_launch_directory<'a>(
     workspace: &WorkspaceIdentity,
     session: &'a SessionRecord,
 ) -> Result<&'a Utf8Path> {
-    session
-        .launch_directory()
-        .ok_or_else(|| malformed_launch_directory_error(workspace, session))
-}
-
-fn unsupported_runtime_label_error(
-    workspace: &WorkspaceIdentity,
-    session: &SessionRecord,
-) -> Error {
-    session_failure_requires_action_error(
-        workspace.canonical_git_root.as_ref(),
-        &session.container_name,
-        SessionFailure::UnsupportedRuntimeLabel,
-    )
-}
-
-fn malformed_endpoint_labels_error(
-    workspace: &WorkspaceIdentity,
-    session: &SessionRecord,
-) -> Error {
-    session_failure_requires_action_error(
-        workspace.canonical_git_root.as_ref(),
-        &session.container_name,
-        SessionFailure::MalformedEndpointLabels,
-    )
-}
-
-fn malformed_launch_directory_error(
-    workspace: &WorkspaceIdentity,
-    session: &SessionRecord,
-) -> Error {
-    session_failure_requires_action_error(
-        workspace.canonical_git_root.as_ref(),
-        &session.container_name,
-        SessionFailure::MalformedLaunchDirectory,
-    )
+    session.launch_directory().ok_or_else(|| {
+        session_failure_error(workspace, session, SessionFailure::MalformedLaunchDirectory)
+    })
 }
 
 fn validate_attachable_status(
@@ -152,4 +118,16 @@ fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRec
         run_command_hint(session.runtime(), workspace),
         workspace.requested_target,
     ))
+}
+
+fn session_failure_error(
+    workspace: &WorkspaceIdentity,
+    session: &SessionRecord,
+    failure: SessionFailure,
+) -> Error {
+    session_failure_requires_action_error(
+        workspace.canonical_git_root.as_ref(),
+        &session.container_name,
+        failure,
+    )
 }

@@ -248,38 +248,61 @@ impl<'a> HostStateMountRequirement<'a> {
     }
 }
 
+const HOST_NIX_MOUNTS: &[HostNixMountSpec] = &[
+    HostNixMountSpec::SamePath(NIX_STORE_DESTINATION),
+    HostNixMountSpec::NixClient(NIX_CLIENT_DESTINATION),
+    HostNixMountSpec::SamePath(ETC_NIX_DESTINATION),
+    HostNixMountSpec::StaticNix(ETC_STATIC_NIX_DESTINATION),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostNixMountSpec {
+    SamePath(&'static str),
+    NixClient(&'static str),
+    StaticNix(&'static str),
+}
+
+impl HostNixMountSpec {
+    fn mount(self, nix_client_source: &Utf8Path) -> RuntimeMount {
+        match self {
+            Self::SamePath(path) | Self::StaticNix(path) => {
+                RuntimeMount::read_only_bind(path, path)
+            }
+            Self::NixClient(destination) => {
+                RuntimeMount::read_only_bind(nix_client_source.to_string(), destination)
+            }
+        }
+    }
+
+    fn is_included(self, include_static_nix_mount: bool) -> bool {
+        !matches!(self, Self::StaticNix(_)) || include_static_nix_mount
+    }
+
+    fn destination(self) -> &'static str {
+        match self {
+            Self::SamePath(destination)
+            | Self::NixClient(destination)
+            | Self::StaticNix(destination) => destination,
+        }
+    }
+}
+
 fn host_nix_mounts(
     nix_client_source: &Utf8Path,
     include_static_nix_mount: bool,
 ) -> Vec<RuntimeMount> {
-    let mut mounts = vec![RuntimeMount::read_only_bind(
-        NIX_STORE_DESTINATION,
-        NIX_STORE_DESTINATION,
-    )];
-    mounts.push(RuntimeMount::read_only_bind(
-        nix_client_source.to_string(),
-        NIX_CLIENT_DESTINATION,
-    ));
-    mounts.push(RuntimeMount::read_only_bind(
-        ETC_NIX_DESTINATION,
-        ETC_NIX_DESTINATION,
-    ));
-
-    if include_static_nix_mount {
-        mounts.push(RuntimeMount::read_only_bind(
-            ETC_STATIC_NIX_DESTINATION,
-            ETC_STATIC_NIX_DESTINATION,
-        ));
-    }
-
-    mounts
+    HOST_NIX_MOUNTS
+        .iter()
+        .copied()
+        .filter(|mount| mount.is_included(include_static_nix_mount))
+        .map(|mount| mount.mount(nix_client_source))
+        .collect()
 }
 
-pub fn required_host_mount_destinations() -> [&'static str; 4] {
-    [
-        NIX_STORE_DESTINATION,
-        NIX_CLIENT_DESTINATION,
-        ETC_NIX_DESTINATION,
-        ETC_STATIC_NIX_DESTINATION,
-    ]
+pub fn required_host_mount_destinations() -> Vec<&'static str> {
+    HOST_NIX_MOUNTS
+        .iter()
+        .copied()
+        .map(HostNixMountSpec::destination)
+        .collect()
 }
