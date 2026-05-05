@@ -60,8 +60,7 @@ Conditionally required host tools:
 - `npm` when `agentbox` must resolve the latest runtime npm package version
   for initial default image creation or `agentbox runtime update <runtime>`
 - `direnv` when a matching `.envrc` applies to the directory whose environment
-  is used by the command: the `run` target directory for server startup, or the
-  stored launch directory for `attach`
+  is used by the command: the `run` target directory for server startup
 
 For `run` and `attach`, `<directory>` must resolve to an existing directory
 inside a git repository. A non-git target fails clearly; the MVP does not create
@@ -102,8 +101,8 @@ the raw path spelling entered by the user.
 
 When `run` successfully launches a session, the canonical target directory
 becomes the session's launch directory. The launch directory is recorded with the
-session and remains the stable working-directory and `direnv` context for later
-attaches to that running session.
+session and remains the stable working-directory for later attaches to that
+running session.
 
 Required behavior:
 
@@ -121,7 +120,7 @@ Required behavior:
   find that session.
 - `attach` target directories do not retarget a running session. They identify
   the workspace session, then the running session's stored launch directory
-  controls host-client working directory and environment.
+  controls host-client working directory.
 
 ## Naming And Visible Podman State
 
@@ -309,7 +308,8 @@ Expected behavior:
    directory, report that the requested directory was used only to identify the
    workspace and that `attach` is using the stored launch directory.
 8. Execute the runtime host client command from the stored launch directory with
-   stdio inherited.
+   stdio inherited, without re-evaluating `.envrc` or wrapping the client in
+   `direnv`.
 
 Rules:
 
@@ -322,6 +322,9 @@ Rules:
 - `attach` does not open a raw shell through `podman exec`.
 - The host client process current working directory is the running session's
   stored launch directory.
+- The host client process uses the host environment of the `agentbox attach`
+  invocation; `attach` does not re-evaluate `.envrc` from the requested
+  directory or stored launch directory.
 - When the requested directory differs from the stored launch directory,
   `attach` prints a short notice before launching the host client.
 - The running server process keeps the working directory and environment from
@@ -580,8 +583,8 @@ Rules:
   forcibly at the git root.
 - `run` starts the runtime server in the target directory's `direnv`
   environment when a matching `.envrc` applies.
-- `attach` starts the runtime host client in the stored launch directory's
-  host-side `direnv` environment when a matching `.envrc` applies.
+- `attach` starts the runtime host client directly from the stored launch
+  directory and does not re-evaluate `.envrc`.
 - When `run` launches a session, the server environment is fixed by the
   launch directory used for that `run`.
 - `attach` to an already-running session does not reevaluate or replace the
@@ -590,9 +593,9 @@ Rules:
   compatibility checks.
 - The MVP does not compare a different requested attach directory against the
   earlier `run` direnv context for that running session.
-- If `.envrc` is present but `direnv` is unavailable, blocked, or fails to load,
-  the affected `run` or `attach` fails clearly.
-- If no `.envrc` applies, the runtime server or client launches normally.
+- If `.envrc` is present but `direnv` is unavailable, blocked, or fails to load
+  during `run`, the affected `run` fails clearly.
+- If no `.envrc` applies, the runtime server launches normally.
 
 ### Runtime Server And Client Behavior
 
