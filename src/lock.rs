@@ -10,13 +10,12 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
 use camino::Utf8Path;
-use directories::BaseDirs;
 use fd_lock::{RwLock, RwLockWriteGuard};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::state::AgentboxStateRoot;
 use crate::workspace::{WorkspaceIdentity, hex_digest, sha256_bytes};
 
-const STATE_DIR: &str = "agentbox";
 const LOCKS_DIR: &str = "locks";
 
 pub struct WorkspaceLock {
@@ -26,7 +25,7 @@ pub struct WorkspaceLock {
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceLockStore {
-    state_dir: PathBuf,
+    state_root: AgentboxStateRoot,
 }
 
 pub struct WorkspaceLockGuard<'a> {
@@ -61,18 +60,14 @@ impl<'a> std::ops::DerefMut for WorkspaceLockGuard<'a> {
 
 impl WorkspaceLockStore {
     pub fn from_xdg() -> Result<Self> {
-        let base_dirs =
-            BaseDirs::new().ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
-        let state_dir = base_dirs
-            .state_dir()
-            .ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
-
-        Ok(Self::in_state_dir(state_dir))
+        Ok(Self {
+            state_root: AgentboxStateRoot::from_xdg()?,
+        })
     }
 
     pub fn in_state_dir(state_dir: impl AsRef<Path>) -> Self {
         Self {
-            state_dir: state_dir.as_ref().to_path_buf(),
+            state_root: AgentboxStateRoot::from_state_home(state_dir),
         }
     }
 
@@ -85,8 +80,7 @@ impl WorkspaceLockStore {
     }
 
     pub fn lock_path_for_digest(&self, digest64: impl AsRef<str>) -> PathBuf {
-        self.state_dir
-            .join(STATE_DIR)
+        self.state_root
             .join(LOCKS_DIR)
             .join(format!("{}.lock", digest64.as_ref()))
     }

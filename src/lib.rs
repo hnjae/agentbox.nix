@@ -25,6 +25,7 @@ pub mod preflight;
 pub mod process;
 pub mod runtime;
 pub mod session;
+mod state;
 pub mod workspace;
 
 use cli::Cli;

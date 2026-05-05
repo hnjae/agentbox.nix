@@ -9,10 +9,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 
 use crate::runtime::RuntimeKind;
+use crate::state::AgentboxStateRoot;
 use crate::{Error, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -91,14 +91,7 @@ pub(super) fn write_runtime_image_state(
 }
 
 fn runtime_image_state_path(runtime: RuntimeKind) -> Result<PathBuf> {
-    let base_dirs =
-        BaseDirs::new().ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
-    let state_dir = base_dirs
-        .state_dir()
-        .ok_or_else(|| Error::msg("failed to resolve XDG state directory"))?;
-
-    Ok(state_dir
-        .join("agentbox")
+    Ok(AgentboxStateRoot::from_xdg()?
         .join("runtime")
         .join(format!("{}.json", runtime.as_str())))
 }
