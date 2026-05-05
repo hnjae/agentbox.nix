@@ -173,6 +173,11 @@ Podman labels that identify at least:
 `agentbox` discovers sessions from live Podman state. It does not require a
 separate host-side session database.
 
+When a command is scoped to one canonical git root, containers that advertise a
+different git-root identity token are outside that command's discovery scope and
+must not block it. Containers with a missing identity token remain in scope
+until full inspection proves whether they match.
+
 ## CLI
 
 Global flags:
