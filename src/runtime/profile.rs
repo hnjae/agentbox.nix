@@ -12,6 +12,9 @@ use crate::metadata::{
     LABEL_OPENCODE_INSTALL_SOURCE, LABEL_OPENCODE_PACKAGE, LABEL_OPENCODE_RESOLVED_AT,
     LABEL_OPENCODE_VERSION,
 };
+use crate::preflight::{
+    CODEX_CONFIG_DESTINATION, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
+};
 
 use super::command::{
     HostClientCommandArg, HostClientCommandTemplate, ServerCommandArg, ServerCommandTemplate,
@@ -59,6 +62,33 @@ const OPENCODE_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[RuntimeDefaultEnv {
 }];
 const CODEX_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[];
 
+const OPENCODE_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[
+    RuntimeHostStateMount {
+        source: RuntimeHostStateSource::OpenCodeConfig,
+        source_lookup: RuntimeHostStateSourceLookup::XdgOrHome,
+        product_name: "OpenCode",
+        description: "configuration",
+        source_expression: "`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`",
+        destination: OPENCODE_CONFIG_DESTINATION,
+    },
+    RuntimeHostStateMount {
+        source: RuntimeHostStateSource::OpenCodeData,
+        source_lookup: RuntimeHostStateSourceLookup::XdgOrHome,
+        product_name: "OpenCode",
+        description: "data",
+        source_expression: "`${XDG_DATA_HOME:-$HOME/.local/share}/opencode`",
+        destination: OPENCODE_DATA_DESTINATION,
+    },
+];
+const CODEX_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[RuntimeHostStateMount {
+    source: RuntimeHostStateSource::CodexConfig,
+    source_lookup: RuntimeHostStateSourceLookup::HomeOnly,
+    product_name: "Codex",
+    description: "configuration",
+    source_expression: "`${HOME}/.codex`",
+    destination: CODEX_CONFIG_DESTINATION,
+}];
+
 const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
     kind: RuntimeKind::Opencode,
     name: "opencode",
@@ -78,6 +108,7 @@ const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
         container_listen_ip: CONTAINER_LISTEN_IP,
         container_port: 4096,
     },
+    host_state_mounts: OPENCODE_HOST_STATE_MOUNTS,
     default_env: OPENCODE_DEFAULT_ENV,
     server_command: OPENCODE_SERVER_COMMAND,
     host_client_command: OPENCODE_HOST_CLIENT_COMMAND,
@@ -102,6 +133,7 @@ const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
         container_listen_ip: CONTAINER_LISTEN_IP,
         container_port: 1455,
     },
+    host_state_mounts: CODEX_HOST_STATE_MOUNTS,
     default_env: CODEX_DEFAULT_ENV,
     server_command: CODEX_SERVER_COMMAND,
     host_client_command: CODEX_HOST_CLIENT_COMMAND,
@@ -117,6 +149,7 @@ pub(super) struct RuntimeProfile {
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
     pub(super) package: RuntimePackageSpec,
     pub(super) attach: RuntimeAttachSpec,
+    pub(super) host_state_mounts: &'static [RuntimeHostStateMount],
     pub(super) default_env: &'static [RuntimeDefaultEnv],
     pub(super) server_command: ServerCommandTemplate,
     pub(super) host_client_command: HostClientCommandTemplate,
@@ -137,6 +170,29 @@ pub(crate) struct RuntimePackageSpec {
 pub(super) struct RuntimeDefaultEnv {
     pub(super) name: &'static str,
     pub(super) value: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RuntimeHostStateMount {
+    pub(crate) source: RuntimeHostStateSource,
+    pub(crate) source_lookup: RuntimeHostStateSourceLookup,
+    pub(crate) product_name: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) source_expression: &'static str,
+    pub(crate) destination: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RuntimeHostStateSource {
+    CodexConfig,
+    OpenCodeConfig,
+    OpenCodeData,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RuntimeHostStateSourceLookup {
+    HomeOnly,
+    XdgOrHome,
 }
 
 pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {

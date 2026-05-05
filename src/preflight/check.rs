@@ -8,14 +8,15 @@
 
 use camino::Utf8Path;
 
-use crate::runtime::{RuntimeKind, RuntimeMount};
+use crate::runtime::{
+    RuntimeHostStateMount, RuntimeHostStateSource, RuntimeHostStateSourceLookup, RuntimeKind,
+    RuntimeMount,
+};
 use crate::{Error, Result};
 
 use super::{
-    CODEX_CONFIG_DESTINATION, ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION,
-    HostDirectoryPreflightSnapshot, NIX_CLIENT_DESTINATION, NIX_DAEMON_SOCKET_PATH,
-    NIX_STORE_DESTINATION, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
-    PreflightSnapshot,
+    ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, HostDirectoryPreflightSnapshot,
+    NIX_CLIENT_DESTINATION, NIX_DAEMON_SOCKET_PATH, NIX_STORE_DESTINATION, PreflightSnapshot,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,97 +154,39 @@ impl PreflightCheck<'_> {
     }
 
     fn runtime_mounts(&self) -> Result<Vec<RuntimeMount>> {
-        match self.runtime {
-            RuntimeKind::Opencode => Ok(vec![
-                HostStateMountRequirement::xdg_or_home(
-                    RuntimeKind::Opencode,
-                    "OpenCode",
-                    "configuration",
-                    "`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`",
-                    &self.snapshot.host.opencode.config,
-                    OPENCODE_CONFIG_DESTINATION,
-                )
-                .validate()?,
-                HostStateMountRequirement::xdg_or_home(
-                    RuntimeKind::Opencode,
-                    "OpenCode",
-                    "data",
-                    "`${XDG_DATA_HOME:-$HOME/.local/share}/opencode`",
-                    &self.snapshot.host.opencode.data,
-                    OPENCODE_DATA_DESTINATION,
-                )
-                .validate()?,
-            ]),
-            RuntimeKind::Codex => Ok(vec![
-                HostStateMountRequirement::home_only(
-                    RuntimeKind::Codex,
-                    "Codex",
-                    "configuration",
-                    "`${HOME}/.codex`",
-                    &self.snapshot.host.codex,
-                    CODEX_CONFIG_DESTINATION,
-                )
-                .validate()?,
-            ]),
+        self.runtime
+            .host_state_mounts()
+            .iter()
+            .map(|spec| {
+                HostStateMountRequirement {
+                    runtime: self.runtime,
+                    spec,
+                    state: self.host_state_snapshot(spec.source),
+                }
+                .validate()
+            })
+            .collect()
+    }
+
+    fn host_state_snapshot(
+        &self,
+        source: RuntimeHostStateSource,
+    ) -> &HostDirectoryPreflightSnapshot {
+        match source {
+            RuntimeHostStateSource::CodexConfig => &self.snapshot.host.codex,
+            RuntimeHostStateSource::OpenCodeConfig => &self.snapshot.host.opencode.config,
+            RuntimeHostStateSource::OpenCodeData => &self.snapshot.host.opencode.data,
         }
     }
 }
 
 struct HostStateMountRequirement<'a> {
     runtime: RuntimeKind,
-    product_name: &'static str,
-    description: &'static str,
-    source_expression: &'static str,
-    source_lookup: HostStateSourceLookup,
+    spec: &'a RuntimeHostStateMount,
     state: &'a HostDirectoryPreflightSnapshot,
-    destination: &'static str,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum HostStateSourceLookup {
-    HomeOnly,
-    XdgOrHome,
 }
 
 impl<'a> HostStateMountRequirement<'a> {
-    fn home_only(
-        runtime: RuntimeKind,
-        product_name: &'static str,
-        description: &'static str,
-        source_expression: &'static str,
-        state: &'a HostDirectoryPreflightSnapshot,
-        destination: &'static str,
-    ) -> Self {
-        Self {
-            runtime,
-            product_name,
-            description,
-            source_expression,
-            source_lookup: HostStateSourceLookup::HomeOnly,
-            state,
-            destination,
-        }
-    }
-
-    fn xdg_or_home(
-        runtime: RuntimeKind,
-        product_name: &'static str,
-        description: &'static str,
-        source_expression: &'static str,
-        state: &'a HostDirectoryPreflightSnapshot,
-        destination: &'static str,
-    ) -> Self {
-        Self {
-            runtime,
-            product_name,
-            description,
-            source_expression,
-            source_lookup: HostStateSourceLookup::XdgOrHome,
-            state,
-            destination,
-        }
-    }
-
     fn validate(self) -> Result<RuntimeMount> {
         let Some(source) = self.state.source.as_ref() else {
             return Err(self.missing_source_error());
@@ -252,10 +195,10 @@ impl<'a> HostStateMountRequirement<'a> {
         if !self.state.exists {
             return Err(Error::msg(format!(
                 "Missing host {} {} directory: {source}. Run `{}` on the host first so {} exists, then retry `agentbox run --runtime {}`.",
-                self.product_name,
-                self.description,
+                self.spec.product_name,
+                self.spec.description,
                 self.runtime,
-                self.source_expression,
+                self.spec.source_expression,
                 self.runtime,
             )));
         }
@@ -263,29 +206,38 @@ impl<'a> HostStateMountRequirement<'a> {
         if !self.state.is_directory {
             return Err(Error::msg(format!(
                 "Host {} {} path is not a directory: {source}",
-                self.product_name, self.description,
+                self.spec.product_name, self.spec.description,
             )));
         }
 
         if !self.state.readable || !self.state.writable {
             return Err(Error::msg(format!(
                 "Host {} {} directory is not readable and writable: {source}",
-                self.product_name, self.description,
+                self.spec.product_name, self.spec.description,
             )));
         }
 
-        Ok(RuntimeMount::bind(source.to_string(), self.destination))
+        Ok(RuntimeMount::bind(
+            source.to_string(),
+            self.spec.destination,
+        ))
     }
 
     fn missing_source_error(&self) -> Error {
-        match self.source_lookup {
-            HostStateSourceLookup::HomeOnly => Error::msg(format!(
+        match self.spec.source_lookup {
+            RuntimeHostStateSourceLookup::HomeOnly => Error::msg(format!(
                 "`HOME` is not set; cannot locate host {} {} directory {} for `run --runtime {}`",
-                self.product_name, self.description, self.source_expression, self.runtime,
+                self.spec.product_name,
+                self.spec.description,
+                self.spec.source_expression,
+                self.runtime,
             )),
-            HostStateSourceLookup::XdgOrHome => Error::msg(format!(
+            RuntimeHostStateSourceLookup::XdgOrHome => Error::msg(format!(
                 "Cannot locate host {} {} directory {} for `run --runtime {}`; set `HOME` or the matching XDG environment variable, then retry.",
-                self.product_name, self.description, self.source_expression, self.runtime,
+                self.spec.product_name,
+                self.spec.description,
+                self.spec.source_expression,
+                self.runtime,
             )),
         }
     }

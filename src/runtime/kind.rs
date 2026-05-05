@@ -13,9 +13,8 @@ use clap::ValueEnum;
 
 use crate::{Error, Result};
 
-use super::RuntimePackageSpec;
 use super::default_image::DefaultImageBuildContext;
-use super::profile;
+use super::profile::{self, RuntimeHostStateMount, RuntimePackageSpec};
 use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -49,6 +48,10 @@ impl RuntimeKind {
 
     pub(crate) fn package_spec(self) -> RuntimePackageSpec {
         self.profile().package
+    }
+
+    pub(crate) fn host_state_mounts(self) -> &'static [RuntimeHostStateMount] {
+        self.profile().host_state_mounts
     }
 
     pub fn attach_spec(self) -> RuntimeAttachSpec {
