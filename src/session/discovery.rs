@@ -115,19 +115,20 @@ impl<'a> GitRootDiscoveryScope<'a> {
         }
     }
 
-    fn collect_session(
-        &self,
-        record: SessionRecord,
-        matches: &mut Vec<SessionRecord>,
-        mismatched_roots: &mut Vec<String>,
-    ) {
+    fn classify_session(&self, record: SessionRecord) -> ScopedSessionCandidate {
         let hash_matches = record.git_root_hash() == Some(self.git_root_hash.as_str());
 
-        match (record.canonical_git_root(), hash_matches) {
-            (Some(root), _) if root == self.git_root => matches.push(record),
-            (Some(root), true) => mismatched_roots.push(root.to_string()),
-            (None, true) => matches.push(record),
-            _ => {}
+        if record.canonical_git_root() == Some(self.git_root) {
+            return ScopedSessionCandidate::Match(record);
+        }
+
+        if !hash_matches {
+            return ScopedSessionCandidate::Ignore;
+        }
+
+        match record.canonical_git_root() {
+            Some(root) => ScopedSessionCandidate::Collision(root.to_string()),
+            None => ScopedSessionCandidate::Match(record),
         }
     }
 
@@ -138,6 +139,12 @@ impl<'a> GitRootDiscoveryScope<'a> {
             mismatched_roots.join(", ")
         ))
     }
+}
+
+enum ScopedSessionCandidate {
+    Match(SessionRecord),
+    Collision(String),
+    Ignore,
 }
 
 struct SessionCollector<'a> {
@@ -158,9 +165,11 @@ impl<'a> SessionCollector<'a> {
     fn collect(&mut self, record: SessionRecord) {
         match &self.scope {
             SessionDiscoveryScope::All => self.sessions.push(record),
-            SessionDiscoveryScope::GitRoot(git_root) => {
-                git_root.collect_session(record, &mut self.sessions, &mut self.mismatched_roots)
-            }
+            SessionDiscoveryScope::GitRoot(git_root) => match git_root.classify_session(record) {
+                ScopedSessionCandidate::Match(record) => self.sessions.push(record),
+                ScopedSessionCandidate::Collision(root) => self.mismatched_roots.push(root),
+                ScopedSessionCandidate::Ignore => {}
+            },
         }
     }
 

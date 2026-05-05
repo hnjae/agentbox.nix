@@ -216,10 +216,10 @@ pub(crate) enum RuntimeHostStateSourceLookup {
 }
 
 pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
-    match kind {
-        RuntimeKind::Opencode => &OPENCODE_PROFILE,
-        RuntimeKind::Codex => &CODEX_PROFILE,
-    }
+    RUNTIME_PROFILES
+        .iter()
+        .find(|profile| profile.kind == kind)
+        .unwrap_or_else(|| panic!("missing runtime profile for `{kind:?}`"))
 }
 
 pub(crate) fn all_host_state_mounts() -> impl Iterator<Item = &'static RuntimeHostStateMount> {
