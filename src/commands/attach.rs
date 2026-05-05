@@ -156,18 +156,18 @@ fn validate_attachable_status(
             workspace.canonical_git_root.as_ref(),
             &session.container_name,
         )),
-        SessionStatus::Failed => Err(match session.failure {
-            Some(SessionFailure::NotRunning) => not_running_session_error(workspace, session),
-            Some(failure) => session_failure_requires_action_error(
-                workspace.canonical_git_root.as_ref(),
-                &session.container_name,
-                failure,
-            ),
-            None => Error::failed_managed_session(
-                workspace.canonical_git_root.as_ref(),
-                &session.container_name,
-            ),
-        }),
+        SessionStatus::Failed(Some(SessionFailure::NotRunning)) => {
+            Err(not_running_session_error(workspace, session))
+        }
+        SessionStatus::Failed(Some(failure)) => Err(session_failure_requires_action_error(
+            workspace.canonical_git_root.as_ref(),
+            &session.container_name,
+            failure,
+        )),
+        SessionStatus::Failed(None) => Err(Error::failed_managed_session(
+            workspace.canonical_git_root.as_ref(),
+            &session.container_name,
+        )),
         SessionStatus::Duplicate => Err(duplicate_sessions_error(workspace)),
     }
 }

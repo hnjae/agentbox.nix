@@ -16,7 +16,7 @@ use crate::metadata::{
 };
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 
-use super::status::{SessionFailure, SessionStatus};
+use super::status::SessionStatus;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionRecord {
@@ -25,7 +25,6 @@ pub struct SessionRecord {
     pub metadata: SessionMetadata,
     pub runtime_kind: Option<RuntimeKind>,
     pub attach_endpoint: Option<AttachEndpoint>,
-    pub failure: Option<SessionFailure>,
     pub status: SessionStatus,
 }
 

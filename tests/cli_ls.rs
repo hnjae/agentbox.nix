@@ -14,10 +14,10 @@ use clap::Parser;
 #[test]
 fn ls_renders_all_status_rows_in_stable_order() {
     let sessions = vec![
-        session("/workspace/b", "beta", SessionStatus::Failed),
+        session("/workspace/b", "beta", SessionStatus::failed_unknown()),
         session("/workspace/a", "alpha-one", SessionStatus::Running),
         session("/workspace/c", "gamma", SessionStatus::Orphaned),
-        session("/workspace/d", "delta", SessionStatus::Failed),
+        session("/workspace/d", "delta", SessionStatus::failed_unknown()),
         session("/workspace/a", "alpha-two", SessionStatus::Duplicate),
     ];
 
@@ -45,7 +45,11 @@ fn ls_renders_all_status_rows_in_stable_order() {
 
 #[test]
 fn ls_renders_unknown_for_unrecoverable_failed_fields() {
-    let mut session = session("/workspace/broken", "broken", SessionStatus::Failed);
+    let mut session = session(
+        "/workspace/broken",
+        "broken",
+        SessionStatus::failed_unknown(),
+    );
     session.metadata = SessionMetadata::from_labels(&BTreeMap::from([
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
         (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
@@ -76,7 +80,6 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
         metadata: metadata(root, name),
         runtime_kind: Some(RuntimeKind::Opencode),
         attach_endpoint: None,
-        failure: None,
         status,
     }
 }

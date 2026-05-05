@@ -24,16 +24,35 @@ pub enum SessionStatus {
     Running,
     Orphaned,
     Duplicate,
-    Failed,
+    Failed(Option<SessionFailure>),
 }
 
 impl SessionStatus {
+    pub fn failed(failure: SessionFailure) -> Self {
+        Self::Failed(Some(failure))
+    }
+
+    pub fn failed_unknown() -> Self {
+        Self::Failed(None)
+    }
+
+    pub fn failure(self) -> Option<SessionFailure> {
+        match self {
+            Self::Failed(failure) => failure,
+            _ => None,
+        }
+    }
+
+    pub fn is_failed(self) -> bool {
+        matches!(self, Self::Failed(_))
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Running => "running",
             Self::Orphaned => "orphaned",
             Self::Duplicate => "duplicate",
-            Self::Failed => "failed",
+            Self::Failed(_) => "failed",
         }
     }
 }
@@ -118,7 +137,7 @@ pub fn failed_session_requires_action_error(
     git_root: &Utf8Path,
     session: &SessionRecord,
 ) -> Option<Error> {
-    session.failure.map(|failure| {
+    session.status.failure().map(|failure| {
         session_failure_requires_action_error(git_root, &session.container_name, failure)
     })
 }
@@ -137,48 +156,42 @@ pub(super) fn derive_status(
     running: bool,
     mounts: &[PodmanContainerMount],
     git: &Git,
-) -> (SessionStatus, Option<SessionFailure>) {
+) -> SessionStatus {
     let Some(canonical_git_root) = label_report.canonical_git_root() else {
         let failure = label_report
             .required_failure()
             .unwrap_or(SessionFailure::MissingRequiredLabels);
-        return (SessionStatus::Failed, Some(failure));
+        return SessionStatus::failed(failure);
     };
 
     if let Some(failure) = label_report.attach_failure() {
-        return (SessionStatus::Failed, Some(failure));
+        return SessionStatus::failed(failure);
     }
 
     if attach_endpoint.is_none() {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::MissingPublishedAttachPort),
-        );
+        return SessionStatus::failed(SessionFailure::MissingPublishedAttachPort);
     }
 
     if !has_mount_destination(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
-        return (
-            SessionStatus::Failed,
-            Some(SessionFailure::MissingCacheMount),
-        );
+        return SessionStatus::failed(SessionFailure::MissingCacheMount);
     }
 
     if !running {
-        return (SessionStatus::Failed, Some(SessionFailure::NotRunning));
+        return SessionStatus::failed(SessionFailure::NotRunning);
     }
 
     if git_root_is_orphaned(canonical_git_root, git) {
-        return (SessionStatus::Orphaned, None);
+        return SessionStatus::Orphaned;
     }
 
-    (SessionStatus::Running, None)
+    SessionStatus::Running
 }
 
 pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<SessionRecord> {
     let mut group_sizes = BTreeMap::<Utf8PathBuf, usize>::new();
 
     for session in &sessions {
-        if session.status == SessionStatus::Failed {
+        if session.status.is_failed() {
             continue;
         }
 
@@ -188,7 +201,7 @@ pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<S
     }
 
     for session in &mut sessions {
-        if session.status == SessionStatus::Failed {
+        if session.status.is_failed() {
             continue;
         }
 

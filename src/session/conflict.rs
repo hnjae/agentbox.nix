@@ -25,7 +25,7 @@ pub(crate) fn existing_session_error(
             workspace.canonical_git_root.as_ref(),
             &session.container_name,
         ),
-        SessionStatus::Failed => {
+        SessionStatus::Failed(_) => {
             failed_session_requires_action_error(workspace.canonical_git_root.as_ref(), session)
                 .unwrap_or_else(|| {
                     podman

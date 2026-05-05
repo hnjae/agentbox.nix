@@ -59,7 +59,7 @@ fn missing_required_labels_marks_failed() {
     let sessions =
         discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
 
-    assert_eq!(sessions[0].status, SessionStatus::Failed);
+    assert!(sessions[0].status.is_failed());
 }
 
 #[test]
@@ -75,9 +75,9 @@ fn scoped_discovery_keeps_matching_root_when_identity_hash_is_missing() {
             .unwrap();
 
     assert_eq!(sessions.len(), 1);
-    assert_eq!(sessions[0].status, SessionStatus::Failed);
+    assert!(sessions[0].status.is_failed());
     assert_eq!(
-        sessions[0].failure,
+        sessions[0].status.failure(),
         Some(SessionFailure::MissingRequiredLabels)
     );
 }
@@ -92,7 +92,7 @@ fn missing_cache_mount_marks_failed() {
     let sessions =
         discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
 
-    assert_eq!(sessions[0].status, SessionStatus::Failed);
+    assert!(sessions[0].status.is_failed());
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn unsupported_runtime_label_records_specific_failure() {
         discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
 
     assert_eq!(
-        sessions[0].failure,
+        sessions[0].status.failure(),
         Some(SessionFailure::UnsupportedRuntimeLabel)
     );
 }
@@ -128,7 +128,7 @@ fn malformed_endpoint_labels_record_specific_failure() {
         discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
 
     assert_eq!(
-        sessions[0].failure,
+        sessions[0].status.failure(),
         Some(SessionFailure::MalformedEndpointLabels)
     );
 }
@@ -144,7 +144,7 @@ fn missing_published_attach_port_records_specific_failure() {
         discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
 
     assert_eq!(
-        sessions[0].failure,
+        sessions[0].status.failure(),
         Some(SessionFailure::MissingPublishedAttachPort)
     );
 }
@@ -165,7 +165,7 @@ fn non_running_containers_are_failed_in_the_live_session_model() {
     .unwrap();
 
     assert_eq!(status_for(&sessions, "running"), SessionStatus::Running);
-    assert_eq!(status_for(&sessions, "stopped"), SessionStatus::Failed);
+    assert!(status_for(&sessions, "stopped").is_failed());
 }
 
 #[test]

@@ -216,7 +216,7 @@ fn build_session_record(
         .attach_labels()
         .and_then(|attach_labels| derive_attach_endpoint(attach_labels, &inspect).ok());
 
-    let (status, failure) = derive_status(
+    let status = derive_status(
         &label_report,
         attach_endpoint.as_ref(),
         inspect.state.running,
@@ -230,7 +230,6 @@ fn build_session_record(
         metadata,
         runtime_kind,
         attach_endpoint,
-        failure,
         status,
     }
 }
