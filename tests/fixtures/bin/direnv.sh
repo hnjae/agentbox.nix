@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+log_path=${AGENTBOX_TEST_LOG:-}
+if [ -n "$log_path" ]; then
+    printf 'direnv args=%s cwd=%s\n' "$*" "$(pwd)" >> "$log_path"
+fi
+
 case "${1:-}" in
     exec)
         shift

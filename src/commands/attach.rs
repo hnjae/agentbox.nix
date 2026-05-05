@@ -33,7 +33,6 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
             attach_session.runtime(),
             attach_session.endpoint(),
             attach_session.launch_directory(),
-            workspace.canonical_git_root.as_ref(),
         );
         let retry_run_command =
             run_command_hint(Some(attach_session.runtime().as_str()), workspace);

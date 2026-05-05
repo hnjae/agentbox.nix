@@ -14,31 +14,19 @@ pub(crate) fn server_runtime_command(
     target: &Utf8Path,
     git_root: &Utf8Path,
 ) -> RuntimeInvocation {
-    runtime_invocation(runtime.server_command().argv, target, git_root)
+    RuntimeInvocation {
+        argv: wrap_exec_if_envrc_applies(runtime.server_command().argv, target, git_root),
+        workdir: target.to_path_buf(),
+    }
 }
 
 pub(crate) fn host_client_runtime_command(
     runtime: RuntimeKind,
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
-    git_root: &Utf8Path,
 ) -> RuntimeInvocation {
-    runtime_invocation(
-        runtime.host_client_command(endpoint).argv,
-        launch_directory,
-        git_root,
-    )
-}
-
-fn runtime_invocation(
-    base_argv: Vec<String>,
-    target: &Utf8Path,
-    git_root: &Utf8Path,
-) -> RuntimeInvocation {
-    let argv = wrap_exec_if_envrc_applies(base_argv, target, git_root);
-
     RuntimeInvocation {
-        argv,
-        workdir: target.to_path_buf(),
+        argv: runtime.host_client_command(endpoint).argv,
+        workdir: launch_directory.to_path_buf(),
     }
 }

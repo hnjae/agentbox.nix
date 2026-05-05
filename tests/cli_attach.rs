@@ -61,6 +61,44 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
 }
 
 #[test]
+fn attach_does_not_wrap_host_client_with_direnv_when_envrc_applies() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "running-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            labels_with_launch_directory(
+                opencode_workspace_labels(workspace),
+                workspace.canonical_target.as_str(),
+            ),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("attach").arg(target);
+
+    command.assert().success().stderr("");
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "opencode"]);
+    assert!(log[2].contains("attach http://127.0.0.1:49152"));
+    assert!(log[2].contains(&format!("cwd={}", workspace.canonical_target)));
+    assert!(!log.iter().any(|line| line.starts_with("direnv ")));
+    assert!(!log.iter().any(|line| line.contains("direnv exec .")));
+}
+
+#[test]
 fn attach_uses_stored_launch_directory_when_requesting_another_subdirectory() {
     let repo = support::temp_git_repo();
     let launch_target = repo.path().join("launch");
