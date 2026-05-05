@@ -19,9 +19,9 @@ use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
     PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
 };
-use agentbox::runtime::default_image::OPENCODE_DEFAULT_IMAGE;
+use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE};
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
-use agentbox::workspace::hash12;
+use agentbox::workspace::{WorkspaceIdentity, hash12};
 use camino::Utf8Path;
 use serde_json::{Value, json};
 
@@ -376,6 +376,102 @@ pub fn running_managed_inspect_fixture(
     labels: BTreeMap<String, String>,
 ) -> String {
     managed_inspect_fixture(container_name, git_root, true, include_cache_mount, labels)
+}
+
+pub fn running_workspace_inspect_fixture(
+    workspace: &WorkspaceIdentity,
+    image: &str,
+    runtime: RuntimeKind,
+) -> String {
+    let attach = runtime.attach_spec();
+    let labels = BTreeMap::from([
+        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
+        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
+        (
+            LABEL_GIT_ROOT.to_string(),
+            workspace.canonical_git_root.to_string(),
+        ),
+        (LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone()),
+        (LABEL_RUNTIME.to_string(), runtime.as_str().to_string()),
+        (LABEL_IMAGE.to_string(), image.to_string()),
+        (
+            LABEL_LAUNCH_DIRECTORY.to_string(),
+            workspace.canonical_target.to_string(),
+        ),
+        (
+            LABEL_LOGICAL_NAME.to_string(),
+            workspace.container_name.clone(),
+        ),
+        (LABEL_ATTACH_SCHEME.to_string(), attach.scheme.to_string()),
+        (
+            LABEL_CONTAINER_PORT.to_string(),
+            attach.container_port.to_string(),
+        ),
+        (
+            LABEL_CONTAINER_LISTEN_IP.to_string(),
+            attach.container_listen_ip.to_string(),
+        ),
+    ]);
+    let command = runtime.server_command().argv;
+    let ports = BTreeMap::from([(
+        format!("{}/tcp", attach.container_port),
+        json!([
+            {
+                "HostIp": "127.0.0.1",
+                "HostPort": "49152"
+            }
+        ]),
+    )]);
+
+    serde_json::to_string(&vec![json!({
+        "Id": workspace.container_name,
+        "Created": "2026-04-21T10:15:00.000000000Z",
+        "Path": format!("/usr/bin/{}", runtime.as_str()),
+        "Args": [],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "ExitCode": 0,
+            "Pid": 4321,
+            "StartedAt": "2026-04-21T10:15:01.000000000Z",
+            "FinishedAt": null,
+            "Health": null,
+        },
+        "ImageName": image,
+        "Config": {
+            "User": "user",
+            "Env": [],
+            "Cmd": command,
+            "WorkingDir": workspace.canonical_target.as_str(),
+            "Labels": labels,
+            "Entrypoint": ["/entrypoint"],
+            "StopSignal": "SIGTERM",
+        },
+        "HostConfig": {
+            "AutoRemove": true,
+            "NetworkMode": "bridge",
+            "Privileged": false,
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": workspace.canonical_git_root.as_str(),
+                "Destination": workspace.canonical_git_root.as_str(),
+                "RW": true,
+            },
+            {
+                "Type": "volume",
+                "Source": workspace.container_name,
+                "Destination": REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+                "RW": true,
+            }
+        ],
+        "NetworkSettings": {
+            "Networks": {},
+            "Ports": ports,
+        },
+    })])
+    .unwrap()
 }
 
 pub fn cached_managed_inspect_fixture(

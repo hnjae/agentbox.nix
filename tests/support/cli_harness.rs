@@ -9,10 +9,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use agentbox::lock::lock_path_in_state_dir;
+use agentbox::workspace::WorkspaceIdentity;
 use assert_cmd::Command as AssertCommand;
+use assert_cmd::cargo::cargo_bin;
 use tempfile::TempDir;
 
-use super::{path_with_prepend, read_log_lines, write_executable};
+use super::{fake_git_script, path_with_prepend, read_log_lines, write_executable};
 
 pub struct CliHarness {
     fake_bin: TempDir,
@@ -20,6 +23,7 @@ pub struct CliHarness {
     state_home: TempDir,
     home: TempDir,
     log_path: std::path::PathBuf,
+    lock_probe_path: PathBuf,
     original_path: String,
 }
 
@@ -30,6 +34,7 @@ impl CliHarness {
         let state_home = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
         let log_path = fixtures.path().join("podman.log");
+        let lock_probe_path = cargo_bin("agentbox-lock-probe");
         let original_path = std::env::var("PATH").unwrap();
 
         fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
@@ -37,13 +42,18 @@ impl CliHarness {
         fs::create_dir(home.path().join(".codex")).unwrap();
         fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
+        write_executable(fake_bin.path().join("git"), fake_git_script());
+        write_executable(fake_bin.path().join("direnv"), fake_direnv_script());
         write_executable(fake_bin.path().join("podman"), &fake_podman_script());
         write_executable(
             fake_bin.path().join("npm"),
             "#!/bin/sh\nprintf '%s\\n' '0.99.0'\n",
         );
-        write_executable(fake_bin.path().join("opencode"), "#!/bin/sh\nexit 0\n");
-        write_executable(fake_bin.path().join("codex"), "#!/bin/sh\nexit 0\n");
+        write_executable(
+            fake_bin.path().join("opencode"),
+            &fake_client_script("opencode"),
+        );
+        write_executable(fake_bin.path().join("codex"), &fake_client_script("codex"));
 
         Self {
             fake_bin,
@@ -51,6 +61,7 @@ impl CliHarness {
             state_home,
             home,
             log_path,
+            lock_probe_path,
             original_path,
         }
     }
@@ -84,6 +95,14 @@ impl CliHarness {
         self.fail_operation(kind, stderr, exit_code);
     }
 
+    pub fn mark_default_image_absent(&self) {
+        match fs::remove_file(self.fixtures.path().join("image.exists")) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => panic!("failed to remove image.exists fixture: {error}"),
+        }
+    }
+
     pub fn write_logs(&self, name: &str, logs: &str) {
         fs::write(self.fixtures.path().join(format!("logs-{name}.txt")), logs).unwrap();
     }
@@ -98,6 +117,22 @@ impl CliHarness {
 
     pub fn state_home_path(&self) -> &Path {
         self.state_home.path()
+    }
+
+    pub fn home_path(&self) -> &Path {
+        self.home.path()
+    }
+
+    pub fn lock_path(&self, workspace: &WorkspaceIdentity) -> PathBuf {
+        lock_path_in_state_dir(self.state_home.path(), &workspace.digest64)
+    }
+
+    pub fn locked_agentbox_command(&self, workspace: &WorkspaceIdentity) -> AssertCommand {
+        let mut command = self.agentbox_command();
+        command
+            .env("AGENTBOX_TEST_LOCK_PATH", self.lock_path(workspace))
+            .env("AGENTBOX_TEST_LOCK_PROBE", &self.lock_probe_path);
+        command
     }
 
     pub fn state_files(&self) -> Vec<PathBuf> {
@@ -183,7 +218,17 @@ record() {
   if [ -n "$log_path" ]; then
     op=$1
     shift
-    printf '%s args=%s\n' "$op" "$*" >> "$log_path"
+    printf '%s lock=%s args=%s\n' "$op" "$(lock_state)" "$*" >> "$log_path"
+  fi
+}
+
+lock_state() {
+  lock_path=${AGENTBOX_TEST_LOCK_PATH:-}
+  lock_probe=${AGENTBOX_TEST_LOCK_PROBE:-}
+  if [ -n "$lock_path" ] && [ -n "$lock_probe" ]; then
+    "$lock_probe" "$lock_path"
+  else
+    printf 'unknown'
   fi
 }
 
@@ -214,6 +259,56 @@ last_arg() {
     last=$arg
   done
   printf '%s\n' "$last"
+}
+
+validate_build_context() {
+  containerfile=
+  context_dir=
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -f)
+        shift
+        containerfile=${1:-}
+        ;;
+    esac
+
+    context_dir=$1
+    shift || true
+  done
+
+  [ -n "$containerfile" ] || {
+    printf 'missing build containerfile argument\n' >&2
+    exit 98
+  }
+
+  [ -n "$context_dir" ] || {
+    printf 'missing build context directory argument\n' >&2
+    exit 98
+  }
+
+  [ -r "$containerfile" ] || {
+    printf 'unreadable build containerfile: %s\n' "$containerfile" >&2
+    exit 98
+  }
+
+  [ "$containerfile" = "$context_dir/Containerfile" ] || {
+    printf 'build containerfile %s did not match context %s\n' "$containerfile" "$context_dir" >&2
+    exit 98
+  }
+
+  for relative_path in \
+    Containerfile \
+    bootstrap \
+    entrypoint \
+    lib/runtime-contract.sh \
+    runtime-packages.nix
+  do
+    [ -r "$context_dir/$relative_path" ] || {
+      printf 'missing embedded build file: %s\n' "$relative_path" >&2
+      exit 98
+    }
+  done
 }
 
 cmd=$1
@@ -260,6 +355,7 @@ case "$cmd" in
     esac
     ;;
   build)
+    validate_build_context "$@"
     record build "$@"
     maybe_fail build
     printf 'built\n'
@@ -314,4 +410,50 @@ case "$cmd" in
 esac
 "#
     .to_string()
+}
+
+fn fake_client_script(name: &str) -> String {
+    format!(
+        r#"#!/bin/sh
+set -eu
+
+log_path=${{AGENTBOX_TEST_LOG:-}}
+
+lock_state() {{
+  lock_path=${{AGENTBOX_TEST_LOCK_PATH:-}}
+  lock_probe=${{AGENTBOX_TEST_LOCK_PROBE:-}}
+  if [ -n "$lock_path" ] && [ -n "$lock_probe" ]; then
+    "$lock_probe" "$lock_path"
+  else
+    printf 'unknown'
+  fi
+}}
+
+if [ -n "$log_path" ]; then
+  printf '{name} lock=%s args=%s cwd=%s\n' "$(lock_state)" "$*" "$(pwd)" >> "$log_path"
+fi
+"#
+    )
+}
+
+fn fake_direnv_script() -> &'static str {
+    r#"#!/bin/sh
+set -eu
+
+case "${1:-}" in
+  exec)
+    shift
+    directory=${1:?missing direnv exec directory}
+    shift
+    cd "$directory"
+    exec "$@"
+    ;;
+  export)
+    printf '{}\n'
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+"#
 }

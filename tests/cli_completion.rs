@@ -10,12 +10,7 @@ use std::fs;
 
 use assert_cmd::Command as AssertCommand;
 
-use agentbox::metadata::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
-};
-use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
+use agentbox::metadata::LABEL_ATTACH_SCHEME;
 use agentbox::workspace::resolve_workspace_identity;
 
 #[path = "support/mod.rs"]
@@ -23,28 +18,44 @@ mod support;
 
 use support::{
     CliHarness as LiveHarness, managed_inspect_fixture, managed_labels, managed_ps_entry,
-    path_with_prepend, ps_fixture, write_executable,
+    ps_fixture,
 };
 
 #[test]
 fn helper_returns_live_roots_with_runtime_and_status_metadata() {
     let repo = support::temp_git_repo();
-    let canonical = repo.path().canonicalize().unwrap();
-    let harness = install_harness(repo.path());
+    let workspace = resolve_workspace_identity(repo.path()).unwrap();
+    let harness = LiveHarness::new();
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        "running-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "opencode",
+                &workspace.container_name,
+            ),
+        ),
+    );
 
-    let output = AssertCommand::cargo_bin("agentbox")
-        .unwrap()
-        .env("PATH", harness.path_env())
-        .env("XDG_STATE_HOME", harness.state_home.path())
-        .env("AGENTBOX_TEST_FIXTURES", harness.fixtures.path())
-        .arg("__completion-roots")
-        .arg("attach")
+    let output = harness
+        .agentbox_command()
+        .args(["__completion-roots", "attach"])
         .output()
         .unwrap();
     assert!(output.status.success());
     let output = String::from_utf8(output.stdout).unwrap();
 
-    assert!(output.contains(canonical.to_str().unwrap()));
+    assert!(output.contains(workspace.canonical_git_root.as_str()));
     assert!(output.contains("opencode"));
 }
 
@@ -245,149 +256,4 @@ fn capture_installed_manpage() -> String {
         .unwrap();
     assert!(output.status.success());
     String::from_utf8(output.stdout).unwrap()
-}
-
-fn install_harness(repo_root: &std::path::Path) -> Harness {
-    let fake_bin = tempfile::tempdir().unwrap();
-    let fixtures = tempfile::tempdir().unwrap();
-    let state_home = tempfile::tempdir().unwrap();
-    let original_path = std::env::var("PATH").unwrap();
-
-    let root = repo_root.canonicalize().unwrap();
-    let hash = agentbox::workspace::hash12(root.to_str().unwrap().as_bytes());
-    let ps_json = format!(
-        r#"[
-  {{
-    "Id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    "Image": "ghcr.io/example/agentbox:latest",
-    "Command": ["opencode"],
-    "Created": 1713681300,
-    "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
-    "Names": ["agentbox-demo"],
-    "Ports": [],
-    "Status": "Up 2 minutes",
-    "State": "running",
-    "Labels": {{
-      "{LABEL_MANAGED}": "{LABEL_MANAGED_VALUE}",
-      "{LABEL_GIT_ROOT_HASH}": "{hash}"
-    }},
-    "Mounts": [],
-    "Networks": ["podman"],
-    "Namespaces": null
-  }}
-]"#
-    );
-    let inspect_json = format!(
-        r#"[
-  {{
-    "Id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    "Created": "2026-04-21T10:15:00.000000000Z",
-    "Path": "/usr/bin/opencode",
-    "Args": [],
-    "State": {{
-      "Status": "running",
-      "Running": true,
-      "ExitCode": 0,
-      "Pid": 4321,
-      "StartedAt": "2026-04-21T10:15:01.000000000Z",
-      "FinishedAt": "0001-01-01T00:00:00Z"
-    }},
-    "ImageName": "ghcr.io/example/agentbox:latest",
-    "Config": {{
-      "User": "agent",
-      "Env": [],
-      "Cmd": ["opencode"],
-      "WorkingDir": "/workspace",
-      "Labels": {{
-        "{LABEL_MANAGED}": "{LABEL_MANAGED_VALUE}",
-        "{LABEL_SCHEMA}": "{LABEL_SCHEMA_VALUE}",
-        "{LABEL_GIT_ROOT}": "{}",
-        "{LABEL_GIT_ROOT_HASH}": "{hash}",
-        "{LABEL_RUNTIME}": "opencode",
-        "{LABEL_IMAGE}": "ghcr.io/example/agentbox:latest",
-        "{LABEL_LAUNCH_DIRECTORY}": "{}",
-        "{LABEL_LOGICAL_NAME}": "agentbox-demo",
-        "{LABEL_ATTACH_SCHEME}": "http",
-        "{LABEL_CONTAINER_PORT}": "4096",
-        "{LABEL_CONTAINER_LISTEN_IP}": "0.0.0.0"
-      }},
-      "Entrypoint": ["/entrypoint"],
-      "StopSignal": "SIGTERM"
-    }},
-    "HostConfig": {{
-      "AutoRemove": false,
-      "NetworkMode": "bridge",
-      "Privileged": false
-    }},
-    "Mounts": [
-      {{
-        "Type": "bind",
-        "Source": "/tmp/workspace",
-        "Destination": "{REQUIRED_NIX_CACHE_MOUNT_DESTINATION}",
-        "RW": true
-      }}
-    ],
-    "NetworkSettings": {{
-      "Networks": {{}},
-      "Ports": {{
-        "4096/tcp": [
-          {{
-            "HostIp": "127.0.0.1",
-            "HostPort": "49152"
-          }}
-        ]
-      }}
-    }}
-  }}
-]"#,
-        root.to_str().unwrap(),
-        root.to_str().unwrap()
-    );
-    fs::write(fixtures.path().join("ps.json"), ps_json).unwrap();
-    fs::write(
-        fixtures
-            .path()
-            .join("inspect-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.json"),
-        inspect_json,
-    )
-    .unwrap();
-    write_executable(fake_bin.path().join("podman"), &fake_podman_script());
-
-    Harness {
-        fake_bin,
-        fixtures,
-        state_home,
-        original_path,
-    }
-}
-
-struct Harness {
-    fake_bin: tempfile::TempDir,
-    fixtures: tempfile::TempDir,
-    state_home: tempfile::TempDir,
-    original_path: String,
-}
-
-impl Harness {
-    fn path_env(&self) -> String {
-        path_with_prepend(self.fake_bin.path(), &self.original_path)
-    }
-}
-
-fn fake_podman_script() -> String {
-    r#"#!/bin/sh
-set -eu
-case "$1" in
-  ps)
-    cat "$AGENTBOX_TEST_FIXTURES/ps.json"
-    ;;
-  inspect)
-    cat "$AGENTBOX_TEST_FIXTURES/inspect-$2.json"
-    ;;
-  *)
-    exit 1
-    ;;
-esac
-"#
-    .to_string()
 }

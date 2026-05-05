@@ -24,4 +24,5 @@ pub use podman_fixtures::{
     managed_container_models_with_hash, managed_inspect_fixture, managed_labels,
     managed_labels_for_image, managed_ps_entry, opencode_managed_labels, podman_inspect_fixture,
     podman_ps_fixture, ps_fixture, running_managed_inspect_fixture,
+    running_workspace_inspect_fixture,
 };
