@@ -200,21 +200,6 @@ pub(crate) enum RuntimeHostStateSource {
     },
 }
 
-impl RuntimeHostStateSource {
-    pub(crate) fn lookup(self) -> RuntimeHostStateSourceLookup {
-        match self {
-            Self::HomeOnly { .. } => RuntimeHostStateSourceLookup::HomeOnly,
-            Self::XdgOrHome { .. } => RuntimeHostStateSourceLookup::XdgOrHome,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RuntimeHostStateSourceLookup {
-    HomeOnly,
-    XdgOrHome,
-}
-
 pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
     RUNTIME_PROFILES
         .iter()

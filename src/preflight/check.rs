@@ -8,9 +8,7 @@
 
 use camino::Utf8Path;
 
-use crate::runtime::{
-    RuntimeHostStateMount, RuntimeHostStateSourceLookup, RuntimeKind, RuntimeMount,
-};
+use crate::runtime::{RuntimeHostStateMount, RuntimeHostStateSource, RuntimeKind, RuntimeMount};
 use crate::{Error, Result};
 
 use super::{
@@ -222,15 +220,15 @@ impl<'a> HostStateMountRequirement<'a> {
     }
 
     fn missing_source_error(&self) -> Error {
-        match self.spec.source.lookup() {
-            RuntimeHostStateSourceLookup::HomeOnly => Error::msg(format!(
+        match self.spec.source {
+            RuntimeHostStateSource::HomeOnly { .. } => Error::msg(format!(
                 "`HOME` is not set; cannot locate host {} {} directory {} for `run --runtime {}`",
                 self.spec.product_name,
                 self.spec.description,
                 self.spec.source_expression,
                 self.runtime,
             )),
-            RuntimeHostStateSourceLookup::XdgOrHome => Error::msg(format!(
+            RuntimeHostStateSource::XdgOrHome { .. } => Error::msg(format!(
                 "Cannot locate host {} {} directory {} for `run --runtime {}`; set `HOME` or the matching XDG environment variable, then retry.",
                 self.spec.product_name,
                 self.spec.description,

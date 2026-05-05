@@ -13,10 +13,7 @@ mod profile;
 mod spec;
 
 pub use kind::RuntimeKind;
-pub(crate) use profile::{
-    RuntimeHostStateMount, RuntimeHostStateSource, RuntimeHostStateSourceLookup,
-    all_host_state_mounts,
-};
+pub(crate) use profile::{RuntimeHostStateMount, RuntimeHostStateSource, all_host_state_mounts};
 pub use spec::{
     AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeAttachSpec, RuntimeCommand, RuntimeCreateSpec,
     RuntimeMount, RuntimeMountKind,

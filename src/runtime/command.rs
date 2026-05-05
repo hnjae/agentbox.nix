@@ -9,19 +9,34 @@
 use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand};
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct ServerCommandTemplate {
-    args: &'static [ServerCommandArg],
+pub(super) struct RuntimeCommandTemplate<A: 'static> {
+    args: &'static [A],
 }
 
-impl ServerCommandTemplate {
-    pub(super) const fn new(args: &'static [ServerCommandArg]) -> Self {
+impl<A> RuntimeCommandTemplate<A> {
+    pub(super) const fn new(args: &'static [A]) -> Self {
         Self { args }
     }
 
-    pub(super) fn render(self, attach: RuntimeAttachSpec) -> RuntimeCommand {
+    fn render_with<C>(self, context: &C) -> RuntimeCommand
+    where
+        A: RuntimeCommandTemplateArg<C>,
+    {
         RuntimeCommand {
-            argv: self.args.iter().map(|arg| arg.render(attach)).collect(),
+            argv: self.args.iter().map(|arg| arg.render(context)).collect(),
         }
+    }
+}
+
+trait RuntimeCommandTemplateArg<C>: Copy {
+    fn render(self, context: &C) -> String;
+}
+
+pub(super) type ServerCommandTemplate = RuntimeCommandTemplate<ServerCommandArg>;
+
+impl RuntimeCommandTemplate<ServerCommandArg> {
+    pub(super) fn render(self, attach: RuntimeAttachSpec) -> RuntimeCommand {
+        self.render_with(&attach)
     }
 }
 
@@ -33,8 +48,8 @@ pub(super) enum ServerCommandArg {
     ContainerListenEndpoint,
 }
 
-impl ServerCommandArg {
-    fn render(self, attach: RuntimeAttachSpec) -> String {
+impl RuntimeCommandTemplateArg<RuntimeAttachSpec> for ServerCommandArg {
+    fn render(self, attach: &RuntimeAttachSpec) -> String {
         match self {
             Self::Literal(value) => value.to_string(),
             Self::ContainerListenIp => attach.container_listen_ip.to_string(),
@@ -44,20 +59,11 @@ impl ServerCommandArg {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct HostClientCommandTemplate {
-    args: &'static [HostClientCommandArg],
-}
+pub(super) type HostClientCommandTemplate = RuntimeCommandTemplate<HostClientCommandArg>;
 
-impl HostClientCommandTemplate {
-    pub(super) const fn new(args: &'static [HostClientCommandArg]) -> Self {
-        Self { args }
-    }
-
+impl RuntimeCommandTemplate<HostClientCommandArg> {
     pub(super) fn render(self, endpoint: &AttachEndpoint) -> RuntimeCommand {
-        RuntimeCommand {
-            argv: self.args.iter().map(|arg| arg.render(endpoint)).collect(),
-        }
+        self.render_with(endpoint)
     }
 }
 
@@ -67,7 +73,7 @@ pub(super) enum HostClientCommandArg {
     AttachEndpoint,
 }
 
-impl HostClientCommandArg {
+impl RuntimeCommandTemplateArg<AttachEndpoint> for HostClientCommandArg {
     fn render(self, endpoint: &AttachEndpoint) -> String {
         match self {
             Self::Literal(value) => value.to_string(),
