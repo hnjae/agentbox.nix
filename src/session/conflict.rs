@@ -1,4 +1,7 @@
+use camino::Utf8Path;
+
 use crate::Error;
+use crate::metadata::LABEL_LOGICAL_NAME;
 use crate::podman::{Podman, PodmanContainerInspect};
 use crate::runtime::RuntimeCreateSpec;
 use crate::workspace::WorkspaceIdentity;
@@ -8,7 +11,6 @@ use super::{
     REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionMetadata, SessionRecord,
     SessionStatus, failed_session_requires_action_error, session_failure_requires_action_error,
 };
-use crate::metadata::LABEL_LOGICAL_NAME;
 
 pub(crate) fn existing_session_error(
     podman: &Podman,
@@ -70,61 +72,126 @@ fn classify_named_container_conflict(
 ) -> Error {
     let metadata = SessionMetadata::from_labels(&inspect.config.labels);
     let container_name = inspect_container_name(&metadata, expected_name);
-    let canonical_git_root = metadata.canonical_git_root();
-    let git_root_hash = metadata.git_root_hash();
 
-    if metadata.is_managed() {
-        if !metadata.has_all_required_label_values() {
+    if !metadata.is_managed() {
+        return unmanaged_container_conflict_error(workspace);
+    }
+
+    if !metadata.has_all_required_label_values() {
+        return failure_conflict_error(
+            workspace,
+            &container_name,
+            SessionFailure::MissingRequiredLabels,
+        );
+    }
+
+    let Some(identity) = ManagedSessionIdentity::from_metadata(&metadata) else {
+        return failure_conflict_error(
+            workspace,
+            &container_name,
+            SessionFailure::MissingRequiredLabels,
+        );
+    };
+
+    ManagedContainerConflict {
+        workspace,
+        container_name: &container_name,
+        identity,
+        inspect,
+    }
+    .classify()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ManagedSessionIdentity<'a> {
+    canonical_git_root: &'a Utf8Path,
+    git_root_hash: &'a str,
+}
+
+impl<'a> ManagedSessionIdentity<'a> {
+    fn from_metadata(metadata: &'a SessionMetadata) -> Option<Self> {
+        Some(Self {
+            canonical_git_root: metadata.canonical_git_root()?,
+            git_root_hash: metadata.git_root_hash()?,
+        })
+    }
+}
+
+struct ManagedContainerConflict<'a> {
+    workspace: &'a WorkspaceIdentity,
+    container_name: &'a str,
+    identity: ManagedSessionIdentity<'a>,
+    inspect: &'a PodmanContainerInspect,
+}
+
+impl ManagedContainerConflict<'_> {
+    fn classify(&self) -> Error {
+        if self.hash_matches_different_root() {
+            return self.hash_collision_error();
+        }
+
+        if self.root_matches_workspace() {
+            return self.same_root_error();
+        }
+
+        self.different_root_error()
+    }
+
+    fn hash_matches_different_root(&self) -> bool {
+        self.identity.git_root_hash == self.workspace.hash12.as_str()
+            && !self.root_matches_workspace()
+    }
+
+    fn root_matches_workspace(&self) -> bool {
+        self.identity.canonical_git_root.as_str() == self.workspace.canonical_git_root.as_str()
+    }
+
+    fn hash_matches_workspace(&self) -> bool {
+        self.identity.git_root_hash == self.workspace.hash12.as_str()
+    }
+
+    fn same_root_error(&self) -> Error {
+        if !self.hash_matches_workspace() {
             return failure_conflict_error(
-                workspace,
-                &container_name,
-                SessionFailure::MissingRequiredLabels,
+                self.workspace,
+                self.container_name,
+                SessionFailure::DriftedGitRootHash,
             );
         }
 
-        if git_root_hash == Some(workspace.hash12.as_str())
-            && canonical_git_root
-                .is_some_and(|root| root.as_str() != workspace.canonical_git_root.as_str())
-        {
-            return Error::msg(format!(
-                "managed container `{}` collides on git-root hash `{}`: stored root `{}` does not match `{}`; remove or recreate the conflicting container before retrying",
-                container_name,
-                workspace.hash12,
-                canonical_git_root.map_or("<missing>", camino::Utf8Path::as_str),
-                workspace.canonical_git_root,
-            ));
+        if !has_mount_destination(&self.inspect.mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
+            return failure_conflict_error(
+                self.workspace,
+                self.container_name,
+                SessionFailure::MissingCacheMount,
+            );
         }
 
-        if canonical_git_root
-            .is_some_and(|root| root.as_str() == workspace.canonical_git_root.as_str())
-        {
-            if git_root_hash != Some(workspace.hash12.as_str()) {
-                return failure_conflict_error(
-                    workspace,
-                    &container_name,
-                    SessionFailure::DriftedGitRootHash,
-                );
-            }
-
-            if !has_mount_destination(&inspect.mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
-                return failure_conflict_error(
-                    workspace,
-                    &container_name,
-                    SessionFailure::MissingCacheMount,
-                );
-            }
-
-            return generic_failed_session_error(workspace, &container_name);
-        }
-
-        if let Some(root) = canonical_git_root {
-            return Error::msg(format!(
-                "container name `{}` is already used by managed session `{}` for `{}`; remove or rename the conflicting container before retrying `{}`",
-                workspace.container_name, container_name, root, workspace.canonical_git_root,
-            ));
-        }
+        generic_failed_session_error(self.workspace, self.container_name)
     }
 
+    fn hash_collision_error(&self) -> Error {
+        Error::msg(format!(
+            "managed container `{}` collides on git-root hash `{}`: stored root `{}` does not match `{}`; remove or recreate the conflicting container before retrying",
+            self.container_name,
+            self.workspace.hash12,
+            self.identity.canonical_git_root,
+            self.workspace.canonical_git_root,
+        ))
+    }
+
+    fn different_root_error(&self) -> Error {
+        Error::msg(format!(
+            "container name `{}` is already used by managed session `{}` for `{}`; remove or rename the conflicting container before retrying `{}`",
+            self.workspace.container_name,
+            self.container_name,
+            self.identity.canonical_git_root,
+            self.workspace.canonical_git_root,
+        ))
+    }
+}
+
+fn unmanaged_container_conflict_error(workspace: &WorkspaceIdentity) -> Error {
     Error::msg(format!(
         "container name `{}` is already in use by a different container; remove or rename that container before retrying `{}`",
         workspace.container_name, workspace.canonical_git_root,
