@@ -178,6 +178,12 @@ different git-root identity token are outside that command's discovery scope and
 must not block it. Containers with a missing identity token remain in scope
 until full inspection proves whether they match.
 
+When a deterministic container-name conflict is inspected, `agentbox` uses the
+conflicting managed container's recoverable workspace identity labels to report
+the conflicting git root before evaluating runtime-specific attach metadata.
+Malformed runtime or attach metadata on a managed container for a different git
+root must not hide that the failure is a different-workspace name conflict.
+
 ## CLI
 
 Global flags:
