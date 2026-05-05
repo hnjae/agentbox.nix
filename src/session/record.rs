@@ -12,7 +12,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::metadata::{
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, REQUIRED_SESSION_LABELS, required_label_value,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, has_all_required_session_label_values,
+    required_label_value,
 };
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 
@@ -67,9 +68,7 @@ impl SessionMetadata {
     }
 
     pub(crate) fn has_all_required_label_values(&self) -> bool {
-        REQUIRED_SESSION_LABELS
-            .iter()
-            .all(|label| self.label(label).is_some())
+        has_all_required_session_label_values(&self.labels)
     }
 
     pub(crate) fn canonical_git_root(&self) -> Option<&Utf8Path> {

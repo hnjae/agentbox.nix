@@ -33,6 +33,26 @@ pub const LABEL_OPENCODE_RESOLVED_AT: &str = "io.agentbox.opencode.resolved_at";
 pub const LABEL_MANAGED_VALUE: &str = "true";
 pub const LABEL_SCHEMA_VALUE: &str = "1";
 
+pub const REQUIRED_SESSION_MARKER_LABEL_VALUES: &[(&str, &str)] = &[
+    (LABEL_MANAGED, LABEL_MANAGED_VALUE),
+    (LABEL_SCHEMA, LABEL_SCHEMA_VALUE),
+];
+
+pub const REQUIRED_SESSION_IDENTITY_LABELS: &[&str] = &[
+    LABEL_GIT_ROOT,
+    LABEL_GIT_ROOT_HASH,
+    LABEL_IMAGE,
+    LABEL_LAUNCH_DIRECTORY,
+    LABEL_LOGICAL_NAME,
+];
+
+pub const REQUIRED_SESSION_ATTACH_LABELS: &[&str] = &[
+    LABEL_RUNTIME,
+    LABEL_ATTACH_SCHEME,
+    LABEL_CONTAINER_PORT,
+    LABEL_CONTAINER_LISTEN_IP,
+];
+
 pub const REQUIRED_SESSION_LABELS: &[&str] = &[
     LABEL_MANAGED,
     LABEL_SCHEMA,
@@ -94,4 +114,31 @@ pub(crate) fn required_label_value<'a>(
         .get(name)
         .map(String::as_str)
         .filter(|value| !value.trim().is_empty())
+}
+
+pub(crate) fn has_all_required_session_label_values(labels: &BTreeMap<String, String>) -> bool {
+    REQUIRED_SESSION_LABELS
+        .iter()
+        .all(|label| required_label_value(labels, label).is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn required_session_label_list_matches_contract_sections() {
+        let mut required_from_sections = REQUIRED_SESSION_MARKER_LABEL_VALUES
+            .iter()
+            .map(|(label, _)| *label)
+            .chain(REQUIRED_SESSION_IDENTITY_LABELS.iter().copied())
+            .chain(REQUIRED_SESSION_ATTACH_LABELS.iter().copied())
+            .collect::<Vec<_>>();
+        required_from_sections.sort_unstable();
+
+        let mut required_session_labels = REQUIRED_SESSION_LABELS.to_vec();
+        required_session_labels.sort_unstable();
+
+        assert_eq!(required_session_labels, required_from_sections);
+    }
 }

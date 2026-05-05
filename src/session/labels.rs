@@ -11,8 +11,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::Error;
 use crate::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME, REQUIRED_SESSION_IDENTITY_LABELS,
+    REQUIRED_SESSION_MARKER_LABEL_VALUES,
 };
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::hash12;
@@ -22,12 +22,6 @@ use super::status::SessionFailure;
 
 type RequiredLabelsResult<T> = std::result::Result<T, SessionFailure>;
 type AttachLabelsResult<T> = std::result::Result<T, AttachLabelError>;
-
-const REQUIRED_SESSION_MARKER_LABELS: &[(&str, &str)] = &[
-    (LABEL_MANAGED, LABEL_MANAGED_VALUE),
-    (LABEL_SCHEMA, LABEL_SCHEMA_VALUE),
-];
-const REQUIRED_SESSION_IDENTITY_LABELS: &[&str] = &[LABEL_IMAGE, LABEL_LOGICAL_NAME];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RequiredSessionLabels {
@@ -174,7 +168,7 @@ impl RequiredSessionLabels {
     }
 
     fn from_session_labels(labels: &SessionMetadata) -> RequiredLabelsResult<Self> {
-        for (name, expected) in REQUIRED_SESSION_MARKER_LABELS {
+        for (name, expected) in REQUIRED_SESSION_MARKER_LABEL_VALUES {
             require_session_label_value(labels, name, expected)?;
         }
 

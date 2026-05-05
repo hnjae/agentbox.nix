@@ -57,14 +57,10 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
     let image_exists = podman.image_exists(image)?;
     let prior_state = read_runtime_image_state(runtime)?;
 
-    if image_exists
-        && prior_state
-            .as_ref()
-            .is_some_and(|state| state.installed_version == latest_version && state.image == image)
-    {
-        let state = prior_state
-            .expect("state exists because the up-to-date predicate was true")
-            .with_latest_check(latest_version.clone(), now_unix_seconds()?);
+    if let Some(state) = prior_state.filter(|state| {
+        image_exists && state.installed_version == latest_version && state.image == image
+    }) {
+        let state = state.with_latest_check(latest_version.clone(), now_unix_seconds()?);
         write_runtime_image_state(runtime, &state)?;
         println!("{runtime} runtime image `{image}` is already up to date at {latest_version}");
         return Ok(());
