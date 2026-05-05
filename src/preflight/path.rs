@@ -31,31 +31,45 @@ pub(super) fn symlink_or_path_exists(path: &Utf8Path) -> bool {
 
 pub(super) fn path_reaches_mount_root(path: &Utf8Path, mount_root: &Utf8Path) -> bool {
     let mount_root = normalize_path(mount_root);
-    let resolved_path = resolve_path(path);
-    if is_path_or_descendant(&normalize_path(path), &mount_root)
-        || is_path_or_descendant(&normalize_path(&resolved_path), &mount_root)
+
+    if normalized_path_reaches_mount_root(path, &mount_root)
+        || normalized_path_reaches_mount_root(&resolve_path(path), &mount_root)
     {
         return true;
     }
 
-    for ancestor in path.ancestors() {
-        let Some(target) = read_symlink_target(ancestor) else {
-            continue;
-        };
-        let target_path = resolve_symlink_target(ancestor, &target);
-        let expanded_path = match path.strip_prefix(ancestor) {
-            Ok(suffix) if !suffix.as_str().is_empty() => target_path.join(suffix),
-            _ => target_path.clone(),
-        };
+    path.ancestors()
+        .any(|ancestor| symlink_expansion_reaches_mount_root(path, ancestor, &mount_root))
+}
 
-        if is_path_or_descendant(&normalize_path(&target_path), &mount_root)
-            || is_path_or_descendant(&normalize_path(&expanded_path), &mount_root)
-        {
-            return true;
-        }
+fn normalized_path_reaches_mount_root(path: &Utf8Path, normalized_mount_root: &Utf8Path) -> bool {
+    is_path_or_descendant(&normalize_path(path), normalized_mount_root)
+}
+
+fn symlink_expansion_reaches_mount_root(
+    path: &Utf8Path,
+    ancestor: &Utf8Path,
+    normalized_mount_root: &Utf8Path,
+) -> bool {
+    let Some(target) = read_symlink_target(ancestor) else {
+        return false;
+    };
+    let target_path = resolve_symlink_target(ancestor, &target);
+    let expanded_path = expanded_symlink_path(path, ancestor, &target_path);
+
+    normalized_path_reaches_mount_root(&target_path, normalized_mount_root)
+        || normalized_path_reaches_mount_root(&expanded_path, normalized_mount_root)
+}
+
+fn expanded_symlink_path(
+    path: &Utf8Path,
+    ancestor: &Utf8Path,
+    target_path: &Utf8Path,
+) -> Utf8PathBuf {
+    match path.strip_prefix(ancestor) {
+        Ok(suffix) if !suffix.as_str().is_empty() => target_path.join(suffix),
+        _ => target_path.to_owned(),
     }
-
-    false
 }
 
 fn read_symlink_target(path: &Utf8Path) -> Option<Utf8PathBuf> {
