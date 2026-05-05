@@ -222,6 +222,42 @@ fn create_name_conflict_reports_the_conflicting_root() {
 }
 
 #[test]
+fn create_name_conflict_with_malformed_runtime_label_reports_specific_drift() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("run", "the container name is already in use", 125);
+    harness.write_inspect(
+        &workspace.container_name,
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "future-runtime",
+                &workspace.container_name,
+            ),
+        ),
+    );
+
+    run_command(&harness, target, &[])
+        .failure()
+        .stderr(predicates::str::contains(
+            "unsupported or malformed `io.agentbox.runtime` label",
+        ))
+        .stderr(predicates::str::contains(
+            "clean up or recreate it before retrying",
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
+}
+
+#[test]
 fn run_start_failure_includes_container_logs_when_available() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();

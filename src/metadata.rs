@@ -47,13 +47,6 @@ pub const REQUIRED_SESSION_IDENTITY_LABELS: &[&str] = &[
     LABEL_LOGICAL_NAME,
 ];
 
-pub const REQUIRED_SESSION_ATTACH_LABELS: &[&str] = &[
-    LABEL_RUNTIME,
-    LABEL_ATTACH_SCHEME,
-    LABEL_CONTAINER_PORT,
-    LABEL_CONTAINER_LISTEN_IP,
-];
-
 pub(crate) fn managed_label_filter() -> String {
     format!("label={LABEL_MANAGED}={LABEL_MANAGED_VALUE}")
 }

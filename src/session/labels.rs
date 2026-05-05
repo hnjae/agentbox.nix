@@ -11,8 +11,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::Error;
 use crate::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME, REQUIRED_SESSION_ATTACH_LABELS,
-    REQUIRED_SESSION_IDENTITY_LABELS, REQUIRED_SESSION_MARKER_LABEL_VALUES,
+    LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME, REQUIRED_SESSION_IDENTITY_LABELS,
+    REQUIRED_SESSION_MARKER_LABEL_VALUES,
 };
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::hash12;
@@ -141,6 +141,16 @@ impl SessionLabelReport {
     pub(super) fn runtime_kind(&self) -> Option<RuntimeKind> {
         self.attach_labels().map(AttachLabels::runtime)
     }
+
+    pub(super) fn complete_required_labels(&self) -> RequiredLabelsResult<&RequiredSessionLabels> {
+        let required = self.required.as_ref().map_err(|failure| *failure)?;
+
+        if let Some(failure) = self.attach_failure() {
+            return Err(failure);
+        }
+
+        Ok(required)
+    }
 }
 
 impl SessionMetadata {
@@ -159,15 +169,6 @@ impl RequiredSessionLabels {
         if !required.launch_directory_is_valid() {
             return Err(SessionFailure::MalformedLaunchDirectory);
         }
-
-        Ok(required)
-    }
-
-    pub(super) fn from_complete_session_labels(
-        labels: &SessionMetadata,
-    ) -> RequiredLabelsResult<Self> {
-        let required = Self::from_session_labels(labels)?;
-        require_session_labels(labels, REQUIRED_SESSION_ATTACH_LABELS)?;
 
         Ok(required)
     }

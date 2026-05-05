@@ -4,7 +4,7 @@ use crate::podman::{Podman, PodmanContainerInspect};
 use crate::runtime::RuntimeCreateSpec;
 use crate::workspace::WorkspaceIdentity;
 
-use super::labels::RequiredSessionLabels;
+use super::labels::{RequiredSessionLabels, SessionLabelReport};
 use super::mounts::has_mount_destination;
 use super::{
     REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionMetadata, SessionRecord,
@@ -76,12 +76,10 @@ fn classify_named_container_conflict(
         return unmanaged_container_conflict_error(workspace);
     }
 
-    let Ok(identity) = RequiredSessionLabels::from_complete_session_labels(&metadata) else {
-        return failure_conflict_error(
-            workspace,
-            &container_name,
-            SessionFailure::MissingRequiredLabels,
-        );
+    let label_report = SessionLabelReport::from_metadata(&metadata);
+    let identity = match label_report.complete_required_labels() {
+        Ok(identity) => identity,
+        Err(failure) => return failure_conflict_error(workspace, &container_name, failure),
     };
 
     ManagedContainerConflict {
@@ -96,7 +94,7 @@ fn classify_named_container_conflict(
 struct ManagedContainerConflict<'a> {
     workspace: &'a WorkspaceIdentity,
     container_name: &'a str,
-    identity: RequiredSessionLabels,
+    identity: &'a RequiredSessionLabels,
     inspect: &'a PodmanContainerInspect,
 }
 
