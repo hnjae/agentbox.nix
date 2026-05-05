@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::metadata::managed_session_labels;
+use crate::metadata::{ManagedSessionLabelInput, managed_session_labels};
 use crate::preflight::NIX_CACHE_DESTINATION;
 use crate::workspace::WorkspaceIdentity;
 
@@ -131,7 +131,12 @@ impl RuntimeKind {
     ) -> RuntimeCreateSpec {
         let image = self.default_image().to_string();
         let attach = self.attach_spec();
-        let labels = managed_session_labels(workspace, &image, self.as_str(), attach);
+        let labels = managed_session_labels(ManagedSessionLabelInput::from_workspace(
+            workspace,
+            &image,
+            self.as_str(),
+            attach,
+        ));
 
         let mut mounts = vec![RuntimeMount::bind(
             workspace.canonical_git_root.to_string(),

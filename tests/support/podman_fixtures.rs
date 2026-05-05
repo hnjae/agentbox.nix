@@ -11,9 +11,8 @@
 use std::collections::BTreeMap;
 
 use agentbox::metadata::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_CONTAINER_PORT, LABEL_GIT_ROOT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    ManagedSessionLabelInput, managed_session_labels,
 };
 use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
@@ -303,15 +302,12 @@ fn workspace_managed_labels(
     image: &str,
     runtime: RuntimeKind,
 ) -> BTreeMap<String, String> {
-    managed_labels_with_attach(
-        workspace.canonical_git_root.as_str(),
-        workspace.canonical_target.as_str(),
-        &workspace.hash12,
-        runtime.as_str(),
+    managed_session_labels(ManagedSessionLabelInput::from_workspace(
+        workspace,
         image,
-        &workspace.container_name,
+        runtime.as_str(),
         runtime.attach_spec(),
-    )
+    ))
 }
 
 fn managed_labels_with_attach(
@@ -323,28 +319,15 @@ fn managed_labels_with_attach(
     logical_name: &str,
     attach: RuntimeAttachSpec,
 ) -> BTreeMap<String, String> {
-    BTreeMap::from([
-        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
-        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
-        (LABEL_GIT_ROOT.to_string(), git_root.to_string()),
-        (LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string()),
-        (LABEL_RUNTIME.to_string(), runtime.to_string()),
-        (LABEL_IMAGE.to_string(), image.to_string()),
-        (
-            LABEL_LAUNCH_DIRECTORY.to_string(),
-            launch_directory.to_string(),
-        ),
-        (LABEL_LOGICAL_NAME.to_string(), logical_name.to_string()),
-        (LABEL_ATTACH_SCHEME.to_string(), attach.scheme.to_string()),
-        (
-            LABEL_CONTAINER_PORT.to_string(),
-            attach.container_port.to_string(),
-        ),
-        (
-            LABEL_CONTAINER_LISTEN_IP.to_string(),
-            attach.container_listen_ip.to_string(),
-        ),
-    ])
+    managed_session_labels(ManagedSessionLabelInput {
+        canonical_git_root: git_root,
+        git_root_hash,
+        runtime,
+        image,
+        launch_directory,
+        logical_name,
+        attach,
+    })
 }
 
 fn fixture_attach_spec(runtime: &str) -> RuntimeAttachSpec {

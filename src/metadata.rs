@@ -58,38 +58,71 @@ pub(crate) fn managed_label_filter() -> String {
     format!("label={LABEL_MANAGED}={LABEL_MANAGED_VALUE}")
 }
 
-pub(crate) fn managed_session_labels(
-    workspace: &WorkspaceIdentity,
-    image: &str,
-    runtime: &str,
-    attach: RuntimeAttachSpec,
-) -> BTreeMap<String, String> {
+/// Input values for constructing the complete managed-session container label set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ManagedSessionLabelInput<'a> {
+    pub canonical_git_root: &'a str,
+    pub git_root_hash: &'a str,
+    pub runtime: &'a str,
+    pub image: &'a str,
+    pub launch_directory: &'a str,
+    pub logical_name: &'a str,
+    pub attach: RuntimeAttachSpec,
+}
+
+impl<'a> ManagedSessionLabelInput<'a> {
+    pub fn from_workspace(
+        workspace: &'a WorkspaceIdentity,
+        image: &'a str,
+        runtime: &'a str,
+        attach: RuntimeAttachSpec,
+    ) -> Self {
+        Self {
+            canonical_git_root: workspace.canonical_git_root.as_str(),
+            git_root_hash: workspace.hash12.as_str(),
+            runtime,
+            image,
+            launch_directory: workspace.canonical_target.as_str(),
+            logical_name: workspace.container_name.as_str(),
+            attach,
+        }
+    }
+}
+
+/// Builds the complete label set stored on managed session containers.
+pub fn managed_session_labels(input: ManagedSessionLabelInput<'_>) -> BTreeMap<String, String> {
     BTreeMap::from([
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
         (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
         (
             LABEL_GIT_ROOT.to_string(),
-            workspace.canonical_git_root.to_string(),
+            input.canonical_git_root.to_string(),
         ),
-        (LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone()),
-        (LABEL_RUNTIME.to_string(), runtime.to_string()),
-        (LABEL_IMAGE.to_string(), image.to_string()),
+        (
+            LABEL_GIT_ROOT_HASH.to_string(),
+            input.git_root_hash.to_string(),
+        ),
+        (LABEL_RUNTIME.to_string(), input.runtime.to_string()),
+        (LABEL_IMAGE.to_string(), input.image.to_string()),
         (
             LABEL_LAUNCH_DIRECTORY.to_string(),
-            workspace.canonical_target.to_string(),
+            input.launch_directory.to_string(),
         ),
         (
             LABEL_LOGICAL_NAME.to_string(),
-            workspace.container_name.clone(),
+            input.logical_name.to_string(),
         ),
-        (LABEL_ATTACH_SCHEME.to_string(), attach.scheme.to_string()),
+        (
+            LABEL_ATTACH_SCHEME.to_string(),
+            input.attach.scheme.to_string(),
+        ),
         (
             LABEL_CONTAINER_PORT.to_string(),
-            attach.container_port.to_string(),
+            input.attach.container_port.to_string(),
         ),
         (
             LABEL_CONTAINER_LISTEN_IP.to_string(),
-            attach.container_listen_ip.to_string(),
+            input.attach.container_listen_ip.to_string(),
         ),
     ])
 }
