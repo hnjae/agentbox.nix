@@ -169,11 +169,9 @@ pub(super) fn derive_status(input: SessionStatusInput<'_>) -> SessionStatus {
         git,
     } = input;
 
-    let Some(canonical_git_root) = label_report.canonical_git_root() else {
-        let failure = label_report
-            .required_failure()
-            .unwrap_or(SessionFailure::MissingRequiredLabels);
-        return SessionStatus::failed(failure);
+    let required = match label_report.required_labels() {
+        Ok(required) => required,
+        Err(failure) => return SessionStatus::failed(failure),
     };
 
     if let Some(failure) = label_report.attach_failure() {
@@ -192,6 +190,7 @@ pub(super) fn derive_status(input: SessionStatusInput<'_>) -> SessionStatus {
         return SessionStatus::failed(SessionFailure::NotRunning);
     }
 
+    let canonical_git_root = required.canonical_git_root();
     if git_root_is_orphaned(canonical_git_root, git) {
         return SessionStatus::Orphaned;
     }

@@ -4,7 +4,7 @@ use crate::podman::{Podman, PodmanContainerInspect};
 use crate::runtime::RuntimeCreateSpec;
 use crate::workspace::WorkspaceIdentity;
 
-use super::labels::{RequiredSessionLabels, SessionLabelReport};
+use super::labels::{SessionIdentityLabels, SessionLabelReport};
 use super::mounts::has_mount_destination;
 use super::{
     REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionMetadata, SessionRecord,
@@ -77,15 +77,19 @@ fn classify_named_container_conflict(
     }
 
     let label_report = SessionLabelReport::from_metadata(&metadata);
-    let identity = match label_report.complete_required_labels() {
+    let identity = match label_report.identity_labels() {
         Ok(identity) => identity,
         Err(failure) => return failure_conflict_error(workspace, &container_name, failure),
     };
+    let same_root_failure = label_report
+        .required_failure()
+        .or_else(|| label_report.attach_failure());
 
     ManagedContainerConflict {
         workspace,
         container_name: &container_name,
         identity,
+        same_root_failure,
         inspect,
     }
     .classify()
@@ -94,7 +98,8 @@ fn classify_named_container_conflict(
 struct ManagedContainerConflict<'a> {
     workspace: &'a WorkspaceIdentity,
     container_name: &'a str,
-    identity: &'a RequiredSessionLabels,
+    identity: &'a SessionIdentityLabels,
+    same_root_failure: Option<SessionFailure>,
     inspect: &'a PodmanContainerInspect,
 }
 
@@ -125,6 +130,10 @@ impl ManagedContainerConflict<'_> {
     }
 
     fn same_root_error(&self) -> Error {
+        if let Some(failure) = self.same_root_failure {
+            return failure_conflict_error(self.workspace, self.container_name, failure);
+        }
+
         if !self.hash_matches_workspace() {
             return failure_conflict_error(
                 self.workspace,

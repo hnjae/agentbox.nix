@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use agentbox::metadata::LABEL_RUNTIME;
+use agentbox::metadata::{LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME};
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
@@ -204,6 +204,86 @@ fn create_name_conflict_reports_the_conflicting_root() {
                 &workspace.container_name,
             ),
         ),
+    );
+
+    run_command(&harness, target, &[])
+        .failure()
+        .stderr(predicates::str::contains(format!(
+            "container name `{}` is already used by managed session",
+            workspace.container_name
+        )))
+        .stderr(predicates::str::contains(other_root))
+        .stderr(predicates::str::contains(
+            workspace.canonical_git_root.as_str(),
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
+}
+
+#[test]
+fn create_name_conflict_reports_conflicting_root_even_with_malformed_runtime_label() {
+    let fixture = support::temp_workspace("nested");
+    let other_repo = support::temp_git_repo();
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let other_root = other_repo.path().canonicalize().unwrap();
+    let other_root = other_root.to_str().unwrap();
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("run", "the container name is already in use", 125);
+    harness.write_inspect(
+        &workspace.container_name,
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            other_root,
+            true,
+            labels_with_runtime(
+                managed_labels(
+                    other_root,
+                    &git_root_hash12(Utf8Path::new(other_root)),
+                    &workspace.container_name,
+                ),
+                "future-runtime",
+            ),
+        ),
+    );
+
+    run_command(&harness, target, &[])
+        .failure()
+        .stderr(predicates::str::contains(format!(
+            "container name `{}` is already used by managed session",
+            workspace.container_name
+        )))
+        .stderr(predicates::str::contains(other_root))
+        .stderr(predicates::str::contains(
+            workspace.canonical_git_root.as_str(),
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
+}
+
+#[test]
+fn create_name_conflict_reports_conflicting_root_even_with_missing_launch_directory() {
+    let fixture = support::temp_workspace("nested");
+    let other_repo = support::temp_git_repo();
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let other_root = other_repo.path().canonicalize().unwrap();
+    let other_root = other_root.to_str().unwrap();
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("run", "the container name is already in use", 125);
+    let mut labels = managed_labels(
+        other_root,
+        &git_root_hash12(Utf8Path::new(other_root)),
+        &workspace.container_name,
+    );
+    labels.remove(LABEL_LAUNCH_DIRECTORY);
+    harness.write_inspect(
+        &workspace.container_name,
+        &managed_inspect_fixture(&workspace.container_name, other_root, true, labels),
     );
 
     run_command(&harness, target, &[])

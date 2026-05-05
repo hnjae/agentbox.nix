@@ -111,6 +111,16 @@ impl CliHarness {
         fs::write(self.fixtures.path().join("missing-during-cleanup"), "").unwrap();
     }
 
+    pub fn mark_container_exists(&self, name: &str) {
+        fs::write(
+            self.fixtures
+                .path()
+                .join(format!("container-exists-{name}")),
+            "",
+        )
+        .unwrap();
+    }
+
     pub fn read_log(&self) -> Vec<String> {
         read_log_lines(&self.log_path)
     }

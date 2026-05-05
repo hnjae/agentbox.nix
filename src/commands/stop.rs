@@ -81,20 +81,21 @@ fn exact_full_root_matches(
 }
 
 fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
-    let stop_error = podman.stop_ignore(&session.container_name).err();
+    let mut reasons = Vec::new();
+    if let Err(error) = podman.stop_ignore(&session.container_name) {
+        reasons.push(CleanupFailureReason::StopFailed(error.to_string()));
+    }
 
     match podman.container_exists(&session.container_name) {
         Ok(false) => None,
-        Ok(true) => Some(CleanupFailure {
-            container_name: session.container_name.clone(),
-            stop_error,
-            verification_error: None,
-        }),
-        Err(error) => Some(CleanupFailure {
-            container_name: session.container_name.clone(),
-            stop_error,
-            verification_error: Some(error.to_string()),
-        }),
+        Ok(true) => {
+            reasons.push(CleanupFailureReason::StillExists);
+            Some(CleanupFailure::new(&session.container_name, reasons))
+        }
+        Err(error) => {
+            reasons.push(CleanupFailureReason::VerificationFailed(error.to_string()));
+            Some(CleanupFailure::new(&session.container_name, reasons))
+        }
     }
 }
 
@@ -112,25 +113,43 @@ fn render_cleanup_failures(git_root: &Utf8Path, failures: &[CleanupFailure]) -> 
 
 struct CleanupFailure {
     container_name: String,
-    stop_error: Option<Error>,
-    verification_error: Option<String>,
+    reasons: Vec<CleanupFailureReason>,
+}
+
+enum CleanupFailureReason {
+    StopFailed(String),
+    StillExists,
+    VerificationFailed(String),
 }
 
 impl CleanupFailure {
+    fn new(container_name: &str, reasons: Vec<CleanupFailureReason>) -> Self {
+        Self {
+            container_name: container_name.to_string(),
+            reasons,
+        }
+    }
+
     fn render(&self) -> String {
-        let mut details = Vec::new();
+        let details = self
+            .reasons
+            .iter()
+            .map(CleanupFailureReason::render)
+            .collect::<Vec<_>>()
+            .join(", ");
 
-        if let Some(error) = &self.stop_error {
-            details.push(format!("stop failed: {error}"));
-        }
-        if let Some(error) = &self.verification_error {
-            details.push(format!("follow-up inspect failed: {error}"));
-        }
+        format!("container `{}` ({details})", self.container_name)
+    }
+}
 
-        format!(
-            "container `{}` ({})",
-            self.container_name,
-            details.join(", ")
-        )
+impl CleanupFailureReason {
+    fn render(&self) -> String {
+        match self {
+            Self::StopFailed(error) => format!("stop failed: {error}"),
+            Self::StillExists => "container still exists after stop".to_string(),
+            Self::VerificationFailed(error) => {
+                format!("follow-up inspect failed: {error}")
+            }
+        }
     }
 }

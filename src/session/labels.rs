@@ -11,8 +11,9 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::Error;
 use crate::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME, REQUIRED_SESSION_IDENTITY_LABELS,
-    REQUIRED_SESSION_MARKER_LABEL_VALUES,
+    LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME,
+    REQUIRED_SESSION_MARKER_LABEL_VALUES, REQUIRED_SESSION_METADATA_LABELS,
+    REQUIRED_SESSION_WORKSPACE_IDENTITY_LABELS,
 };
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::git_root_hash12;
@@ -20,13 +21,18 @@ use crate::workspace::git_root_hash12;
 use super::record::SessionMetadata;
 use super::status::SessionFailure;
 
-type RequiredLabelsResult<T> = std::result::Result<T, SessionFailure>;
+type SessionLabelResult<T> = std::result::Result<T, SessionFailure>;
 type AttachLabelsResult<T> = std::result::Result<T, AttachLabelError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct RequiredSessionLabels {
+pub(super) struct SessionIdentityLabels {
     canonical_git_root: Utf8PathBuf,
     git_root_hash: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct RequiredSessionLabels {
+    identity: SessionIdentityLabels,
     launch_directory: Utf8PathBuf,
 }
 
@@ -104,16 +110,26 @@ pub(super) struct AttachLabels {
 
 #[derive(Debug)]
 pub(super) struct SessionLabelReport {
-    required: RequiredLabelsResult<RequiredSessionLabels>,
+    identity: SessionLabelResult<SessionIdentityLabels>,
+    required: SessionLabelResult<RequiredSessionLabels>,
     attach: AttachLabelsResult<AttachLabels>,
 }
 
 impl SessionLabelReport {
     pub(super) fn from_metadata(metadata: &SessionMetadata) -> Self {
         Self {
+            identity: SessionIdentityLabels::validated(metadata),
             required: RequiredSessionLabels::validated(metadata),
             attach: AttachLabels::from_session_labels(metadata),
         }
+    }
+
+    pub(super) fn identity_labels(&self) -> SessionLabelResult<&SessionIdentityLabels> {
+        self.identity.as_ref().map_err(|failure| *failure)
+    }
+
+    pub(super) fn required_labels(&self) -> SessionLabelResult<&RequiredSessionLabels> {
+        self.required.as_ref().map_err(|failure| *failure)
     }
 
     pub(super) fn required_failure(&self) -> Option<SessionFailure> {
@@ -127,29 +143,12 @@ impl SessionLabelReport {
             .map(AttachLabelError::session_failure)
     }
 
-    pub(super) fn canonical_git_root(&self) -> Option<&Utf8Path> {
-        self.required
-            .as_ref()
-            .ok()
-            .map(RequiredSessionLabels::canonical_git_root)
-    }
-
     pub(super) fn attach_labels(&self) -> Option<AttachLabels> {
         self.attach.as_ref().ok().copied()
     }
 
     pub(super) fn runtime_kind(&self) -> Option<RuntimeKind> {
         self.attach_labels().map(AttachLabels::runtime)
-    }
-
-    pub(super) fn complete_required_labels(&self) -> RequiredLabelsResult<&RequiredSessionLabels> {
-        let required = self.required.as_ref().map_err(|failure| *failure)?;
-
-        if let Some(failure) = self.attach_failure() {
-            return Err(failure);
-        }
-
-        Ok(required)
     }
 }
 
@@ -159,18 +158,14 @@ impl SessionMetadata {
     }
 }
 
-impl RequiredSessionLabels {
-    fn validated(labels: &SessionMetadata) -> RequiredLabelsResult<Self> {
-        let required = Self::from_session_labels(labels)?;
-        if !required.hash_matches_root() {
+impl SessionIdentityLabels {
+    fn validated(labels: &SessionMetadata) -> SessionLabelResult<Self> {
+        let identity = Self::from_session_labels(labels)?;
+        if !identity.hash_matches_root() {
             return Err(SessionFailure::DriftedGitRootHash);
         }
 
-        if !required.launch_directory_is_valid() {
-            return Err(SessionFailure::MalformedLaunchDirectory);
-        }
-
-        Ok(required)
+        Ok(identity)
     }
 
     pub(super) fn canonical_git_root(&self) -> &Utf8Path {
@@ -181,32 +176,56 @@ impl RequiredSessionLabels {
         &self.git_root_hash
     }
 
-    fn from_session_labels(labels: &SessionMetadata) -> RequiredLabelsResult<Self> {
+    fn from_session_labels(labels: &SessionMetadata) -> SessionLabelResult<Self> {
         for (name, expected) in REQUIRED_SESSION_MARKER_LABEL_VALUES {
             require_session_label_value(labels, name, expected)?;
         }
 
-        require_session_labels(labels, REQUIRED_SESSION_IDENTITY_LABELS)?;
+        require_session_labels(labels, REQUIRED_SESSION_WORKSPACE_IDENTITY_LABELS)?;
 
         let canonical_git_root = Utf8PathBuf::from(require_session_label(labels, LABEL_GIT_ROOT)?);
         let git_root_hash = require_session_label(labels, LABEL_GIT_ROOT_HASH)?.to_string();
-        let launch_directory =
-            Utf8PathBuf::from(require_session_label(labels, LABEL_LAUNCH_DIRECTORY)?);
 
         Ok(Self {
             canonical_git_root,
             git_root_hash,
-            launch_directory,
         })
     }
 
     fn hash_matches_root(&self) -> bool {
         self.git_root_hash == git_root_hash12(&self.canonical_git_root)
     }
+}
+
+impl RequiredSessionLabels {
+    fn validated(labels: &SessionMetadata) -> SessionLabelResult<Self> {
+        let identity = SessionIdentityLabels::validated(labels)?;
+        require_session_labels(labels, REQUIRED_SESSION_METADATA_LABELS)?;
+
+        let required = Self {
+            identity,
+            launch_directory: Utf8PathBuf::from(require_session_label(
+                labels,
+                LABEL_LAUNCH_DIRECTORY,
+            )?),
+        };
+
+        if !required.launch_directory_is_valid() {
+            return Err(SessionFailure::MalformedLaunchDirectory);
+        }
+
+        Ok(required)
+    }
+
+    pub(super) fn canonical_git_root(&self) -> &Utf8Path {
+        self.identity.canonical_git_root()
+    }
 
     fn launch_directory_is_valid(&self) -> bool {
         self.launch_directory.is_absolute()
-            && self.launch_directory.starts_with(&self.canonical_git_root)
+            && self
+                .launch_directory
+                .starts_with(self.identity.canonical_git_root())
     }
 }
 
@@ -253,7 +272,7 @@ impl AttachLabels {
 fn require_session_label<'a>(
     labels: &'a SessionMetadata,
     name: &'static str,
-) -> RequiredLabelsResult<&'a str> {
+) -> SessionLabelResult<&'a str> {
     labels
         .label(name)
         .ok_or(SessionFailure::MissingRequiredLabels)
@@ -263,7 +282,7 @@ fn require_session_label_value(
     labels: &SessionMetadata,
     name: &'static str,
     expected: &'static str,
-) -> RequiredLabelsResult<()> {
+) -> SessionLabelResult<()> {
     match labels.label(name) {
         Some(actual) if actual == expected => Ok(()),
         _ => Err(SessionFailure::MissingRequiredLabels),
@@ -273,7 +292,7 @@ fn require_session_label_value(
 fn require_session_labels(
     labels: &SessionMetadata,
     names: &[&'static str],
-) -> RequiredLabelsResult<()> {
+) -> SessionLabelResult<()> {
     for name in names {
         require_session_label(labels, name)?;
     }

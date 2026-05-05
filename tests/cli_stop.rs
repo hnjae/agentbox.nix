@@ -81,6 +81,37 @@ fn stop_is_idempotent_when_the_container_disappears_during_cleanup() {
 }
 
 #[test]
+fn stop_reports_container_that_still_exists_after_cleanup() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "session-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "session-id",
+        &opencode_workspace_inspect_fixture(workspace, true, true),
+    );
+    harness.mark_container_exists(&workspace.container_name);
+
+    run_command(&harness, target, &[])
+        .failure()
+        .stderr(predicates::str::contains("partial stop failed"))
+        .stderr(predicates::str::contains(&workspace.container_name))
+        .stderr(predicates::str::contains(
+            "container still exists after stop",
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
+}
+
+#[test]
 fn stop_force_removes_all_exact_duplicate_root_matches() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
