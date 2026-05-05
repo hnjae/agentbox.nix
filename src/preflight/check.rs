@@ -24,13 +24,6 @@ pub struct PreflightReport {
     pub runtime_mounts: Vec<RuntimeMount>,
 }
 
-pub fn check_host_prerequisites(
-    target_directory: Option<&Utf8Path>,
-    git_root: Option<&Utf8Path>,
-) -> Result<PreflightReport> {
-    check_host_prerequisites_for_runtime(RuntimeKind::Opencode, target_directory, git_root)
-}
-
 pub fn check_host_prerequisites_for_runtime(
     runtime: RuntimeKind,
     target_directory: Option<&Utf8Path>,

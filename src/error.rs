@@ -12,8 +12,6 @@ use camino::Utf8Path;
 pub enum Error {
     #[error("{0}")]
     Cli(#[from] clap::Error),
-    #[error("`{command}` is not implemented yet")]
-    NotYetImplemented { command: &'static str },
     #[error("{0}")]
     Message(String),
     #[error(transparent)]
@@ -25,10 +23,6 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
-    pub fn not_yet_implemented(command: &'static str) -> Self {
-        Self::NotYetImplemented { command }
-    }
-
     pub fn msg(message: impl Into<String>) -> Self {
         Self::Message(message.into())
     }

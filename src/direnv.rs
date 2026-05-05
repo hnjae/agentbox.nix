@@ -6,46 +6,9 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
-
 use camino::Utf8Path;
-use serde::Deserialize;
 
 use crate::preflight::direnv_applies_to_target;
-use crate::process::ProcessRunner;
-use crate::{Error, Result};
-
-#[derive(Debug, Clone, Default)]
-pub struct Direnv {
-    runner: ProcessRunner,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(transparent)]
-pub struct DirenvEnvironment {
-    pub entries: BTreeMap<String, Option<String>>,
-}
-
-impl Direnv {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_runner(runner: ProcessRunner) -> Self {
-        Self { runner }
-    }
-
-    pub fn export_json(&self, directory: &Utf8Path) -> Result<DirenvEnvironment> {
-        let output = self.runner.capture("direnv", |command| {
-            command
-                .current_dir(directory.as_std_path())
-                .args(["export", "json"]);
-        })?;
-
-        serde_json::from_str(&output.stdout)
-            .map_err(|error| Error::msg(format!("failed to parse `direnv export json`: {error}")))
-    }
-}
 
 pub fn wrap_exec_if_envrc_applies(
     argv: Vec<String>,

@@ -63,16 +63,6 @@ impl ProcessRunner {
         configure(&mut command);
         run_command(&mut command)
     }
-
-    pub fn status(
-        &self,
-        program: &str,
-        configure: impl FnOnce(&mut Command),
-    ) -> Result<ExitStatus> {
-        let mut command = self.command(program)?;
-        configure(&mut command);
-        run_command_status(&mut command)
-    }
 }
 
 pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {

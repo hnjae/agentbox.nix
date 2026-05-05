@@ -6,7 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use agentbox::direnv::Direnv;
 use agentbox::git::Git;
 use agentbox::podman::{Podman, PodmanBuildOptions};
 use agentbox::process::ProcessRunner;
@@ -33,14 +32,18 @@ fn missing_binaries_are_reported_with_path_guidance() {
 #[test]
 fn nonzero_exits_include_status_and_stderr() {
     let fake_bins = support::FakeBinDir::new();
-    fake_bins.install_exact_failure("direnv", &["export", "json"], "direnv denied access", 7);
+    fake_bins.install_exact_failure("failing-tool", &["boom"], "tool denied access", 7);
 
-    let direnv = Direnv::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()));
-    let error = direnv.export_json(Utf8Path::new("/tmp")).unwrap_err();
+    let error = ProcessRunner::new()
+        .with_path_prepend(fake_bins.path())
+        .capture("failing-tool", |command| {
+            command.arg("boom");
+        })
+        .unwrap_err();
 
-    assert!(error.to_string().contains("direnv export json"));
+    assert!(error.to_string().contains("failing-tool boom"));
     assert!(error.to_string().contains("exit status 7"));
-    assert!(error.to_string().contains("direnv denied access"));
+    assert!(error.to_string().contains("tool denied access"));
 }
 
 #[test]
@@ -76,26 +79,6 @@ fn shared_temp_git_repo_supports_real_git_smoke_tests() {
         .unwrap();
 
     assert_eq!(root, repo_path);
-}
-
-#[test]
-fn direnv_parses_json_from_a_fake_binary() {
-    let fake_bins = support::FakeBinDir::new();
-    fake_bins.install_exact_response(
-        "direnv",
-        &["export", "json"],
-        r#"{"FOO":"bar","REMOVED":null}"#,
-    );
-
-    let environment = Direnv::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
-        .export_json(Utf8Path::new("/tmp"))
-        .unwrap();
-
-    assert_eq!(
-        environment.entries.get("FOO"),
-        Some(&Some("bar".to_string()))
-    );
-    assert_eq!(environment.entries.get("REMOVED"), Some(&None));
 }
 
 #[test]

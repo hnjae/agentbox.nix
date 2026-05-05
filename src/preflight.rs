@@ -13,8 +13,8 @@ mod path;
 mod snapshot;
 
 pub use check::{
-    PreflightReport, check_host_prerequisites, check_host_prerequisites_for_runtime,
-    check_host_prerequisites_with_snapshot, required_host_mount_destinations,
+    PreflightReport, check_host_prerequisites_for_runtime, check_host_prerequisites_with_snapshot,
+    required_host_mount_destinations,
 };
 pub use snapshot::{
     DirenvPreflightSnapshot, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
