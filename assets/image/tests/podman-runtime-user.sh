@@ -4,18 +4,7 @@ set -eu
 
 . "$(dirname "$0")/_runtime-contract-helpers.sh"
 
-script_dir=$( 
-    CDPATH=
-    export CDPATH
-    cd -- "$(dirname "$0")"
-    pwd
-)
-repo_root=$( 
-    CDPATH=
-    export CDPATH
-    cd -- "$script_dir/.."
-    pwd
-)
+repo_root=$(runtime_contract_repo_root "$0")
 
 image_tag=containerfile-nixkpgs-runtime-user-contract
 container_name=containerfile-nixkpgs-runtime-user-contract-$$

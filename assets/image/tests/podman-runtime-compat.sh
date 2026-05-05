@@ -4,18 +4,7 @@ set -eu
 
 . "$(dirname "$0")/_runtime-contract-helpers.sh"
 
-script_dir=$( 
-    CDPATH=
-    export CDPATH
-    cd -- "$(dirname "$0")"
-    pwd
-)
-repo_root=$( 
-    CDPATH=
-    export CDPATH
-    cd -- "$script_dir/.."
-    pwd
-)
+repo_root=$(runtime_contract_repo_root "$0")
 
 mode=${1-}
 
@@ -41,29 +30,6 @@ container_home=/home/user
 
 cleanup() {
     runtime_contract_cleanup
-}
-
-wait_for_startup() {
-    attempts=0
-
-    while :; do
-        if podman exec "$container_name" /bin/sh -ceu '
-            test -s /tmp/startup-path
-            test -s /tmp/startup-profiles
-            test -s /tmp/startup-xdg-data-dirs
-        ' >/dev/null 2>&1; then
-            return 0
-        fi
-
-        attempts=$((attempts + 1))
-        if [ "$attempts" -ge 300 ]; then
-            printf 'Timed out waiting for startup contract artifacts\n' >&2
-            podman logs "$container_name" >&2 || true
-            exit 1
-        fi
-
-        sleep 1
-    done
 }
 
 trap cleanup EXIT INT TERM HUP
@@ -102,7 +68,7 @@ fi
 
 runtime_contract_build_image
 runtime_contract_run_container "$@"
-wait_for_startup
+runtime_contract_wait_for_startup "$container_name"
 
 case "$mode" in
     xdg-state-fallback)

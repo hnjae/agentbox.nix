@@ -28,6 +28,20 @@ runtime_contract_check_host_paths() {
     fi
 }
 
+runtime_contract_repo_root() {
+    runtime_contract_script_dir=$(
+        CDPATH=
+        export CDPATH
+        cd -- "$(dirname "$1")" || return 1
+        pwd
+    )
+
+    CDPATH=
+    export CDPATH
+    cd -- "$runtime_contract_script_dir/.." || return 1
+    pwd
+}
+
 runtime_contract_resolve_nix_client() {
     if [ -x /run/current-system/sw/bin/nix ]; then
         printf '%s\n' /run/current-system/sw/bin/nix
@@ -57,6 +71,30 @@ runtime_contract_run_container() {
         printf "%s\n" "$XDG_DATA_DIRS" >/tmp/startup-xdg-data-dirs
         sleep infinity
     '
+}
+
+runtime_contract_wait_for_startup() {
+    runtime_contract_container_name=$1
+    attempts=0
+
+    while :; do
+        if podman exec "$runtime_contract_container_name" /bin/sh -ceu '
+            test -s /tmp/startup-path
+            test -s /tmp/startup-profiles
+            test -s /tmp/startup-xdg-data-dirs
+        ' >/dev/null 2>&1; then
+            return 0
+        fi
+
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 300 ]; then
+            printf 'Timed out waiting for startup contract artifacts\n' >&2
+            podman logs "$runtime_contract_container_name" >&2 || true
+            exit 1
+        fi
+
+        sleep 1
+    done
 }
 
 runtime_contract_cleanup() {
