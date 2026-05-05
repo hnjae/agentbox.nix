@@ -18,6 +18,8 @@ use crate::process::{
 use crate::runtime::RuntimeCreateSpec;
 use crate::{Error, Result};
 
+mod args;
+mod build;
 mod model;
 mod run;
 
@@ -117,16 +119,12 @@ impl Podman {
         options: &PodmanBuildOptions,
     ) -> Result<()> {
         self.run_podman_forwarding_output_when_verbose(|command| {
-            command.args(["build", "-t", image, "-f", containerfile.as_str()]);
-            for (name, value) in &options.build_args {
-                command.arg("--build-arg");
-                command.arg(format!("{name}={value}"));
-            }
-            for (name, value) in &options.labels {
-                command.arg("--label");
-                command.arg(format!("{name}={value}"));
-            }
-            command.arg(context_dir.as_str());
+            command.args(build::build_image_args(
+                image,
+                containerfile,
+                context_dir,
+                options,
+            ));
         })
         .map(|_| ())
     }

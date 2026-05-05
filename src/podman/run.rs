@@ -8,6 +8,8 @@
 
 use crate::runtime::{RuntimeCreateSpec, RuntimeMount};
 
+use super::args::PodmanArgs;
+
 pub(super) fn run_detached_args(
     container_name: &str,
     spec: &RuntimeCreateSpec,
@@ -22,7 +24,7 @@ pub(super) fn run_detached_args(
     }
 
     for (name, value) in &spec.labels {
-        args.option("--label", format!("{name}={value}"));
+        args.key_value_option("--label", name, value);
     }
 
     for mount in &spec.mounts {
@@ -30,7 +32,7 @@ pub(super) fn run_detached_args(
     }
 
     for (name, value) in &spec.default_env {
-        args.option("--env", format!("{name}={value}"));
+        args.key_value_option("--env", name, value);
     }
 
     if !spec.network_enabled {
@@ -44,45 +46,6 @@ pub(super) fn run_detached_args(
     args.flag(spec.image.as_str());
     args.extend(spec.command.iter().map(String::as_str));
     args.into_vec()
-}
-
-#[derive(Debug, Default)]
-struct PodmanArgs {
-    values: Vec<String>,
-}
-
-impl PodmanArgs {
-    fn from<const N: usize>(values: [&str; N]) -> Self {
-        let mut args = Self::default();
-        args.extend(values);
-        args
-    }
-
-    fn flag(&mut self, value: impl Into<String>) {
-        self.values.push(value.into());
-    }
-
-    fn option(&mut self, name: &'static str, value: impl Into<String>) {
-        self.flag(name);
-        self.flag(value);
-    }
-
-    fn extend<I, S>(&mut self, values: I)
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        self.values.extend(values.into_iter().map(Into::into));
-    }
-
-    fn into_vec(self) -> Vec<String> {
-        self.values
-    }
-}
-
-#[cfg(test)]
-fn strings<const N: usize>(values: [&str; N]) -> Vec<String> {
-    values.into_iter().map(str::to_string).collect()
 }
 
 fn render_mount(mount: &RuntimeMount) -> String {
@@ -105,6 +68,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::podman::args::strings;
     use crate::runtime::RuntimeMount;
 
     #[test]
