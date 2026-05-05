@@ -12,14 +12,15 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::git::Git;
 use crate::metadata::{LABEL_MANAGED, LABEL_MANAGED_VALUE, required_label_value};
-use crate::podman::{Podman, PodmanContainerInspect, PodmanPsContainer};
+use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
+use crate::runtime::AttachEndpoint;
 use crate::workspace::hash12;
 use crate::{Error, Result};
 
 use super::endpoint::derive_attach_endpoint;
 use super::labels::SessionLabelReport;
 use super::record::{SessionGroup, SessionMetadata, SessionRecord};
-use super::status::{derive_status, mark_duplicate_sessions};
+use super::status::{SessionStatusInput, derive_status, mark_duplicate_sessions};
 
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
@@ -201,36 +202,64 @@ fn build_session_record(
     inspect: PodmanContainerInspect,
     git: &Git,
 ) -> SessionRecord {
-    let labels = &inspect.config.labels;
-    let container_name = container
-        .names
-        .as_ref()
-        .and_then(|names| names.first())
-        .cloned()
-        .unwrap_or_else(|| container.id.clone());
+    InspectedManagedContainer::from_podman(container, inspect).into_session_record(git)
+}
 
-    let metadata = SessionMetadata::from_labels(labels);
-    let label_report = SessionLabelReport::from_metadata(&metadata);
-    let runtime_kind = label_report.runtime_kind();
-    let attach_endpoint = label_report
-        .attach_labels()
-        .and_then(|attach_labels| derive_attach_endpoint(attach_labels, &inspect).ok());
+struct InspectedManagedContainer {
+    container_id: String,
+    container_name: String,
+    metadata: SessionMetadata,
+    label_report: SessionLabelReport,
+    attach_endpoint: Option<AttachEndpoint>,
+    running: bool,
+    mounts: Vec<PodmanContainerMount>,
+}
 
-    let status = derive_status(
-        &label_report,
-        attach_endpoint.as_ref(),
-        inspect.state.running,
-        &inspect.mounts,
-        git,
-    );
+impl InspectedManagedContainer {
+    fn from_podman(container: PodmanPsContainer, inspect: PodmanContainerInspect) -> Self {
+        let labels = &inspect.config.labels;
+        let container_name = container
+            .names
+            .as_ref()
+            .and_then(|names| names.first())
+            .cloned()
+            .unwrap_or_else(|| container.id.clone());
+        let metadata = SessionMetadata::from_labels(labels);
+        let label_report = SessionLabelReport::from_metadata(&metadata);
+        let attach_endpoint = label_report
+            .attach_labels()
+            .and_then(|attach_labels| derive_attach_endpoint(attach_labels, &inspect).ok());
+        let running = inspect.state.running;
+        let mounts = inspect.mounts;
 
-    SessionRecord {
-        container_id: container.id,
-        container_name,
-        metadata,
-        runtime_kind,
-        attach_endpoint,
-        status,
+        Self {
+            container_id: container.id,
+            container_name,
+            metadata,
+            label_report,
+            attach_endpoint,
+            running,
+            mounts,
+        }
+    }
+
+    fn into_session_record(self, git: &Git) -> SessionRecord {
+        let status = derive_status(SessionStatusInput {
+            label_report: &self.label_report,
+            attach_endpoint: self.attach_endpoint.as_ref(),
+            running: self.running,
+            mounts: &self.mounts,
+            git,
+        });
+
+        SessionRecord {
+            container_id: self.container_id,
+            container_name: self.container_name,
+            metadata: self.metadata,
+            runtime_kind: self.label_report.runtime_kind(),
+            attach_endpoint: self.attach_endpoint,
+            status,
+        }
     }
 }
 

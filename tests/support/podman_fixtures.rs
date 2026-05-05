@@ -19,7 +19,7 @@ use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
     PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
 };
-use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE};
+use agentbox::runtime::{RuntimeAttachSpec, RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE};
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::{WorkspaceIdentity, hash12};
 use camino::Utf8Path;
@@ -287,6 +287,42 @@ pub fn managed_labels_for_image(
     image: &str,
     logical_name: &str,
 ) -> BTreeMap<String, String> {
+    managed_labels_with_attach(
+        git_root,
+        git_root,
+        git_root_hash,
+        runtime,
+        image,
+        logical_name,
+        fixture_attach_spec(runtime),
+    )
+}
+
+fn workspace_managed_labels(
+    workspace: &WorkspaceIdentity,
+    image: &str,
+    runtime: RuntimeKind,
+) -> BTreeMap<String, String> {
+    managed_labels_with_attach(
+        workspace.canonical_git_root.as_str(),
+        workspace.canonical_target.as_str(),
+        &workspace.hash12,
+        runtime.as_str(),
+        image,
+        &workspace.container_name,
+        runtime.attach_spec(),
+    )
+}
+
+fn managed_labels_with_attach(
+    git_root: &str,
+    launch_directory: &str,
+    git_root_hash: &str,
+    runtime: &str,
+    image: &str,
+    logical_name: &str,
+    attach: RuntimeAttachSpec,
+) -> BTreeMap<String, String> {
     BTreeMap::from([
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
         (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
@@ -294,12 +330,28 @@ pub fn managed_labels_for_image(
         (LABEL_GIT_ROOT_HASH.to_string(), git_root_hash.to_string()),
         (LABEL_RUNTIME.to_string(), runtime.to_string()),
         (LABEL_IMAGE.to_string(), image.to_string()),
-        (LABEL_LAUNCH_DIRECTORY.to_string(), git_root.to_string()),
+        (
+            LABEL_LAUNCH_DIRECTORY.to_string(),
+            launch_directory.to_string(),
+        ),
         (LABEL_LOGICAL_NAME.to_string(), logical_name.to_string()),
-        (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
-        (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
-        (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
+        (LABEL_ATTACH_SCHEME.to_string(), attach.scheme.to_string()),
+        (
+            LABEL_CONTAINER_PORT.to_string(),
+            attach.container_port.to_string(),
+        ),
+        (
+            LABEL_CONTAINER_LISTEN_IP.to_string(),
+            attach.container_listen_ip.to_string(),
+        ),
     ])
+}
+
+fn fixture_attach_spec(runtime: &str) -> RuntimeAttachSpec {
+    runtime
+        .parse::<RuntimeKind>()
+        .map(RuntimeKind::attach_spec)
+        .unwrap_or_else(|_| RuntimeKind::Opencode.attach_spec())
 }
 
 pub fn managed_inspect_fixture(
@@ -323,6 +375,19 @@ pub fn managed_inspect_fixture(
             "RW": true,
         }));
     }
+    let port_key = labels
+        .get(LABEL_CONTAINER_PORT)
+        .map(|port| format!("{port}/tcp"))
+        .unwrap_or_else(|| "4096/tcp".to_string());
+    let ports = BTreeMap::from([(
+        port_key,
+        json!([
+            {
+                "HostIp": "127.0.0.1",
+                "HostPort": "49152"
+            }
+        ]),
+    )]);
 
     serde_json::to_string(&vec![json!({
         "Id": container_name,
@@ -356,14 +421,7 @@ pub fn managed_inspect_fixture(
         "Mounts": mounts,
         "NetworkSettings": {
             "Networks": {},
-            "Ports": {
-                "4096/tcp": [
-                    {
-                        "HostIp": "127.0.0.1",
-                        "HostPort": "49152"
-                    }
-                ]
-            },
+            "Ports": ports,
         },
     })])
     .unwrap()
@@ -384,34 +442,7 @@ pub fn running_workspace_inspect_fixture(
     runtime: RuntimeKind,
 ) -> String {
     let attach = runtime.attach_spec();
-    let labels = BTreeMap::from([
-        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
-        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
-        (
-            LABEL_GIT_ROOT.to_string(),
-            workspace.canonical_git_root.to_string(),
-        ),
-        (LABEL_GIT_ROOT_HASH.to_string(), workspace.hash12.clone()),
-        (LABEL_RUNTIME.to_string(), runtime.as_str().to_string()),
-        (LABEL_IMAGE.to_string(), image.to_string()),
-        (
-            LABEL_LAUNCH_DIRECTORY.to_string(),
-            workspace.canonical_target.to_string(),
-        ),
-        (
-            LABEL_LOGICAL_NAME.to_string(),
-            workspace.container_name.clone(),
-        ),
-        (LABEL_ATTACH_SCHEME.to_string(), attach.scheme.to_string()),
-        (
-            LABEL_CONTAINER_PORT.to_string(),
-            attach.container_port.to_string(),
-        ),
-        (
-            LABEL_CONTAINER_LISTEN_IP.to_string(),
-            attach.container_listen_ip.to_string(),
-        ),
-    ]);
+    let labels = workspace_managed_labels(workspace, image, runtime);
     let command = runtime.server_command().argv;
     let ports = BTreeMap::from([(
         format!("{}/tcp", attach.container_port),

@@ -150,13 +150,15 @@ pub fn session_failure_requires_action_error(
     failure.requires_action_error(git_root, container_name)
 }
 
-pub(super) fn derive_status(
-    label_report: &SessionLabelReport,
-    attach_endpoint: Option<&AttachEndpoint>,
-    running: bool,
-    mounts: &[PodmanContainerMount],
-    git: &Git,
-) -> SessionStatus {
+pub(super) fn derive_status(input: SessionStatusInput<'_>) -> SessionStatus {
+    let SessionStatusInput {
+        label_report,
+        attach_endpoint,
+        running,
+        mounts,
+        git,
+    } = input;
+
     let Some(canonical_git_root) = label_report.canonical_git_root() else {
         let failure = label_report
             .required_failure()
@@ -185,6 +187,15 @@ pub(super) fn derive_status(
     }
 
     SessionStatus::Running
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SessionStatusInput<'a> {
+    pub(super) label_report: &'a SessionLabelReport,
+    pub(super) attach_endpoint: Option<&'a AttachEndpoint>,
+    pub(super) running: bool,
+    pub(super) mounts: &'a [PodmanContainerMount],
+    pub(super) git: &'a Git,
 }
 
 pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<SessionRecord> {
