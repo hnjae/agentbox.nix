@@ -6,6 +6,10 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
+
+use camino::Utf8PathBuf;
+
 use crate::Result;
 use crate::metadata::{
     LABEL_CODEX_INSTALL_SOURCE, LABEL_CODEX_PACKAGE, LABEL_CODEX_RESOLVED_AT, LABEL_CODEX_VERSION,
@@ -71,7 +75,6 @@ const OPENCODE_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[
         },
         product_name: "OpenCode",
         description: "configuration",
-        source_expression: "`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`",
         destination: OPENCODE_CONFIG_DESTINATION,
     },
     RuntimeHostStateMount {
@@ -82,7 +85,6 @@ const OPENCODE_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[
         },
         product_name: "OpenCode",
         description: "data",
-        source_expression: "`${XDG_DATA_HOME:-$HOME/.local/share}/opencode`",
         destination: OPENCODE_DATA_DESTINATION,
     },
 ];
@@ -92,7 +94,6 @@ const CODEX_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[RuntimeHostStateMoun
     },
     product_name: "Codex",
     description: "configuration",
-    source_expression: "`${HOME}/.codex`",
     destination: CODEX_CONFIG_DESTINATION,
 }];
 
@@ -184,8 +185,13 @@ pub(crate) struct RuntimeHostStateMount {
     pub(crate) source: RuntimeHostStateSource,
     pub(crate) product_name: &'static str,
     pub(crate) description: &'static str,
-    pub(crate) source_expression: &'static str,
     pub(crate) destination: &'static str,
+}
+
+impl RuntimeHostStateMount {
+    pub(crate) fn source_expression(self) -> String {
+        self.source.expression()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,6 +204,43 @@ pub(crate) enum RuntimeHostStateSource {
         xdg_relative_components: &'static [&'static str],
         home_relative_components: &'static [&'static str],
     },
+}
+
+impl RuntimeHostStateSource {
+    pub(crate) fn resolve(
+        self,
+        mut environment: impl FnMut(&str) -> Option<PathBuf>,
+    ) -> Option<Utf8PathBuf> {
+        match self {
+            Self::HomeOnly {
+                home_relative_components,
+            } => resolve_home_source(&mut environment, home_relative_components),
+            Self::XdgOrHome {
+                xdg_variable,
+                xdg_relative_components,
+                home_relative_components,
+            } => environment(xdg_variable)
+                .and_then(|base| utf8_join(base, xdg_relative_components))
+                .or_else(|| resolve_home_source(&mut environment, home_relative_components)),
+        }
+    }
+
+    fn expression(self) -> String {
+        match self {
+            Self::HomeOnly {
+                home_relative_components,
+            } => shell_expression("${HOME}", home_relative_components),
+            Self::XdgOrHome {
+                xdg_variable,
+                xdg_relative_components,
+                home_relative_components,
+            } => xdg_or_home_shell_expression(
+                xdg_variable,
+                xdg_relative_components,
+                home_relative_components,
+            ),
+        }
+    }
 }
 
 pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
@@ -246,6 +289,54 @@ fn backticked_runtime_names() -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
+fn xdg_or_home_shell_expression(
+    xdg_variable: &str,
+    xdg_relative_components: &[&str],
+    home_relative_components: &[&str],
+) -> String {
+    if let Some(home_fallback_base_components) =
+        home_relative_components.strip_suffix(xdg_relative_components)
+    {
+        let home_fallback_base = shell_path("$HOME", home_fallback_base_components);
+        return shell_expression(
+            &format!("${{{xdg_variable}:-{home_fallback_base}}}"),
+            xdg_relative_components,
+        );
+    }
+
+    format!(
+        "{} or {}",
+        shell_expression(&format!("${xdg_variable}"), xdg_relative_components),
+        shell_expression("$HOME", home_relative_components),
+    )
+}
+
+fn shell_expression(base: &str, components: &[&str]) -> String {
+    format!("`{}`", shell_path(base, components))
+}
+
+fn shell_path(base: &str, components: &[&str]) -> String {
+    std::iter::once(base)
+        .chain(components.iter().copied())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn resolve_home_source(
+    environment: &mut impl FnMut(&str) -> Option<PathBuf>,
+    home_relative_components: &[&str],
+) -> Option<Utf8PathBuf> {
+    environment("HOME").and_then(|home| utf8_join(home, home_relative_components))
+}
+
+fn utf8_join(base: PathBuf, components: &[&str]) -> Option<Utf8PathBuf> {
+    let mut path = Utf8PathBuf::from_path_buf(base).ok()?;
+    for component in components {
+        path.push(component);
+    }
+    Some(path)
+}
+
 #[cfg(test)]
 fn runtime_kinds() -> &'static [RuntimeKind] {
     <RuntimeKind as clap::ValueEnum>::value_variants()
@@ -253,7 +344,8 @@ fn runtime_kinds() -> &'static [RuntimeKind] {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::path::PathBuf;
 
     use super::*;
 
@@ -283,5 +375,61 @@ mod tests {
                 mount.destination,
             );
         }
+    }
+
+    #[test]
+    fn runtime_host_state_source_expressions_are_derived_from_source_rules() {
+        let expressions = all_host_state_mounts()
+            .map(|mount| (mount.destination, mount.source_expression()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            expressions,
+            vec![
+                (
+                    OPENCODE_CONFIG_DESTINATION,
+                    "`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`".to_string(),
+                ),
+                (
+                    OPENCODE_DATA_DESTINATION,
+                    "`${XDG_DATA_HOME:-$HOME/.local/share}/opencode`".to_string(),
+                ),
+                (CODEX_CONFIG_DESTINATION, "`${HOME}/.codex`".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn runtime_host_state_sources_resolve_from_environment() {
+        assert_eq!(
+            OPENCODE_HOST_STATE_MOUNTS[0].source.resolve(env_lookup([
+                ("HOME", "/home/example"),
+                ("XDG_CONFIG_HOME", "/tmp/config"),
+            ])),
+            Some(Utf8PathBuf::from("/tmp/config/opencode"))
+        );
+        assert_eq!(
+            OPENCODE_HOST_STATE_MOUNTS[0]
+                .source
+                .resolve(env_lookup([("HOME", "/home/example")])),
+            Some(Utf8PathBuf::from("/home/example/.config/opencode"))
+        );
+        assert_eq!(
+            CODEX_HOST_STATE_MOUNTS[0]
+                .source
+                .resolve(env_lookup([("HOME", "/home/example")])),
+            Some(Utf8PathBuf::from("/home/example/.codex"))
+        );
+        assert_eq!(
+            CODEX_HOST_STATE_MOUNTS[0].source.resolve(env_lookup([])),
+            None
+        );
+    }
+
+    fn env_lookup<const N: usize>(
+        values: [(&'static str, &'static str); N],
+    ) -> impl FnMut(&str) -> Option<PathBuf> {
+        let values = BTreeMap::from(values);
+        move |variable| values.get(variable).map(PathBuf::from)
     }
 }

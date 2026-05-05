@@ -179,39 +179,13 @@ fn detect_runtime_state() -> BTreeMap<String, HostDirectoryPreflightSnapshot> {
 }
 
 fn host_state_source(source: RuntimeHostStateSource) -> Option<Utf8PathBuf> {
-    match source {
-        RuntimeHostStateSource::HomeOnly {
-            home_relative_components,
-        } => {
-            path_from_environment("HOME").and_then(|home| utf8_join(home, home_relative_components))
-        }
-        RuntimeHostStateSource::XdgOrHome {
-            xdg_variable,
-            xdg_relative_components,
-            home_relative_components,
-        } => {
-            if let Some(base) = path_from_environment(xdg_variable) {
-                return utf8_join(base, xdg_relative_components);
-            }
-
-            let home = path_from_environment("HOME")?;
-            utf8_join(home, home_relative_components)
-        }
-    }
+    source.resolve(path_from_environment)
 }
 
 fn path_from_environment(variable: &str) -> Option<std::path::PathBuf> {
     std::env::var_os(variable)
         .filter(|value| !value.as_os_str().is_empty())
         .map(std::path::PathBuf::from)
-}
-
-fn utf8_join(base: std::path::PathBuf, components: &[&str]) -> Option<Utf8PathBuf> {
-    let mut path = Utf8PathBuf::from_path_buf(base).ok()?;
-    for component in components {
-        path.push(component);
-    }
-    Some(path)
 }
 
 fn resolve_nix_client_source() -> Option<Utf8PathBuf> {

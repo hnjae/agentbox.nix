@@ -189,12 +189,13 @@ impl<'a> HostStateMountRequirement<'a> {
         };
 
         if !self.state.exists {
+            let source_expression = self.spec.source_expression();
             return Err(Error::msg(format!(
                 "Missing host {} {} directory: {source}. Run `{}` on the host first so {} exists, then retry `agentbox run --runtime {}`.",
                 self.spec.product_name,
                 self.spec.description,
                 self.runtime,
-                self.spec.source_expression,
+                source_expression,
                 self.runtime,
             )));
         }
@@ -220,20 +221,15 @@ impl<'a> HostStateMountRequirement<'a> {
     }
 
     fn missing_source_error(&self) -> Error {
+        let source_expression = self.spec.source_expression();
         match self.spec.source {
             RuntimeHostStateSource::HomeOnly { .. } => Error::msg(format!(
                 "`HOME` is not set; cannot locate host {} {} directory {} for `run --runtime {}`",
-                self.spec.product_name,
-                self.spec.description,
-                self.spec.source_expression,
-                self.runtime,
+                self.spec.product_name, self.spec.description, source_expression, self.runtime,
             )),
             RuntimeHostStateSource::XdgOrHome { .. } => Error::msg(format!(
                 "Cannot locate host {} {} directory {} for `run --runtime {}`; set `HOME` or the matching XDG environment variable, then retry.",
-                self.spec.product_name,
-                self.spec.description,
-                self.spec.source_expression,
-                self.runtime,
+                self.spec.product_name, self.spec.description, source_expression, self.runtime,
             )),
         }
     }
