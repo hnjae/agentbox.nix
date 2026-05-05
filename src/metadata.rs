@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::runtime::RuntimeAttachSpec;
 use crate::workspace::WorkspaceIdentity;
 
 pub const LABEL_MANAGED: &str = "io.agentbox.managed";
@@ -53,20 +54,6 @@ pub const REQUIRED_SESSION_ATTACH_LABELS: &[&str] = &[
     LABEL_CONTAINER_LISTEN_IP,
 ];
 
-pub const REQUIRED_SESSION_LABELS: &[&str] = &[
-    LABEL_MANAGED,
-    LABEL_SCHEMA,
-    LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH,
-    LABEL_RUNTIME,
-    LABEL_IMAGE,
-    LABEL_LAUNCH_DIRECTORY,
-    LABEL_LOGICAL_NAME,
-    LABEL_ATTACH_SCHEME,
-    LABEL_CONTAINER_PORT,
-    LABEL_CONTAINER_LISTEN_IP,
-];
-
 pub(crate) fn managed_label_filter() -> String {
     format!("label={LABEL_MANAGED}={LABEL_MANAGED_VALUE}")
 }
@@ -75,9 +62,7 @@ pub(crate) fn managed_session_labels(
     workspace: &WorkspaceIdentity,
     image: &str,
     runtime: &str,
-    attach_scheme: &str,
-    container_port: u16,
-    container_listen_ip: &str,
+    attach: RuntimeAttachSpec,
 ) -> BTreeMap<String, String> {
     BTreeMap::from([
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
@@ -97,11 +82,14 @@ pub(crate) fn managed_session_labels(
             LABEL_LOGICAL_NAME.to_string(),
             workspace.container_name.clone(),
         ),
-        (LABEL_ATTACH_SCHEME.to_string(), attach_scheme.to_string()),
-        (LABEL_CONTAINER_PORT.to_string(), container_port.to_string()),
+        (LABEL_ATTACH_SCHEME.to_string(), attach.scheme.to_string()),
+        (
+            LABEL_CONTAINER_PORT.to_string(),
+            attach.container_port.to_string(),
+        ),
         (
             LABEL_CONTAINER_LISTEN_IP.to_string(),
-            container_listen_ip.to_string(),
+            attach.container_listen_ip.to_string(),
         ),
     ])
 }
@@ -117,28 +105,13 @@ pub(crate) fn required_label_value<'a>(
 }
 
 pub(crate) fn has_all_required_session_label_values(labels: &BTreeMap<String, String>) -> bool {
-    REQUIRED_SESSION_LABELS
-        .iter()
-        .all(|label| required_label_value(labels, label).is_some())
+    required_session_labels().all(|label| required_label_value(labels, label).is_some())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn required_session_label_list_matches_contract_sections() {
-        let mut required_from_sections = REQUIRED_SESSION_MARKER_LABEL_VALUES
-            .iter()
-            .map(|(label, _)| *label)
-            .chain(REQUIRED_SESSION_IDENTITY_LABELS.iter().copied())
-            .chain(REQUIRED_SESSION_ATTACH_LABELS.iter().copied())
-            .collect::<Vec<_>>();
-        required_from_sections.sort_unstable();
-
-        let mut required_session_labels = REQUIRED_SESSION_LABELS.to_vec();
-        required_session_labels.sort_unstable();
-
-        assert_eq!(required_session_labels, required_from_sections);
-    }
+fn required_session_labels() -> impl Iterator<Item = &'static str> {
+    REQUIRED_SESSION_MARKER_LABEL_VALUES
+        .iter()
+        .map(|(label, _)| *label)
+        .chain(REQUIRED_SESSION_IDENTITY_LABELS.iter().copied())
+        .chain(REQUIRED_SESSION_ATTACH_LABELS.iter().copied())
 }

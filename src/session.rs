@@ -31,4 +31,4 @@ pub use status::{
     session_failure_requires_action_error,
 };
 
-pub const REQUIRED_NIX_CACHE_MOUNT_DESTINATION: &str = "/home/user/.cache/nix";
+pub use crate::preflight::NIX_CACHE_DESTINATION as REQUIRED_NIX_CACHE_MOUNT_DESTINATION;

@@ -137,14 +137,7 @@ impl RuntimeKind {
     ) -> RuntimeCreateSpec {
         let image = self.default_image().to_string();
         let attach = self.attach_spec();
-        let labels = managed_session_labels(
-            workspace,
-            &image,
-            self.as_str(),
-            attach.scheme,
-            attach.container_port,
-            attach.container_listen_ip,
-        );
+        let labels = managed_session_labels(workspace, &image, self.as_str(), attach);
 
         let mut mounts = vec![RuntimeMount::bind(
             workspace.canonical_git_root.to_string(),
