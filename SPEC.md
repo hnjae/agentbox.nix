@@ -369,7 +369,7 @@ Rules:
 - For `failed` sessions, fields that cannot be recovered from live Podman state
   are shown as `unknown`. The concrete container name must still be shown so the
   user or operator can inspect or remove the broken container.
-- `ls` prints a compact human-readable table in the MVP.
+- `ls` prints a compact borderless human-readable table in the MVP.
 - The MVP does not require machine-readable `ls` output.
 
 ### `agentbox health`
@@ -406,7 +406,7 @@ Rules:
 - `health` includes only sessions whose discovered session status is `running`.
 - Failed, stopped, orphaned, and duplicate sessions are not included.
 - `health` probes each running session once and does not wait for recovery.
-- `health` prints a compact human-readable table in the MVP.
+- `health` prints a compact borderless human-readable table in the MVP.
 - A healthy row uses reason `ok`.
 - An unhealthy row uses a concise reason such as `unreachable`, `HTTP 503`,
   `malformed JSON`, or `healthy=false`.
