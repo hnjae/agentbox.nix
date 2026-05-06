@@ -1,4 +1,4 @@
-use comfy_table::{Cell, Table, presets::UTF8_FULL};
+use comfy_table::{Cell, Table, presets::NOTHING};
 
 use crate::error::Result;
 use crate::podman::Podman;
@@ -17,7 +17,7 @@ pub fn print_table(sessions: &[SessionRecord]) {
 
 pub fn render_table(sessions: &[SessionRecord]) -> String {
     let mut table = Table::new();
-    table.load_preset(UTF8_FULL);
+    table.load_preset(NOTHING);
     table.set_header(["canonical git root", "runtime", "status", "container name"]);
 
     let mut rows = sessions.to_vec();

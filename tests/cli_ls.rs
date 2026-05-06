@@ -41,6 +41,7 @@ fn ls_renders_all_status_rows_in_stable_order() {
     assert!(table.contains("orphaned"));
     assert!(table.contains("failed"));
     assert!(table.contains("duplicate"));
+    assert_no_box_drawing_borders(&table);
 }
 
 #[test]
@@ -105,4 +106,11 @@ fn line_index(table: &str, needle: &str) -> usize {
         .lines()
         .position(|line| line.contains(needle))
         .unwrap()
+}
+
+fn assert_no_box_drawing_borders(table: &str) {
+    let border = table
+        .chars()
+        .find(|character| ('\u{2500}'..='\u{257f}').contains(character));
+    assert!(border.is_none(), "table contains a border: {table}");
 }

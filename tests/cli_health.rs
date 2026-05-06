@@ -56,6 +56,7 @@ fn health_reports_running_opencode_session_as_healthy() {
     assert!(stdout.contains("ok"));
     assert!(stdout.contains(&format!("http://127.0.0.1:{port}")));
     assert!(stdout.contains(&workspace.container_name));
+    assert_no_box_drawing_borders(&stdout);
 }
 
 #[test]
@@ -193,6 +194,14 @@ fn health_with_no_running_sessions_prints_header_only_table() {
     assert!(stdout.contains("container name"));
     assert!(!stdout.contains("opencode"));
     assert!(!stdout.contains("codex"));
+    assert_no_box_drawing_borders(&stdout);
+}
+
+fn assert_no_box_drawing_borders(table: &str) {
+    let border = table
+        .chars()
+        .find(|character| ('\u{2500}'..='\u{257f}').contains(character));
+    assert!(border.is_none(), "table contains a border: {table}");
 }
 
 struct HealthEndpoint {
