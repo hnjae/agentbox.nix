@@ -6,8 +6,8 @@ use crate::cli::{HealthArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::session::{
-    SessionRecord, SessionStatus, discover_managed_sessions, select_stable_id_prefix,
-    sort_session_refs_by_identity,
+    SessionDisplay, SessionRecord, SessionStatus, discover_managed_sessions,
+    select_stable_id_prefix, sort_session_refs_by_identity,
 };
 
 use super::runtime_health::{HostRuntimeHealthProbe, RuntimeHealthProbe};
@@ -25,16 +25,16 @@ pub fn run(args: HealthArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn print_table(rows: &[HealthRow]) {
+fn print_table(rows: &[HealthRow<'_>]) {
     print!("{}", render_table(rows));
 }
 
-pub fn print_json(rows: &[HealthRow]) -> Result<()> {
+fn print_json(rows: &[HealthRow<'_>]) -> Result<()> {
     print!("{}", render_json(rows)?);
     Ok(())
 }
 
-pub fn render_table(rows: &[HealthRow]) -> String {
+fn render_table(rows: &[HealthRow<'_>]) -> String {
     let mut table = Table::new();
     table.load_preset(NOTHING);
     table.set_header([
@@ -48,33 +48,29 @@ pub fn render_table(rows: &[HealthRow]) -> String {
 
     for row in rows {
         table.add_row([
-            Cell::new(row.id.as_deref().unwrap_or("unknown")),
-            Cell::new(row.canonical_git_root.as_deref().unwrap_or("unknown")),
-            Cell::new(row.runtime.as_deref().unwrap_or("unknown")),
+            Cell::new(row.display.id_or_unknown()),
+            Cell::new(row.display.canonical_git_root_or_unknown()),
+            Cell::new(row.display.runtime_or_unknown()),
             Cell::new(row.health.as_str()),
             Cell::new(&row.reason),
-            Cell::new(row.endpoint.as_deref().unwrap_or("unknown")),
+            Cell::new(row.display.endpoint_or_unknown()),
         ]);
     }
 
     table::render_table(table)
 }
 
-pub fn render_json(rows: &[HealthRow]) -> Result<String> {
+fn render_json(rows: &[HealthRow<'_>]) -> Result<String> {
     let rows = rows.iter().map(HealthJsonRow::from).collect::<Vec<_>>();
 
     Ok(format!("{}\n", serde_json::to_string(&rows)?))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HealthRow {
-    id: Option<String>,
-    canonical_git_root: Option<String>,
-    runtime: Option<String>,
+struct HealthRow<'a> {
+    display: SessionDisplay<'a>,
     health: HealthStatus,
     reason: String,
-    endpoint: Option<String>,
-    container_name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,10 +119,10 @@ fn selected_health_sessions<'a>(
     Ok(vec![session])
 }
 
-fn health_rows(
-    mut sessions: Vec<&SessionRecord>,
+fn health_rows<'a>(
+    mut sessions: Vec<&'a SessionRecord>,
     probe: &impl RuntimeHealthProbe,
-) -> Vec<HealthRow> {
+) -> Vec<HealthRow<'a>> {
     sort_session_refs_by_identity(&mut sessions);
 
     sessions
@@ -135,12 +131,8 @@ fn health_rows(
         .collect()
 }
 
-fn health_row(session: &SessionRecord, probe: &impl RuntimeHealthProbe) -> HealthRow {
+fn health_row<'a>(session: &'a SessionRecord, probe: &impl RuntimeHealthProbe) -> HealthRow<'a> {
     let display = session.display();
-    let id = display.id().map(ToString::to_string);
-    let canonical_git_root = display.canonical_git_root_str().map(ToString::to_string);
-    let runtime = display.runtime().map(ToString::to_string);
-    let endpoint = display.endpoint().map(ToString::to_string);
 
     let (health, reason) = match (session.runtime_kind(), session.attach_endpoint.as_ref()) {
         (Some(runtime), Some(endpoint)) => {
@@ -162,13 +154,9 @@ fn health_row(session: &SessionRecord, probe: &impl RuntimeHealthProbe) -> Healt
     };
 
     HealthRow {
-        id,
-        canonical_git_root,
-        runtime,
+        display,
         health,
         reason,
-        endpoint,
-        container_name: display.container_name().to_string(),
     }
 }
 
@@ -183,16 +171,69 @@ struct HealthJsonRow<'a> {
     container_name: &'a str,
 }
 
-impl<'a> From<&'a HealthRow> for HealthJsonRow<'a> {
-    fn from(row: &'a HealthRow) -> Self {
+impl<'row, 'session: 'row> From<&'row HealthRow<'session>> for HealthJsonRow<'row> {
+    fn from(row: &'row HealthRow<'session>) -> Self {
         Self {
-            id: row.id.as_deref(),
-            canonical_git_root: row.canonical_git_root.as_deref(),
-            runtime: row.runtime.as_deref(),
+            id: row.display.id(),
+            canonical_git_root: row.display.canonical_git_root_str(),
+            runtime: row.display.runtime(),
             health: row.health.as_str(),
             reason: &row.reason,
-            endpoint: row.endpoint.as_deref(),
-            container_name: &row.container_name,
+            endpoint: row.display.endpoint(),
+            container_name: row.display.container_name(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::Value;
+
+    use crate::commands::runtime_health::RuntimeHealth;
+    use crate::runtime::{AttachEndpoint, RuntimeKind};
+    use crate::session::{SessionMetadata, SessionRecord, SessionStatus};
+
+    use super::*;
+
+    #[test]
+    fn health_rendering_uses_shared_session_display_fallbacks() {
+        let session = SessionRecord {
+            container_id: "container-id".to_string(),
+            container_name: "broken-container".to_string(),
+            metadata: SessionMetadata::from_labels(&BTreeMap::new()),
+            runtime_kind: None,
+            attach_endpoint: None,
+            container_running: true,
+            status: SessionStatus::Running,
+        };
+
+        let rows = health_rows(vec![&session], &UnusedProbe);
+        let table = render_table(&rows);
+
+        assert!(table.contains("unknown"));
+        assert!(table.contains("missing runtime metadata"));
+        assert!(!table.contains("broken-container"));
+
+        let json = render_json(&rows).unwrap();
+        let rows: Vec<Value> = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0]["id"].is_null());
+        assert!(rows[0]["canonical_git_root"].is_null());
+        assert!(rows[0]["runtime"].is_null());
+        assert!(rows[0]["endpoint"].is_null());
+        assert_eq!(rows[0]["health"], "unhealthy");
+        assert_eq!(rows[0]["reason"], "missing runtime metadata");
+        assert_eq!(rows[0]["container_name"], "broken-container");
+    }
+
+    struct UnusedProbe;
+
+    impl RuntimeHealthProbe for UnusedProbe {
+        fn check(&self, _runtime: RuntimeKind, _endpoint: &AttachEndpoint) -> RuntimeHealth {
+            panic!("probe should not run for missing runtime metadata")
         }
     }
 }
