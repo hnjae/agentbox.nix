@@ -18,6 +18,7 @@ The MVP is workspace-centric rather than name-centric:
 - `agentbox ls`
 - `agentbox health`
 - `agentbox stop <directory>`
+- `agentbox clean`
 
 `agentbox run --runtime <opencode|codex> <directory>` resolves `<directory>` to
 its canonical git root and launches one managed workspace session for that
@@ -34,7 +35,8 @@ running session's working directory.
 Managed containers are started with Podman's `--rm` cleanup flag. When the
 runtime server exits, or when `agentbox stop <directory>` stops it, Podman
 removes the stopped container. Default runtime images and the named runtime
-cache volume are intentionally left for explicit later cleanup or update.
+cache volume are intentionally left for explicit later cleanup with
+`agentbox clean` or update.
 
 If a matching managed session already exists for a repository, `run` fails
 clearly instead of reusing, replacing, or changing it.
@@ -263,6 +265,69 @@ Image rules:
   container so live discovery can report it while the container exists.
 - Default runtime images are not removed by `stop`; image cleanup and image
   updates are explicit operator actions.
+
+### `agentbox clean`
+
+`clean` reclaims unused Podman resources owned by `agentbox`. It is a global
+cleanup command, not a session stop command.
+
+Optional flags:
+
+- `--dry-run`: print cleanup candidates and skipped resources without deleting
+  anything
+- `--yes`: delete cleanup candidates without prompting
+- `--images`: consider default runtime images only
+- `--volumes`: consider workspace cache volumes only
+
+Selection rules:
+
+- If neither `--images` nor `--volumes` is set, `clean` considers both default
+  runtime images and workspace cache volumes.
+- If exactly one of `--images` or `--volumes` is set, only that resource kind
+  is considered.
+- `--dry-run` and `--yes` cannot be used together.
+
+Image cleanup rules:
+
+- `clean` only considers the exact default image references
+  `localhost/agentbox-opencode:local` and `localhost/agentbox-codex:local`.
+- A default runtime image is skipped when any Podman container, managed or
+  unmanaged, currently uses that exact image reference.
+- When a default runtime image is deleted successfully, the corresponding
+  runtime image metadata file under `$XDG_STATE_HOME/agentbox/runtime` is
+  removed if it exists.
+- `clean` does not remove image names by prefix and does not call
+  `podman system prune` or Podman build-cache cleanup.
+
+Volume cleanup rules:
+
+- `clean` only considers named volumes whose names match the current workspace
+  cache volume shape `agentbox-...-<12 hex>`.
+- A candidate volume is skipped when any Podman container, managed or
+  unmanaged, mounts that exact volume source.
+- `clean` does not call broad Podman volume pruning such as
+  `podman volume prune --all`.
+
+Confirmation and output rules:
+
+- If no resources are cleanup candidates, `clean` prints `nothing to clean` and
+  exits successfully.
+- With `--dry-run`, `clean` prints cleanup candidates and skip reasons, deletes
+  nothing, and exits successfully.
+- With `--yes`, `clean` deletes cleanup candidates without prompting.
+- Without `--dry-run` or `--yes`, `clean` prompts on stderr with
+  `Proceed? [y/N]` only when stdin is a TTY. Case-insensitive `y` or `yes`
+  approves cleanup; any other input prints `aborted` and exits successfully.
+- When stdin is not a TTY, `clean` fails unless `--yes` or `--dry-run` is set.
+- If deletion of one candidate fails, `clean` continues deleting the remaining
+  candidates, then exits non-zero with a summary of failed resources.
+
+Safety rules:
+
+- `clean` never stops or removes running or stopped containers. Container
+  lifecycle remains owned by `agentbox stop`.
+- `clean` never deletes a workspace, the Nix store, `~/.codex`, or host
+  OpenCode configuration or state directories.
 
 ### `agentbox runtime update <opencode|codex>`
 
@@ -539,7 +604,7 @@ Required package output paths:
 - `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`,
   `share/man/man1/agentbox-attach.1`, `share/man/man1/agentbox-ls.1`,
   `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`,
-  `share/man/man1/agentbox-runtime.1`, and
+  `share/man/man1/agentbox-clean.1`, `share/man/man1/agentbox-runtime.1`, and
   `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the
   Nix fixup phase compresses manual pages
 
@@ -798,13 +863,12 @@ Valid lifecycle behavior:
 Default runtime image lifecycle is separate from managed sessions. When the
 runtime server exits or `agentbox stop` stops it, Podman removes the container
 but keeps the default runtime image. Runtime image updates happen through
-`agentbox runtime update <opencode|codex>`; `stop` does not remove or rebuild
-images.
+`agentbox runtime update <opencode|codex>`, and unused default images can be
+removed through `agentbox clean`; `stop` does not remove or rebuild images.
 
 Named runtime cache volume lifecycle remains separate. `agentbox stop` leaves
 the workspace cache volume intact so later sessions can reuse it. Volume
-reclamation is explicit, for example `podman volume rm <container-name>` or
-`podman volume prune --all`.
+reclamation is explicit through `agentbox clean` or direct Podman commands.
 
 Required drift behavior:
 
@@ -875,6 +939,8 @@ Required error cases:
 - runtime image setup failure
 - `direnv` unavailable, blocked, or failing when a matching `.envrc` applies
 - workspace or host Nix permission problems that prevent required access
+- `clean` run from non-TTY stdin without `--yes` or `--dry-run`
+- partial `clean` deletion failures
 
 ## Security And Isolation
 
