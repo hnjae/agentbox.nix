@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::process::Command;
 
 use camino::Utf8Path;
+use serde::de::DeserializeOwned;
 
 use crate::metadata::managed_label_filter;
 use crate::process::{
@@ -56,37 +57,29 @@ impl Podman {
     }
 
     pub fn ps(&self) -> Result<Vec<PodmanPsContainer>> {
-        let output = self.run_podman_quiet(|command| {
+        self.run_podman_json("`podman ps --all --format json`", |command| {
             command.args(["ps", "--all", "--filter"]);
             command.arg(managed_label_filter());
             command.args(["--format", "json"]);
-        })?;
-
-        parse_json("`podman ps --all --format json`", &output.stdout)
+        })
     }
 
     pub fn ps_all(&self) -> Result<Vec<PodmanPsContainer>> {
-        let output = self.run_podman_quiet(|command| {
+        self.run_podman_json("`podman ps --all --format json`", |command| {
             command.args(["ps", "--all", "--format", "json"]);
-        })?;
-
-        parse_json("`podman ps --all --format json`", &output.stdout)
+        })
     }
 
     pub fn volumes(&self) -> Result<Vec<PodmanVolume>> {
-        let output = self.run_podman_quiet(|command| {
+        self.run_podman_json("`podman volume ls --format json`", |command| {
             command.args(["volume", "ls", "--format", "json"]);
-        })?;
-
-        parse_json("`podman volume ls --format json`", &output.stdout)
+        })
     }
 
     pub fn inspect(&self, name: &str) -> Result<Vec<PodmanContainerInspect>> {
-        let output = self.run_podman_quiet(|command| {
+        self.run_podman_json("`podman inspect`", |command| {
             command.args(["inspect", name]);
-        })?;
-
-        parse_json("`podman inspect`", &output.stdout)
+        })
     }
 
     pub fn inspect_one(&self, name: &str) -> Result<PodmanContainerInspect> {
@@ -209,6 +202,15 @@ impl Podman {
     fn run_podman_quiet(&self, configure: impl FnOnce(&mut Command)) -> Result<ProcessOutput> {
         let mut command = self.podman_command(configure)?;
         self.run_quiet(&mut command)
+    }
+
+    fn run_podman_json<T: DeserializeOwned>(
+        &self,
+        context: &str,
+        configure: impl FnOnce(&mut Command),
+    ) -> Result<T> {
+        let output = self.run_podman_quiet(configure)?;
+        parse_json(context, &output.stdout)
     }
 
     fn run_podman_forwarding_output_when_verbose(
