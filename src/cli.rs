@@ -124,7 +124,7 @@ pub enum OutputFormat {
 
 impl OutputFormat {
     fn variants() -> &'static [Self] {
-        &[Self::Table, Self::Json]
+        <Self as ValueEnum>::value_variants()
     }
 
     pub fn as_str(self) -> &'static str {

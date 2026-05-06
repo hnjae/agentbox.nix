@@ -26,7 +26,7 @@ pub enum RuntimeKind {
 
 impl RuntimeKind {
     pub fn variants() -> &'static [Self] {
-        &[Self::Opencode, Self::Codex]
+        <Self as ValueEnum>::value_variants()
     }
 
     pub fn as_str(self) -> &'static str {

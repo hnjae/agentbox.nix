@@ -63,10 +63,9 @@ struct CleanPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CleanCandidate {
-    kind: ResourceKind,
-    name: String,
-    runtime: Option<RuntimeKind>,
+enum CleanCandidate {
+    DefaultRuntimeImage { runtime: RuntimeKind },
+    CacheVolume { name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,13 +90,29 @@ impl ResourceKind {
     }
 }
 
+impl CleanCandidate {
+    fn kind(&self) -> ResourceKind {
+        match self {
+            Self::DefaultRuntimeImage { .. } => ResourceKind::Image,
+            Self::CacheVolume { .. } => ResourceKind::Volume,
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            Self::DefaultRuntimeImage { runtime } => runtime.default_image(),
+            Self::CacheVolume { name } => name,
+        }
+    }
+}
+
 fn build_clean_plan(podman: &Podman, scope: CleanScope) -> Result<CleanPlan> {
     let containers = inspect_all_containers(podman)?;
     let mut candidates = Vec::new();
     let mut skipped = Vec::new();
 
     if scope.images {
-        for runtime in [RuntimeKind::Opencode, RuntimeKind::Codex] {
+        for runtime in RuntimeKind::variants().iter().copied() {
             let image = runtime.default_image();
             if !podman.image_exists(image)? {
                 continue;
@@ -113,11 +128,7 @@ fn build_clean_plan(podman: &Podman, scope: CleanScope) -> Result<CleanPlan> {
                     reason: format!("used by container `{}`", container.id),
                 });
             } else {
-                candidates.push(CleanCandidate {
-                    kind: ResourceKind::Image,
-                    name: image.to_string(),
-                    runtime: Some(runtime),
-                });
+                candidates.push(CleanCandidate::DefaultRuntimeImage { runtime });
             }
         }
     }
@@ -140,11 +151,7 @@ fn build_clean_plan(podman: &Podman, scope: CleanScope) -> Result<CleanPlan> {
                     reason: format!("mounted by container `{}`", container.id),
                 });
             } else {
-                candidates.push(CleanCandidate {
-                    kind: ResourceKind::Volume,
-                    name: volume.name,
-                    runtime: None,
-                });
+                candidates.push(CleanCandidate::CacheVolume { name: volume.name });
             }
         }
     }
@@ -179,13 +186,11 @@ fn render_plan(plan: &CleanPlan) -> String {
 
     if !plan.candidates.is_empty() {
         lines.push("cleanup candidates:".to_string());
-        lines.extend(plan.candidates.iter().map(|candidate| {
-            format!(
-                "- {} `{}`",
-                candidate.kind.as_str(),
-                candidate.name.as_str()
-            )
-        }));
+        lines.extend(
+            plan.candidates
+                .iter()
+                .map(|candidate| format!("- {} `{}`", candidate.kind().as_str(), candidate.name())),
+        );
     }
 
     if !plan.skipped.is_empty() {
@@ -224,10 +229,14 @@ fn apply_clean_plan(podman: &Podman, plan: &CleanPlan) -> Result<()> {
 
     for candidate in &plan.candidates {
         match remove_candidate(podman, candidate) {
-            Ok(()) => println!("removed {} `{}`", candidate.kind.as_str(), candidate.name),
+            Ok(()) => println!(
+                "removed {} `{}`",
+                candidate.kind().as_str(),
+                candidate.name()
+            ),
             Err(error) => failures.push(DeleteFailure {
-                kind: candidate.kind,
-                name: candidate.name.clone(),
+                kind: candidate.kind(),
+                name: candidate.name().to_string(),
                 error: error.to_string(),
             }),
         }
@@ -241,15 +250,13 @@ fn apply_clean_plan(podman: &Podman, plan: &CleanPlan) -> Result<()> {
 }
 
 fn remove_candidate(podman: &Podman, candidate: &CleanCandidate) -> Result<()> {
-    match candidate.kind {
-        ResourceKind::Image => {
-            podman.remove_image(&candidate.name)?;
-            if let Some(runtime) = candidate.runtime {
-                remove_default_runtime_image_state(runtime)?;
-            }
+    match candidate {
+        CleanCandidate::DefaultRuntimeImage { runtime } => {
+            podman.remove_image(runtime.default_image())?;
+            remove_default_runtime_image_state(*runtime)?;
             Ok(())
         }
-        ResourceKind::Volume => podman.remove_volume(&candidate.name),
+        CleanCandidate::CacheVolume { name } => podman.remove_volume(name),
     }
 }
 
