@@ -11,6 +11,7 @@ use crate::error::Result;
 
 pub mod attach;
 pub mod completion;
+pub mod health;
 pub mod ls;
 pub mod run;
 pub mod runtime;
@@ -28,6 +29,7 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
         Command::Runtime(args) => runtime::run(args, verbose),
         Command::Attach(args) => attach::run(args),
         Command::Ls => ls::run(),
+        Command::Health => health::run(),
         Command::Stop(args) => stop::run(args),
         Command::Completion(args) => completion::run(args.shell),
         Command::CompletionRoots(args) => {

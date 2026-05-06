@@ -125,7 +125,7 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(script.contains("run runtime attach ls stop completion help"));
+    assert!(script.contains("run runtime attach ls health stop completion help"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -164,6 +164,7 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
 
     assert!(manpage.contains(".TH agentbox 1"));
     assert!(manpage.contains("agentbox\\-run(1)"));
+    assert!(manpage.contains("agentbox\\-health(1)"));
     assert!(!manpage.contains("agentbox\\-help(1)"));
     assert!(manpage.contains("Shell completion helpers"));
     assert!(!manpage.contains("__completion-roots"));
@@ -193,6 +194,7 @@ fn installed_manpages_include_referenced_subcommands() {
         "agentbox-runtime.1",
         "agentbox-attach.1",
         "agentbox-ls.1",
+        "agentbox-health.1",
         "agentbox-stop.1",
         "agentbox-completion.1",
     ] {
@@ -205,6 +207,7 @@ fn installed_manpages_include_referenced_subcommands() {
 
     let agentbox = fs::read_to_string(directory.path().join("agentbox.1")).unwrap();
     assert!(agentbox.contains("agentbox\\-run(1)"));
+    assert!(agentbox.contains("agentbox\\-health(1)"));
     assert!(!agentbox.contains("agentbox\\-help(1)"));
 
     let run = fs::read_to_string(directory.path().join("agentbox-run.1")).unwrap();

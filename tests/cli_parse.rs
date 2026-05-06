@@ -26,6 +26,7 @@ fn help_lists_core_commands() {
             .and(predicate::str::contains("runtime"))
             .and(predicate::str::contains("attach"))
             .and(predicate::str::contains("ls"))
+            .and(predicate::str::contains("health"))
             .and(predicate::str::contains("stop"))
             .and(predicate::str::contains("completion"))
             .and(predicate::str::contains("detached runtime server")),
@@ -51,6 +52,7 @@ fn core_commands_parse_into_expected_variants() {
         .unwrap();
     let attach = Cli::try_parse_from(["agentbox", "attach", "/tmp/workspace"]).unwrap();
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
+    let health = Cli::try_parse_from(["agentbox", "health"]).unwrap();
     let stop = Cli::try_parse_from(["agentbox", "stop", "/tmp/workspace"]).unwrap();
     let runtime = Cli::try_parse_from(["agentbox", "runtime", "update", "codex"]).unwrap();
     let completion = Cli::try_parse_from(["agentbox", "completion", "bash"]).unwrap();
@@ -69,6 +71,7 @@ fn core_commands_parse_into_expected_variants() {
         })
     );
     assert_eq!(ls.command, Command::Ls);
+    assert_eq!(health.command, Command::Health);
     assert_eq!(
         stop.command,
         Command::Stop(StopArgs {

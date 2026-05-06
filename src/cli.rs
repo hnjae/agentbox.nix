@@ -75,6 +75,8 @@ pub enum Command {
     Attach(DirectoryArgs),
     /// List managed sessions.
     Ls,
+    /// Check running managed session runtime health.
+    Health,
     /// Stop a managed session.
     Stop(StopArgs),
     /// Shell completion helpers.
