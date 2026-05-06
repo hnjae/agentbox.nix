@@ -12,28 +12,31 @@ containers.
 
 The MVP is workspace-centric rather than name-centric:
 
-- `agentbox run --runtime <opencode|codex> <directory>`
+- `agentbox run [--runtime <opencode|codex>] <directory>`
 - `agentbox runtime update <opencode|codex>`
-- `agentbox attach <directory>`
+- `agentbox attach [directory]`
 - `agentbox ls`
 - `agentbox health`
-- `agentbox stop <directory>`
+- `agentbox stop [target]...`
 - `agentbox clean`
 
-`agentbox run --runtime <opencode|codex> <directory>` resolves `<directory>` to
-its canonical git root and launches one managed workspace session for that
+`agentbox run [--runtime <opencode|codex>] <directory>` resolves `<directory>`
+to its canonical git root and launches one managed workspace session for that
 repository as a detached runtime server container. The container starts the
-selected runtime server for that workspace.
+selected runtime server for that workspace. If `--runtime` is omitted in an
+interactive terminal, `run` prompts for the runtime before validating runtime
+prerequisites or starting a container.
 
-`agentbox attach <directory>` discovers the running server endpoint for the
-resolved repository and runs the running session's runtime host-side client
-command from the session's stored launch directory. The newly requested
+`agentbox attach [directory]` discovers the running server endpoint for the
+resolved repository or selected session and runs the running session's runtime
+host-side client command from the session's stored launch directory. A provided
 directory is used only to identify the workspace once the session exists. For
 `attach`, `<directory>` is a workspace selector, not a request to change the
-running session's working directory.
+running session's working directory. If no directory is provided in an
+interactive terminal, `attach` prompts for one attachable running session.
 
 Managed containers are started with Podman's `--rm` cleanup flag. When the
-runtime server exits, or when `agentbox stop <directory>` stops it, Podman
+runtime server exits, or when `agentbox stop [target]...` stops it, Podman
 removes the stopped container. Default runtime images and the named runtime
 cache volume are intentionally left for explicit later cleanup with
 `agentbox clean` or update.
@@ -194,37 +197,43 @@ Global flags:
   commands that support verbose diagnostics. Diagnostic output is written to
   stderr and must not replace machine-readable or success output on stdout.
 
-### `agentbox run --runtime <opencode|codex> <directory>`
+### `agentbox run [--runtime <opencode|codex>] <directory>`
 
 `run` launches a new workspace session as a detached runtime server.
 
-Required flag:
+Optional flag:
 
 - `--runtime <opencode|codex>`
 
 Expected behavior:
 
-1. Validate Git availability and resolve `<directory>` to a canonical git root
+1. If `--runtime` is omitted and stdin and stderr are terminals, prompt on
+   stderr with a fuzzy single-select list of supported runtimes. Use the
+   selected runtime exactly as if the user had passed `--runtime`.
+2. If `--runtime` is omitted and either stdin or stderr is not a terminal, fail
+   before workspace or runtime validation with a clear error that `--runtime` is
+   required in non-interactive use.
+3. Validate Git availability and resolve `<directory>` to a canonical git root
    and canonical target directory.
-2. Validate Podman, the selected runtime, and the host-attached Nix
+4. Validate Podman, the selected runtime, and the host-attached Nix
    prerequisites.
-3. Ensure concurrent lifecycle operations for the same git root do not leave
+5. Ensure concurrent lifecycle operations for the same git root do not leave
    duplicate sessions or ambiguous lifecycle state.
-4. Discover existing managed containers for that canonical git root.
-5. If more than one matching container exists, fail as `duplicate` and do not
+6. Discover existing managed containers for that canonical git root.
+7. If more than one matching container exists, fail as `duplicate` and do not
    guess which one to use.
-6. If exactly one matching managed container exists, fail clearly instead of
+8. If exactly one matching managed container exists, fail clearly instead of
    reusing or replacing it. For a healthy running session, suggest
    `agentbox attach <directory>` or `agentbox stop <directory>`.
-7. If none exists, record the canonical target directory as the session launch
+9. If none exists, record the canonical target directory as the session launch
    directory and start detached `podman run --rm` with the required labels,
    mounts, default runtime image, local-only published attach endpoint, and
    launch-directory working directory.
-8. Start the selected runtime server for the session. If `direnv` applies, the
-   server starts with the launch directory's `direnv` environment.
-9. Wait until the runtime server endpoint is ready for attachment or the
-   container exits.
-10. Report that the discovered attach endpoint is ready and suggest
+10. Start the selected runtime server for the session. If `direnv` applies, the
+    server starts with the launch directory's `direnv` environment.
+11. Wait until the runtime server endpoint is ready for attachment or the
+    container exits.
+12. Report that the discovered attach endpoint is ready and suggest
     `agentbox attach <directory>`.
 
 Progress and diagnostics:
@@ -242,7 +251,13 @@ Progress and diagnostics:
 Runtime rules:
 
 - `run` accepts only `opencode` and `codex` in the MVP.
-- `--runtime` selects the runtime for the new session.
+- `--runtime` selects the runtime for the new session when it is present.
+- When `--runtime` is absent in an interactive terminal, the runtime prompt is
+  rendered on stderr and the final success message remains on stdout.
+- Canceling the runtime prompt with Escape exits non-zero with
+  `selection canceled`.
+- Interrupting the runtime prompt with Ctrl-C exits non-zero with
+  `selection interrupted`.
 - If a managed session already exists for the resolved git root, `run` fails
   before reusing or comparing any stored runtime value.
 - `--runtime` does not change session identity.
@@ -354,35 +369,52 @@ Rules:
   directories such as `~/.codex`, `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`,
   or `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`.
 
-### `agentbox attach <directory>`
+### `agentbox attach [directory]`
 
 `attach` connects to an already-running managed workspace session. For
-`attach`, `<directory>` is a workspace selector, not a requested working
-directory for the running session.
+`attach`, a provided `<directory>` is a workspace selector, not a requested
+working directory for the running session.
 
 Expected behavior:
 
-1. Resolve `<directory>` to a canonical git root and canonical requested
-   directory.
-2. Discover the managed container for that canonical git root.
-3. Fail if no matching managed session exists, and suggest
+1. If `<directory>` is omitted and stdin and stderr are terminals, discover
+   attachable running sessions and prompt on stderr with a fuzzy single-select
+   list.
+2. If `<directory>` is omitted and either stdin or stderr is not a terminal,
+   fail with a clear error that an attach target is required in non-interactive
+   use.
+3. If `<directory>` is omitted and there are no attachable running sessions,
+   fail without prompting and report that no attachable managed sessions exist.
+4. If the selection prompt is canceled with Escape, exit non-zero with
+   `selection canceled`.
+5. If the selection prompt is interrupted with Ctrl-C, exit non-zero with
+   `selection interrupted`.
+6. Resolve the provided or selected directory to a canonical git root and
+   canonical requested directory.
+7. Discover the managed container for that canonical git root.
+8. Fail if no matching managed session exists, and suggest
    `agentbox run --runtime <opencode|codex> <directory>`.
-4. Fail as `duplicate` if more than one matching container exists.
-5. Fail if the matching container is not running.
-6. Discover the runtime attach endpoint and stored launch directory from
-   managed-container metadata and Podman's published port data.
-7. If the canonical requested directory differs from the stored launch
-   directory, report that the requested directory was used only to identify the
-   workspace and that `attach` is using the stored launch directory.
-8. Execute the runtime host client command from the stored launch directory with
-   stdio inherited, without re-evaluating `.envrc` or wrapping the client in
-   `direnv`.
+9. Fail as `duplicate` if more than one matching container exists.
+10. Fail if the matching container is not running.
+11. Discover the runtime attach endpoint and stored launch directory from
+    managed-container metadata and Podman's published port data.
+12. If the canonical requested directory differs from the stored launch
+    directory, report that the requested directory was used only to identify the
+    workspace and that `attach` is using the stored launch directory.
+13. Execute the runtime host client command from the stored launch directory with
+    stdio inherited, without re-evaluating `.envrc` or wrapping the client in
+    `direnv`.
 
 Rules:
 
 - `attach` never creates a new session.
 - `attach` never starts or restarts a stopped session.
 - `attach` never prompts for runtime selection.
+- `attach` prompts for a target only when the positional directory is omitted.
+- The attach prompt shows only attachable `running` sessions with recoverable
+  git-root and endpoint metadata.
+- The attach prompt is rendered on stderr and does not write to stdout before
+  the runtime host client starts.
 - `attach` does not accept or interpret `--runtime`.
 - `attach` does not accept or interpret `--image`.
 - `attach` does not use `podman attach` as the user transport in the MVP.
@@ -513,44 +545,68 @@ Rules:
 - Unhealthy rows do not make the command fail; discovery or Podman failures
   remain command failures.
 
-### `agentbox stop <target>` / `agentbox stop --all`
+### `agentbox stop [target]...` / `agentbox stop --all`
 
-`stop` stops the workspace session for the resolved repository, exact orphaned
-absolute path, or stable id prefix. It is not a volume pruning command.
+`stop` stops workspace sessions for the resolved repositories, exact orphaned
+absolute paths, or stable id prefixes. It is not a volume pruning command.
 With `--all`, `stop` stops every running managed `agentbox` container.
 
 Expected behavior:
 
-1. If `<target>` names an existing path, resolve it to a canonical git root.
-1. If `<target>` is an absolute path that does not exist, require it to be an
-   exact absolute git-root path string and match only a live orphaned session
-   whose stored git-root path is exactly that string.
-1. If `<target>` is not resolved as a path, treat it as a stable id prefix.
-   Prefix matching is case-insensitive.
-1. If no session id matches the target prefix, fail clearly.
-1. If the prefix matches more than one distinct id, fail and ask for a longer
-   prefix.
-1. If all prefix matches have the same full id, treat them as duplicate sessions
+1. If one or more `<target>` values are present, process each target and
+   continue to later targets after a target-specific failure.
+2. For each `<target>` that names an existing path, resolve it to a canonical
+   git root.
+3. For each `<target>` that is an absolute path that does not exist, require it
+   to be an exact absolute git-root path string and match only a live orphaned
+   session whose stored git-root path is exactly that string.
+4. For each `<target>` that is not resolved as a path, treat it as a stable id
+   prefix. Prefix matching is case-insensitive.
+5. If no session id matches a target prefix, record a clear failure for that
+   target.
+6. If a prefix matches more than one distinct id, record a failure asking for a
+   longer prefix.
+7. If all prefix matches have the same full id, treat them as duplicate sessions
    for that id.
-1. Ensure concurrent lifecycle operations for the same git root do not race.
-1. Stop the matching container if it is running.
-1. Treat an already-removed matching container as success after verifying it is
-   absent.
-1. If no matching managed session exists, report that no session exists for the
-   resolved repository or exact orphan path and exit non-zero.
-1. Rely on Podman's `--rm` cleanup for container removal after the stop.
-1. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
-   later by explicit Podman volume cleanup.
-1. If `--all` is set, do not accept a `<target>` and stop all running managed
-   sessions discovered from live Podman state.
-1. `stop --all` stops running, orphaned, duplicate, and otherwise malformed
-   managed containers whose Podman state is running.
-1. `stop --all` ignores managed containers that are already stopped.
-1. If `stop --all` finds no running managed containers, exit successfully.
-1. For `stop --all`, lock each recoverable git root before stopping its
-   currently running exact matches. Running managed containers without a
-   recoverable git-root label are stopped only because the user selected the
-   explicit global cleanup.
+8. Ensure concurrent lifecycle operations for the same git root do not race.
+9. Stop each matching container if it is running.
+10. Treat an already-removed matching container as success after verifying it is
+    absent.
+11. If no matching managed session exists for a target, record that no session
+    exists for the resolved repository or exact orphan path.
+12. After all explicit targets are processed, exit non-zero if any target failed
+    or any cleanup verification failed, and include a summary of the failed
+    targets.
+13. Rely on Podman's `--rm` cleanup for container removal after the stop.
+14. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
+    later by explicit Podman volume cleanup.
+15. If no `<target>` is present and `--all` is not set, discover stop
+    candidates and prompt on stderr with a fuzzy multi-select list.
+16. The no-target selector includes running, orphaned, duplicate, and failed
+    sessions when a stable id is known, matching stop completion eligibility.
+17. If the no-target selector is canceled with Escape, exit non-zero with
+    `selection canceled`.
+18. If the no-target selector is interrupted with Ctrl-C, exit non-zero with
+    `selection interrupted`.
+19. If no `<target>` is present and either stdin or stderr is not a terminal,
+    fail with a clear error that a stop target or `--all` is required in
+    non-interactive use.
+20. If no selector candidates exist, print
+    `agentbox stop: no managed sessions available to stop` to stderr and exit
+    successfully without stopping anything.
+21. If the selector returns an empty selection, print
+    `agentbox stop: no sessions selected` to stderr and exit successfully
+    without stopping anything.
+22. If `--all` is set, do not accept a `<target>` and stop all running managed
+    sessions discovered from live Podman state.
+23. `stop --all` stops running, orphaned, duplicate, and otherwise malformed
+    managed containers whose Podman state is running.
+24. `stop --all` ignores managed containers that are already stopped.
+25. If `stop --all` finds no running managed containers, exit successfully.
+26. For `stop --all`, lock each recoverable git root before stopping its
+    currently running exact matches. Running managed containers without a
+    recoverable git-root label are stopped only because the user selected the
+    explicit global cleanup.
 
 Optional flag:
 
@@ -564,6 +620,8 @@ Safety rules:
 - With `--force`, `stop` stops all live managed containers that exactly claim
   the resolved canonical git root, exact orphan path, or selected stable id. It
   still does not stop containers that cannot be matched to that identity.
+- With multiple explicit targets, `stop` may stop sessions for successful
+  targets even when other targets fail.
 - `--force` is not required with `--all`; `--all` already selects every running
   managed container.
 - Stable id matching includes failed sessions, but `stop` only locks and stops
@@ -586,6 +644,8 @@ Required behavior:
 - `stop` and `health` candidate values are stable ids.
 - `stop` completion includes running, orphaned, duplicate, and failed sessions
   when a stable id is known.
+- `stop` completion offers stable id candidates at every target position, not
+  only the first target position.
 - `health` completion includes sessions when a stable id is known.
 - Candidate descriptions include root, runtime, and status when the shell
   supports descriptions.
