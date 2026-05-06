@@ -443,10 +443,11 @@ Rules:
 - Unhealthy rows do not make the command fail; discovery or Podman failures
   remain command failures.
 
-### `agentbox stop <target>`
+### `agentbox stop <target>` / `agentbox stop --all`
 
 `stop` stops the workspace session for the resolved repository, exact orphaned
 absolute path, or stable id prefix. It is not a volume pruning command.
+With `--all`, `stop` stops every running managed `agentbox` container.
 
 Expected behavior:
 
@@ -470,10 +471,21 @@ Expected behavior:
 1. Rely on Podman's `--rm` cleanup for container removal after the stop.
 1. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
    later by explicit Podman volume cleanup.
+1. If `--all` is set, do not accept a `<target>` and stop all running managed
+   sessions discovered from live Podman state.
+1. `stop --all` stops running, orphaned, duplicate, and otherwise malformed
+   managed containers whose Podman state is running.
+1. `stop --all` ignores managed containers that are already stopped.
+1. If `stop --all` finds no running managed containers, exit successfully.
+1. For `stop --all`, lock each recoverable git root before stopping its
+   currently running exact matches. Running managed containers without a
+   recoverable git-root label are stopped only because the user selected the
+   explicit global cleanup.
 
 Optional flag:
 
 - `--force`: best-effort cleanup when duplicate or failed exact matches exist
+- `--all`: stop every running managed `agentbox` container
 
 Safety rules:
 
@@ -482,6 +494,8 @@ Safety rules:
 - With `--force`, `stop` stops all live managed containers that exactly claim
   the resolved canonical git root, exact orphan path, or selected stable id. It
   still does not stop containers that cannot be matched to that identity.
+- `--force` is not required with `--all`; `--all` already selects every running
+  managed container.
 - Stable id matching includes failed sessions, but `stop` only locks and stops
   a matched session when its git-root label is recoverable.
 - `stop` never deletes the user workspace.
