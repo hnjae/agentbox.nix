@@ -14,7 +14,7 @@ use crate::cli::StopArgs;
 use crate::podman::Podman;
 use crate::prompt;
 use crate::session::{
-    SessionRecord, SessionStatus, discover_managed_sessions, exact_git_root_matches,
+    SessionGroup, SessionRecord, SessionStatus, discover_managed_sessions, exact_git_root_matches,
     partition_sessions_by_git_root, select_stable_id_prefix,
 };
 use crate::workspace::resolve_workspace_identity;
@@ -317,40 +317,47 @@ fn lockable_stable_id_matches(
 fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<CleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
-    let mut failures = Vec::new();
-    for group in partition.rooted {
-        let git_root = group.canonical_git_root;
-        let sessions = group.sessions;
-        let mut group_failures = with_locked_git_root(&git_root, |locked| {
-            Ok(cleanup_sessions(locked.podman(), sessions.iter()))
-        })?;
-        failures.append(&mut group_failures);
-    }
-
-    Ok(failures)
+    cleanup_rooted_session_groups(partition.rooted, |locked, sessions| {
+        Ok(cleanup_sessions(locked.podman(), sessions.iter()))
+    })
 }
 
 fn cleanup_all_running_matches(sessions: Vec<SessionRecord>) -> Result<Vec<CleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
-    let mut failures = Vec::new();
-    for group in partition.rooted {
-        let git_root = group.canonical_git_root;
-        let mut group_failures = with_locked_git_root(&git_root, |locked| {
-            let sessions = exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
-            Ok(cleanup_sessions(
-                locked.podman(),
-                sessions
-                    .iter()
-                    .filter(|session| session.container_running()),
-            ))
-        })?;
-        failures.append(&mut group_failures);
-    }
+    let mut failures = cleanup_rooted_session_groups(partition.rooted, |locked, _sessions| {
+        let sessions = exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
+        Ok(cleanup_sessions(
+            locked.podman(),
+            sessions
+                .iter()
+                .filter(|session| session.container_running()),
+        ))
+    })?;
 
     if !partition.unrooted.is_empty() {
         let podman = Podman::new();
         failures.extend(cleanup_sessions(&podman, partition.unrooted.iter()));
+    }
+
+    Ok(failures)
+}
+
+fn cleanup_rooted_session_groups(
+    groups: Vec<SessionGroup>,
+    mut cleanup_group: impl FnMut(
+        &super::workspace_flow::LockedGitRoot<'_>,
+        &[SessionRecord],
+    ) -> Result<Vec<CleanupFailure>>,
+) -> Result<Vec<CleanupFailure>> {
+    let mut failures = Vec::new();
+
+    for group in groups {
+        let git_root = group.canonical_git_root;
+        let sessions = group.sessions;
+        let mut group_failures =
+            with_locked_git_root(&git_root, |locked| cleanup_group(&locked, &sessions))?;
+        failures.append(&mut group_failures);
     }
 
     Ok(failures)
