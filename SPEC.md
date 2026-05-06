@@ -330,10 +330,14 @@ Confirmation and output rules:
 - With `--dry-run`, `clean` prints cleanup candidates and skip reasons, deletes
   nothing, and exits successfully.
 - With `--yes`, `clean` deletes cleanup candidates without prompting.
-- Without `--dry-run` or `--yes`, `clean` prompts on stderr with
-  `Proceed? [y/N]` only when stdin is a TTY. Case-insensitive `y` or `yes`
-  approves cleanup; any other input prints `aborted` and exits successfully.
-- When stdin is not a TTY, `clean` fails unless `--yes` or `--dry-run` is set.
+- Without `--dry-run` or `--yes`, `clean` renders an interactive confirmation
+  prompt on stderr only when stdin and stderr are terminals. The default answer
+  is No. Case-insensitive `y` or `yes` approves cleanup; `n`, `no`, an empty
+  response, or prompt cancellation prints `aborted` and exits successfully.
+- Interrupting the confirmation prompt with Ctrl-C exits non-zero with
+  `confirmation interrupted`.
+- When stdin or stderr is not a TTY, `clean` fails unless `--yes` or
+  `--dry-run` is set.
 - If deletion of one candidate fails, `clean` continues deleting the remaining
   candidates, then exits non-zero with a summary of failed resources.
 
