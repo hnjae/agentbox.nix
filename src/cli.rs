@@ -204,7 +204,7 @@ pub struct HealthArgs {
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct StopArgs {
     /// Stop every running managed session.
-    #[arg(long, conflicts_with = "target")]
+    #[arg(long, conflicts_with = "targets")]
     pub all: bool,
 
     /// Clean up duplicate or failed exact matches instead of failing.
@@ -212,8 +212,8 @@ pub struct StopArgs {
     pub force: bool,
 
     /// Workspace directory, exact orphan path, or stable session id prefix.
-    #[arg(value_name = "TARGET", required_unless_present = "all")]
-    pub target: Option<PathBuf>,
+    #[arg(value_name = "TARGET")]
+    pub targets: Vec<PathBuf>,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]

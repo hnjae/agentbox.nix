@@ -7,7 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
 
@@ -21,21 +21,75 @@ use super::workspace_flow::with_locked_git_root;
 
 pub fn run(args: StopArgs) -> Result<()> {
     if args.all {
-        if args.target.is_some() {
+        if !args.targets.is_empty() {
             return Err(Error::msg("stop --all does not accept a target"));
         }
 
         return stop_all_running();
     }
 
-    let target = args.target.ok_or_else(|| {
-        Error::msg("missing stop target; pass a workspace, stable id prefix, or --all")
-    })?;
-
-    match resolve_stop_target(&target)? {
-        StopTarget::GitRoot(git_root) => stop_git_root(&git_root, args.force, &target),
-        StopTarget::StableId(prefix) => stop_stable_id(&prefix, args.force, &target),
+    if args.targets.is_empty() {
+        return Err(Error::msg(
+            "missing stop target; pass a workspace, stable id prefix, or --all",
+        ));
     }
+
+    stop_targets(&args.targets, args.force)
+}
+
+fn stop_targets(targets: &[PathBuf], force: bool) -> Result<()> {
+    if targets.len() == 1 {
+        return stop_target(&targets[0], force);
+    }
+
+    let mut failures = Vec::new();
+    for target in targets {
+        if let Err(error) = stop_target(target, force) {
+            failures.push(TargetStopFailure::new(target, error));
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::msg(render_target_stop_failures(&failures)))
+    }
+}
+
+fn stop_target(target: &Path, force: bool) -> Result<()> {
+    match resolve_stop_target(target)? {
+        StopTarget::GitRoot(git_root) => stop_git_root(&git_root, force, target),
+        StopTarget::StableId(prefix) => stop_stable_id(&prefix, force, target),
+    }
+}
+
+struct TargetStopFailure {
+    target: String,
+    error: Error,
+}
+
+impl TargetStopFailure {
+    fn new(target: &Path, error: Error) -> Self {
+        Self {
+            target: target.display().to_string(),
+            error,
+        }
+    }
+}
+
+fn render_target_stop_failures(failures: &[TargetStopFailure]) -> String {
+    let noun = if failures.len() == 1 {
+        "target"
+    } else {
+        "targets"
+    };
+    let details = failures
+        .iter()
+        .map(|failure| format!("`{}`: {}", failure.target, failure.error))
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    format!("failed to stop {} {noun}: {details}", failures.len())
 }
 
 enum StopTarget {

@@ -82,6 +82,83 @@ fn stop_is_idempotent_when_the_container_disappears_during_cleanup() {
 }
 
 #[test]
+fn stop_accepts_multiple_explicit_targets() {
+    let first_fixture = support::temp_workspace("first");
+    let second_fixture = support::temp_workspace("second");
+    let first_target = first_fixture.target.as_path();
+    let second_target = second_fixture.target.as_path();
+    let first = &first_fixture.workspace;
+    let second = &second_fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![
+        workspace_ps_entry("first-id", first),
+        workspace_ps_entry("second-id", second),
+    ]));
+    harness.write_inspect(
+        "first-id",
+        &opencode_workspace_inspect_fixture(first, true, true),
+    );
+    harness.write_inspect(
+        "second-id",
+        &opencode_workspace_inspect_fixture(second, true, true),
+    );
+
+    let mut command = harness.agentbox_command();
+    command.arg("stop").arg(first_target).arg(second_target);
+
+    command.assert().success();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "inspect",
+            "stop",
+            "container-exists",
+            "ps",
+            "inspect",
+            "stop",
+            "container-exists"
+        ]
+    );
+}
+
+#[test]
+fn stop_reports_aggregate_failures_after_processing_other_targets() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "session-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "session-id",
+        &opencode_workspace_inspect_fixture(workspace, true, true),
+    );
+
+    let mut command = harness.agentbox_command();
+    command.arg("stop").arg(target).arg("deadbeef");
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("failed to stop 1 target"))
+        .stderr(predicates::str::contains("`deadbeef`"))
+        .stderr(predicates::str::contains(
+            "no managed session id matches prefix `deadbeef`",
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists", "ps", "inspect"]
+    );
+}
+
+#[test]
 fn stop_reports_container_that_still_exists_after_cleanup() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();

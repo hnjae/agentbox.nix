@@ -90,7 +90,7 @@ fn core_commands_parse_into_expected_variants() {
         Command::Stop(StopArgs {
             all: false,
             force: false,
-            target: Some("/tmp/workspace".into()),
+            targets: vec!["/tmp/workspace".into()],
         })
     );
     assert_eq!(
@@ -205,7 +205,22 @@ fn stop_accepts_force_cleanup_flag() {
         Command::Stop(StopArgs {
             all: false,
             force: true,
-            target: Some("/tmp/workspace".into()),
+            targets: vec!["/tmp/workspace".into()],
+        })
+    );
+}
+
+#[test]
+fn stop_accepts_multiple_targets() {
+    let cli =
+        Cli::try_parse_from(["agentbox", "stop", "/tmp/first", "abc123", "/tmp/second"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Stop(StopArgs {
+            all: false,
+            force: false,
+            targets: vec!["/tmp/first".into(), "abc123".into(), "/tmp/second".into()],
         })
     );
 }
@@ -219,7 +234,7 @@ fn stop_accepts_all_without_target() {
         Command::Stop(StopArgs {
             all: true,
             force: false,
-            target: None,
+            targets: Vec::new(),
         })
     );
 }
