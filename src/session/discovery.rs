@@ -283,6 +283,7 @@ impl InspectedManagedContainer {
             metadata: self.metadata,
             runtime_kind: self.label_report.runtime_kind(),
             attach_endpoint: self.attach_endpoint,
+            container_running: self.running,
             status,
         }
     }

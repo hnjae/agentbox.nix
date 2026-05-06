@@ -25,6 +25,7 @@ pub struct SessionRecord {
     pub metadata: SessionMetadata,
     pub runtime_kind: Option<RuntimeKind>,
     pub attach_endpoint: Option<AttachEndpoint>,
+    pub container_running: bool,
     pub status: SessionStatus,
 }
 
@@ -51,6 +52,10 @@ impl SessionRecord {
 
     pub fn runtime_kind(&self) -> Option<RuntimeKind> {
         self.runtime_kind
+    }
+
+    pub fn container_running(&self) -> bool {
+        self.container_running
     }
 }
 

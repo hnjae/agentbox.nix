@@ -112,7 +112,7 @@ _agentbox() {
         stop)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 if [[ "$cur" == --* ]]; then
-                    COMPREPLY=( $(compgen -W "--force" -- "$cur") )
+                    COMPREPLY=( $(compgen -W "--force --all" -- "$cur") )
                 else
                     _agentbox_completion_roots stop
                 fi
@@ -197,7 +197,7 @@ _agentbox() {
       ;;
     stop)
       if (( CURRENT == 3 )); then
-        _values 'option' '--force[clean up duplicate or failed exact matches]'
+        _values 'option' '--force[clean up duplicate or failed exact matches]' '--all[stop every running managed session]'
         _agentbox_completion_roots stop
       elif (( CURRENT == 4 && "$words[3]" == "--force" )); then
         _agentbox_completion_roots stop
@@ -268,6 +268,7 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from ls" -s o -l output -r -a
 complete -c agentbox -f -n "__fish_seen_subcommand_from health" -s o -l output -r -a "@OUTPUT_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from health" -a "(__agentbox_completion_roots health)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate or failed exact matches"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l all -d "Stop every running managed session"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots stop)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from runtime" -a "update"

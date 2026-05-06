@@ -178,6 +178,19 @@ fn completion_scripts_offer_ls_and_health_output_formats() {
 }
 
 #[test]
+fn completion_scripts_offer_stop_all() {
+    let bash = capture_completion_script_shell("bash");
+    assert!(bash.contains("--force --all"));
+
+    let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("--all[stop every running managed session]"));
+
+    let fish = capture_completion_script_shell("fish");
+    assert!(fish.contains("__fish_seen_subcommand_from stop"));
+    assert!(fish.contains("-l all"));
+}
+
+#[test]
 fn completion_scripts_expand_shared_value_placeholders() {
     let runtime_values = RuntimeKind::supported_values().join(" ");
     let output_values = OutputFormat::supported_values().join(" ");

@@ -20,9 +20,21 @@ use crate::{Error, Result};
 use super::workspace_flow::with_locked_git_root;
 
 pub fn run(args: StopArgs) -> Result<()> {
-    match resolve_stop_target(&args.target)? {
-        StopTarget::GitRoot(git_root) => stop_git_root(&git_root, args.force, &args.target),
-        StopTarget::StableId(prefix) => stop_stable_id(&prefix, args.force, &args.target),
+    if args.all {
+        if args.target.is_some() {
+            return Err(Error::msg("stop --all does not accept a target"));
+        }
+
+        return stop_all_running();
+    }
+
+    let target = args.target.ok_or_else(|| {
+        Error::msg("missing stop target; pass a workspace, stable id prefix, or --all")
+    })?;
+
+    match resolve_stop_target(&target)? {
+        StopTarget::GitRoot(git_root) => stop_git_root(&git_root, args.force, &target),
+        StopTarget::StableId(prefix) => stop_stable_id(&prefix, args.force, &target),
     }
 }
 
@@ -76,6 +88,17 @@ fn stop_stable_id(prefix: &str, force: bool, target: &Path) -> Result<()> {
     let failures = cleanup_stable_id_matches(sessions)?;
 
     finish_cleanup(&format!("id {id}"), &failures)
+}
+
+fn stop_all_running() -> Result<()> {
+    let podman = Podman::new();
+    let sessions = discover_managed_sessions(&podman)?
+        .into_iter()
+        .filter(|session| session.container_running())
+        .collect::<Vec<_>>();
+    let failures = cleanup_all_running_matches(sessions)?;
+
+    finish_cleanup("all running managed sessions", &failures)
 }
 
 fn resolve_stop_target(target: &Path) -> Result<StopTarget> {
@@ -154,6 +177,44 @@ fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<Cleanup
                 .collect::<Vec<_>>())
         })?;
         failures.append(&mut group_failures);
+    }
+
+    Ok(failures)
+}
+
+fn cleanup_all_running_matches(sessions: Vec<SessionRecord>) -> Result<Vec<CleanupFailure>> {
+    let mut groups = BTreeMap::<Utf8PathBuf, Vec<SessionRecord>>::new();
+    let mut unrooted = Vec::new();
+
+    for session in sessions {
+        if let Some(root) = session.canonical_git_root() {
+            groups.entry(root.to_path_buf()).or_default().push(session);
+        } else {
+            unrooted.push(session);
+        }
+    }
+
+    let mut failures = Vec::new();
+    for (git_root, _) in groups {
+        let mut group_failures = with_locked_git_root(&git_root, |locked| {
+            Ok(
+                exact_full_root_matches(locked.discover_sessions()?, locked.git_root())
+                    .iter()
+                    .filter(|session| session.container_running())
+                    .filter_map(|session| cleanup_managed_container(locked.podman(), session))
+                    .collect::<Vec<_>>(),
+            )
+        })?;
+        failures.append(&mut group_failures);
+    }
+
+    if !unrooted.is_empty() {
+        let podman = Podman::new();
+        failures.extend(
+            unrooted
+                .iter()
+                .filter_map(|session| cleanup_managed_container(&podman, session)),
+        );
     }
 
     Ok(failures)

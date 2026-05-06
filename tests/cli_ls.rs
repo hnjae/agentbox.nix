@@ -142,6 +142,7 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
         metadata: metadata(root, name),
         runtime_kind: Some(RuntimeKind::Opencode),
         attach_endpoint: None,
+        container_running: status != SessionStatus::Failed(None),
         status,
     }
 }

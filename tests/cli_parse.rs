@@ -86,8 +86,9 @@ fn core_commands_parse_into_expected_variants() {
     assert_eq!(
         stop.command,
         Command::Stop(StopArgs {
+            all: false,
             force: false,
-            target: "/tmp/workspace".into(),
+            target: Some("/tmp/workspace".into()),
         })
     );
     assert_eq!(
@@ -138,10 +139,32 @@ fn stop_accepts_force_cleanup_flag() {
     assert_eq!(
         cli.command,
         Command::Stop(StopArgs {
+            all: false,
             force: true,
-            target: "/tmp/workspace".into(),
+            target: Some("/tmp/workspace".into()),
         })
     );
+}
+
+#[test]
+fn stop_accepts_all_without_target() {
+    let cli = Cli::try_parse_from(["agentbox", "stop", "--all"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Stop(StopArgs {
+            all: true,
+            force: false,
+            target: None,
+        })
+    );
+}
+
+#[test]
+fn stop_rejects_all_with_target() {
+    let error = Cli::try_parse_from(["agentbox", "stop", "--all", "/tmp/workspace"]).unwrap_err();
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
 }
 
 #[test]

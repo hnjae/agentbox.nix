@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use agentbox::metadata::LABEL_GIT_ROOT;
 use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
 
@@ -434,6 +435,122 @@ fn stop_force_removes_all_duplicate_stable_id_matches() {
     );
 }
 
+#[test]
+fn stop_all_stops_running_managed_sessions_and_ignores_stopped_ones() {
+    let first_fixture = support::temp_workspace("first");
+    let second_fixture = support::temp_workspace("second");
+    let stopped_fixture = support::temp_workspace("stopped");
+    let first = &first_fixture.workspace;
+    let second = &second_fixture.workspace;
+    let stopped = &stopped_fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![
+        workspace_ps_entry("first-id", first),
+        workspace_ps_entry("second-id", second),
+        workspace_ps_entry("stopped-id", stopped),
+    ]));
+    harness.write_inspect(
+        "first-id",
+        &opencode_workspace_inspect_fixture(first, true, true),
+    );
+    harness.write_inspect(
+        "second-id",
+        &opencode_workspace_inspect_fixture(second, true, true),
+    );
+    harness.write_inspect(
+        "stopped-id",
+        &opencode_workspace_inspect_fixture(stopped, false, true),
+    );
+
+    run_all_command(&harness).success();
+
+    let log = harness.read_log();
+    let stop_lines = log
+        .iter()
+        .filter(|line| line.starts_with("stop "))
+        .collect::<Vec<_>>();
+    assert_eq!(stop_lines.len(), 2);
+    assert!(
+        stop_lines
+            .iter()
+            .any(|line| line.contains(&first.container_name))
+    );
+    assert!(
+        stop_lines
+            .iter()
+            .any(|line| line.contains(&second.container_name))
+    );
+    assert!(
+        !stop_lines
+            .iter()
+            .any(|line| line.contains(&stopped.container_name))
+    );
+    assert_eq!(
+        operation_names(&log)
+            .into_iter()
+            .filter(|operation| *operation == "stop")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn stop_all_succeeds_when_no_running_managed_sessions_exist() {
+    let fixture = support::temp_workspace("stopped");
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "stopped-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "stopped-id",
+        &opencode_workspace_inspect_fixture(workspace, false, true),
+    );
+
+    run_all_command(&harness).success();
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
+}
+
+#[test]
+fn stop_all_stops_running_managed_container_without_recoverable_git_root() {
+    let fixture = support::temp_workspace("broken");
+    let workspace = &fixture.workspace;
+    let container_name = "broken-session";
+    let harness = install_harness();
+    let mut labels = managed_labels(
+        workspace.canonical_git_root.as_str(),
+        &workspace.hash12,
+        container_name,
+    );
+    labels.remove(LABEL_GIT_ROOT);
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        "broken-id",
+        container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "broken-id",
+        &managed_inspect_fixture(
+            container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            labels,
+        ),
+    );
+
+    run_all_command(&harness).success();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
+    assert!(log[2].contains(container_name));
+}
+
 fn install_harness() -> Harness {
     Harness::new()
 }
@@ -444,4 +561,8 @@ fn run_command(
     extra_args: &[&str],
 ) -> assert_cmd::assert::Assert {
     harness.stop_assert(target, extra_args)
+}
+
+fn run_all_command(harness: &Harness) -> assert_cmd::assert::Assert {
+    harness.agentbox_assert(&["stop", "--all"])
 }
