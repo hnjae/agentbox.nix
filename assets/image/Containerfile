@@ -19,6 +19,7 @@ RUN set -eux; \
 	build-essential \
 	ca-certificates \
 	curl \
+	fd-find \
 	file \
 	fish \
 	gpg \
@@ -32,6 +33,7 @@ RUN set -eux; \
 	locales \
 	lsof \
 	man-db \
+	nodejs \
 	npm \
 	pkg-config \
 	procps \
@@ -40,7 +42,6 @@ RUN set -eux; \
 	python3-json5 \
 	tzdata \
 	unzip \
-	vim \
 	zsh
 
 # hadolint ignore=DL3008

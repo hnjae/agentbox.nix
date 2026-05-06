@@ -1,40 +1,29 @@
 let
   system = builtins.currentSystem;
 
-  pkgsRolling =
+  pkgs =
     (builtins.getFlake "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/0.1")
-    .legacyPackages.${system};
-  pkgsStable =
-    (builtins.getFlake "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/0")
     .legacyPackages.${system};
   pkgsMine = (builtins.getFlake "github:hnjae/nix-packages").packages.${system};
 in
 {
-  runtime = pkgsRolling.buildEnv {
+  runtime = pkgs.buildEnv {
     name = "container-runtime";
     paths = [
       # Devtools
-      pkgsRolling.gh
-      pkgsRolling.just
-      pkgsStable.git
-      pkgsStable.git-filter-repo
-      pkgsStable.git-lfs
+      pkgs.gh
+      pkgs.just
+      pkgs.git
+      pkgs.git-filter-repo
+      pkgs.git-lfs
 
       # Shell
-      pkgsRolling.devenv
-      pkgsStable.direnv
-      pkgsStable.nix-direnv
-
-      # Runtime
-      pkgsStable.nodejs-slim
-
-      # "Modern" utilities
-      pkgsStable.bat
-      pkgsStable.eza
-      pkgsStable.fd
-      pkgsStable.fzf
-      pkgsStable.ripgrep
-      pkgsStable.ast-grep
+      pkgs.devenv
+      pkgs.direnv
+      pkgs.nix-direnv
+      pkgs.fzf
+      pkgs.ripgrep
+      pkgs.ast-grep
 
       # Custom
       pkgsMine."comment-checker" # required by oh-my-openagent
