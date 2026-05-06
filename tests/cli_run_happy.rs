@@ -40,17 +40,24 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     let mut command = harness.locked_agentbox_command(workspace);
     command.args(["run", "--runtime", "opencode"]).arg(target);
 
-    command.assert().success().stderr(
-        predicate::str::contains("agentbox: checking workspace prerequisites")
-            .and(predicate::str::contains(
-                "agentbox: checking existing managed sessions",
-            ))
-            .and(predicate::str::contains("agentbox: building runtime image"))
-            .and(predicate::str::contains("agentbox: starting container"))
-            .and(predicate::str::contains(
-                "agentbox: waiting for `opencode` runtime server",
-            )),
-    );
+    let expected_endpoint = format!("http://127.0.0.1:{}", endpoint.port());
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "is ready at `{expected_endpoint}`"
+        )))
+        .stderr(
+            predicate::str::contains("agentbox: checking workspace prerequisites")
+                .and(predicate::str::contains(
+                    "agentbox: checking existing managed sessions",
+                ))
+                .and(predicate::str::contains("agentbox: building runtime image"))
+                .and(predicate::str::contains("agentbox: starting container"))
+                .and(predicate::str::contains(
+                    "agentbox: waiting for `opencode` runtime server",
+                )),
+        );
     endpoint.wait();
 
     let log = harness.read_log();

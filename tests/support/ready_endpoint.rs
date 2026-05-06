@@ -55,7 +55,7 @@ impl Drop for ReadyEndpoint {
     }
 }
 
-fn serve_one_ready_probe(listener: TcpListener, _runtime: RuntimeKind) {
+fn serve_one_ready_probe(listener: TcpListener, runtime: RuntimeKind) {
     let deadline = Instant::now() + ACCEPT_TIMEOUT;
 
     loop {
@@ -64,10 +64,22 @@ fn serve_one_ready_probe(listener: TcpListener, _runtime: RuntimeKind) {
                 let _ = stream.set_read_timeout(Some(ACCEPT_TIMEOUT));
                 let _ = stream.set_write_timeout(Some(ACCEPT_TIMEOUT));
                 let mut request = [0_u8; 128];
-                let _ = stream.read(&mut request);
-                stream
-                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                    .unwrap();
+                let bytes_read = stream.read(&mut request).unwrap();
+                match runtime {
+                    RuntimeKind::Opencode => {
+                        assert!(request[..bytes_read].starts_with(b"GET /global/health HTTP/1.1"));
+                        let body = r#"{"healthy":true,"version":"0.0.0-test"}"#;
+                        stream
+                            .write_all(http_response("200 OK", body).as_bytes())
+                            .unwrap();
+                    }
+                    RuntimeKind::Codex => {
+                        assert!(request[..bytes_read].starts_with(b"GET /readyz HTTP/1.1"));
+                        stream
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                            .unwrap();
+                    }
+                }
                 return;
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -79,4 +91,11 @@ fn serve_one_ready_probe(listener: TcpListener, _runtime: RuntimeKind) {
             Err(_) => return,
         }
     }
+}
+
+fn http_response(status: &str, body: &str) -> String {
+    format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
 }

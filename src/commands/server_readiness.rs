@@ -19,6 +19,9 @@ use crate::{Error, Result};
 const SERVER_READINESS_TIMEOUT: Duration = Duration::from_secs(30);
 const SERVER_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const ENDPOINT_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
+const MAX_HTTP_RESPONSE_BYTES: usize = 64 * 1024;
+const OPENCODE_HEALTH_PATH: &str = "/global/health";
+const CODEX_READY_PATH: &str = "/readyz";
 
 pub(super) fn wait_for_server_endpoint(
     podman: &Podman,
@@ -112,7 +115,9 @@ where
     }
 
     match discover_attach_endpoint_from_inspect(&inspect) {
-        Ok(endpoint) if probe.is_reachable(&endpoint) => Ok(ServerEndpointState::Ready(endpoint)),
+        Ok(endpoint) if probe.is_ready(runtime, &endpoint) => {
+            Ok(ServerEndpointState::Ready(endpoint))
+        }
         Ok(endpoint) => Ok(ServerEndpointState::Pending(format!(
             "endpoint `{endpoint}` is not reachable yet"
         ))),
@@ -121,55 +126,69 @@ where
 }
 
 trait EndpointProbe {
-    fn is_reachable(&self, endpoint: &AttachEndpoint) -> bool;
+    fn is_ready(&self, runtime: RuntimeKind, endpoint: &AttachEndpoint) -> bool;
 }
 
 #[derive(Debug, Clone, Copy)]
 struct HostTcpEndpointProbe;
 
 impl EndpointProbe for HostTcpEndpointProbe {
-    fn is_reachable(&self, endpoint: &AttachEndpoint) -> bool {
+    fn is_ready(&self, runtime: RuntimeKind, endpoint: &AttachEndpoint) -> bool {
         let Ok(addresses) = (endpoint.host_ip.as_str(), endpoint.host_port).to_socket_addrs()
         else {
             return false;
         };
 
         addresses.into_iter().any(|address| {
-            TcpStream::connect_timeout(&address, ENDPOINT_CONNECT_TIMEOUT)
-                .is_ok_and(|mut stream| endpoint_connection_is_ready(endpoint, &mut stream))
+            TcpStream::connect_timeout(&address, ENDPOINT_CONNECT_TIMEOUT).is_ok_and(
+                |mut stream| endpoint_connection_is_ready(runtime, endpoint, &mut stream),
+            )
         })
     }
 }
 
-fn endpoint_connection_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
-    match endpoint.scheme.as_str() {
-        "http" => http_endpoint_is_ready(endpoint, stream),
-        "ws" => ws_endpoint_is_ready(endpoint, stream),
-        _ => true,
+fn endpoint_connection_is_ready(
+    runtime: RuntimeKind,
+    endpoint: &AttachEndpoint,
+    stream: &mut TcpStream,
+) -> bool {
+    match runtime {
+        RuntimeKind::Opencode => opencode_endpoint_is_ready(endpoint, stream),
+        RuntimeKind::Codex => codex_endpoint_is_ready(endpoint, stream),
     }
 }
 
-fn http_endpoint_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
-    http_get_response_prefix(endpoint, stream, "/", 8)
-        .is_some_and(|prefix| prefix.starts_with(b"HTTP/1."))
+fn opencode_endpoint_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
+    let Some(response) = http_get_response(endpoint, stream, OPENCODE_HEALTH_PATH) else {
+        return false;
+    };
+    if response.status_code != 200 {
+        return false;
+    }
+    serde_json::from_slice::<OpencodeHealthResponse>(&response.body)
+        .is_ok_and(|health| health.healthy)
 }
 
-fn ws_endpoint_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
-    http_get_response_prefix(endpoint, stream, "/readyz", 13).is_some_and(|prefix| {
-        prefix.len() >= 13
-            && prefix.starts_with(b"HTTP/1.")
-            && prefix[8] == b' '
-            && &prefix[9..12] == b"200"
-            && matches!(prefix[12], b' ' | b'\r')
-    })
+fn codex_endpoint_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
+    http_get_response(endpoint, stream, CODEX_READY_PATH)
+        .is_some_and(|response| response.status_code == 200)
 }
 
-fn http_get_response_prefix(
+#[derive(serde::Deserialize)]
+struct OpencodeHealthResponse {
+    healthy: bool,
+}
+
+struct HttpResponse {
+    status_code: u16,
+    body: Vec<u8>,
+}
+
+fn http_get_response(
     endpoint: &AttachEndpoint,
     stream: &mut TcpStream,
     path: &str,
-    prefix_len: usize,
-) -> Option<Vec<u8>> {
+) -> Option<HttpResponse> {
     let _ = stream.set_read_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
     let _ = stream.set_write_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
 
@@ -181,17 +200,91 @@ fn http_get_response_prefix(
         return None;
     }
 
-    let mut response_prefix = Vec::with_capacity(prefix_len);
-    while response_prefix.len() < prefix_len {
-        let mut buffer = [0_u8; 12];
+    let mut response = Vec::new();
+    let body_start = loop {
+        if let Some(body_start) = http_body_start(&response) {
+            break body_start;
+        }
+        if response.len() >= MAX_HTTP_RESPONSE_BYTES {
+            return None;
+        }
+        let mut buffer = [0_u8; 512];
         match stream.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(bytes_read) => response_prefix.extend_from_slice(&buffer[..bytes_read]),
+            Ok(0) => return None,
+            Ok(bytes_read) => response.extend_from_slice(&buffer[..bytes_read]),
             Err(_) => return None,
         }
+    };
+
+    let (status_code, content_length) = parse_http_response_headers(&response[..body_start])?;
+    if let Some(content_length) = content_length {
+        let response_len = body_start.checked_add(content_length)?;
+        if response_len > MAX_HTTP_RESPONSE_BYTES {
+            return None;
+        }
+        while response.len() < response_len {
+            let mut buffer = [0_u8; 512];
+            match stream.read(&mut buffer) {
+                Ok(0) => return None,
+                Ok(bytes_read) => response.extend_from_slice(&buffer[..bytes_read]),
+                Err(_) => return None,
+            }
+        }
+        response.truncate(response_len);
+    } else {
+        while response.len() < MAX_HTTP_RESPONSE_BYTES {
+            let mut buffer = [0_u8; 512];
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(bytes_read) => response.extend_from_slice(&buffer[..bytes_read]),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    break;
+                }
+                Err(_) => return None,
+            }
+        }
     }
-    response_prefix.truncate(prefix_len);
-    Some(response_prefix)
+
+    Some(HttpResponse {
+        status_code,
+        body: response[body_start..].to_vec(),
+    })
+}
+
+fn http_body_start(response: &[u8]) -> Option<usize> {
+    response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|position| position + 4)
+}
+
+fn parse_http_response_headers(headers: &[u8]) -> Option<(u16, Option<usize>)> {
+    let headers = std::str::from_utf8(headers).ok()?;
+    let mut lines = headers.split("\r\n");
+    let status_line = lines.next()?;
+    let mut status_parts = status_line.split_whitespace();
+    let http_version = status_parts.next()?;
+    if !http_version.starts_with("HTTP/1.") {
+        return None;
+    }
+    let status_code = status_parts.next()?.parse().ok()?;
+    let mut content_length = None;
+
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.eq_ignore_ascii_case("content-length") {
+            content_length = Some(value.trim().parse().ok()?);
+        }
+    }
+
+    Some((status_code, content_length))
 }
 
 #[cfg(test)]
@@ -202,19 +295,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn http_probe_rejects_tcp_accept_without_http_response() {
+    fn opencode_probe_accepts_global_health_http_200_with_healthy_true() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = local_http_endpoint(&listener);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 128];
+            let bytes_read = stream.read(&mut request).unwrap();
+            assert!(request[..bytes_read].starts_with(b"GET /global/health HTTP/1.1"));
+            stream
+                .write_all(&http_response(
+                    "200 OK",
+                    r#"{"healthy":true,"version":"0.0.0-test"}"#,
+                ))
+                .unwrap();
+        });
+
+        assert!(HostTcpEndpointProbe.is_ready(RuntimeKind::Opencode, &endpoint));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn opencode_probe_rejects_tcp_accept_without_http_response() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let endpoint = local_http_endpoint(&listener);
         let server = thread::spawn(move || {
             let _ = listener.accept().unwrap();
         });
 
-        assert!(!HostTcpEndpointProbe.is_reachable(&endpoint));
+        assert!(!HostTcpEndpointProbe.is_ready(RuntimeKind::Opencode, &endpoint));
         server.join().unwrap();
     }
 
     #[test]
-    fn http_probe_accepts_http_response() {
+    fn opencode_probe_rejects_non_200_global_health_response() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let endpoint = local_http_endpoint(&listener);
         let server = thread::spawn(move || {
@@ -222,28 +336,65 @@ mod tests {
             let mut request = [0_u8; 128];
             let _ = stream.read(&mut request);
             stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .write_all(&http_response(
+                    "503 Service Unavailable",
+                    r#"{"healthy":true}"#,
+                ))
                 .unwrap();
         });
 
-        assert!(HostTcpEndpointProbe.is_reachable(&endpoint));
+        assert!(!HostTcpEndpointProbe.is_ready(RuntimeKind::Opencode, &endpoint));
         server.join().unwrap();
     }
 
     #[test]
-    fn ws_probe_rejects_tcp_accept_without_http_response() {
+    fn opencode_probe_rejects_malformed_global_health_json() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = local_http_endpoint(&listener);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 128];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(&http_response("200 OK", "not-json"))
+                .unwrap();
+        });
+
+        assert!(!HostTcpEndpointProbe.is_ready(RuntimeKind::Opencode, &endpoint));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn opencode_probe_rejects_unhealthy_global_health_json() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = local_http_endpoint(&listener);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 128];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(&http_response("200 OK", r#"{"healthy":false}"#))
+                .unwrap();
+        });
+
+        assert!(!HostTcpEndpointProbe.is_ready(RuntimeKind::Opencode, &endpoint));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn codex_probe_rejects_tcp_accept_without_http_response() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let endpoint = local_ws_endpoint(&listener);
         let server = thread::spawn(move || {
             let _ = listener.accept().unwrap();
         });
 
-        assert!(!HostTcpEndpointProbe.is_reachable(&endpoint));
+        assert!(!HostTcpEndpointProbe.is_ready(RuntimeKind::Codex, &endpoint));
         server.join().unwrap();
     }
 
     #[test]
-    fn ws_probe_accepts_readyz_http_200() {
+    fn codex_probe_accepts_readyz_http_200() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let endpoint = local_ws_endpoint(&listener);
         let server = thread::spawn(move || {
@@ -256,12 +407,12 @@ mod tests {
                 .unwrap();
         });
 
-        assert!(HostTcpEndpointProbe.is_reachable(&endpoint));
+        assert!(HostTcpEndpointProbe.is_ready(RuntimeKind::Codex, &endpoint));
         server.join().unwrap();
     }
 
     #[test]
-    fn ws_probe_rejects_non_200_readyz_response() {
+    fn codex_probe_rejects_non_200_readyz_response() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let endpoint = local_ws_endpoint(&listener);
         let server = thread::spawn(move || {
@@ -273,8 +424,16 @@ mod tests {
                 .unwrap();
         });
 
-        assert!(!HostTcpEndpointProbe.is_reachable(&endpoint));
+        assert!(!HostTcpEndpointProbe.is_ready(RuntimeKind::Codex, &endpoint));
         server.join().unwrap();
+    }
+
+    fn http_response(status: &str, body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
     }
 
     fn local_http_endpoint(listener: &TcpListener) -> AttachEndpoint {
