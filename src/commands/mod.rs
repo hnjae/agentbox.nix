@@ -19,6 +19,7 @@ mod runtime_command;
 mod runtime_health;
 mod server_readiness;
 pub mod stop;
+mod table;
 mod workspace_flow;
 
 pub fn dispatch(command: Command, verbose: bool) -> Result<()> {

@@ -59,6 +59,8 @@ fn health_reports_running_opencode_session_as_healthy() {
     assert!(stdout.contains(&format!("http://127.0.0.1:{port}")));
     assert!(!stdout.contains("container name"));
     assert!(!stdout.contains(&workspace.container_name));
+    assert!(stdout.lines().next().unwrap().starts_with("ID"));
+    assert!(stdout.ends_with('\n'));
     assert_no_box_drawing_borders(&stdout);
 }
 
@@ -396,15 +398,16 @@ fn health_with_no_running_sessions_prints_header_only_table() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("id"));
-    assert!(stdout.contains("canonical git root"));
-    assert!(stdout.contains("runtime"));
-    assert!(stdout.contains("health"));
-    assert!(stdout.contains("reason"));
-    assert!(stdout.contains("endpoint"));
+    assert!(stdout.starts_with("ID"));
+    assert!(stdout.contains("CANONICAL GIT ROOT"));
+    assert!(stdout.contains("RUNTIME"));
+    assert!(stdout.contains("HEALTH"));
+    assert!(stdout.contains("REASON"));
+    assert!(stdout.contains("ENDPOINT"));
     assert!(!stdout.contains("container name"));
     assert!(!stdout.contains("opencode"));
     assert!(!stdout.contains("codex"));
+    assert!(stdout.ends_with('\n'));
     assert_no_box_drawing_borders(&stdout);
 }
 

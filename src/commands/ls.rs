@@ -6,6 +6,8 @@ use crate::error::Result;
 use crate::podman::Podman;
 use crate::session::{SessionRecord, discover_managed_sessions};
 
+use super::table;
+
 pub fn run(args: LsArgs) -> Result<()> {
     let podman = Podman::new();
     let sessions = discover_managed_sessions(&podman)?;
@@ -28,7 +30,7 @@ pub fn print_json(sessions: &[SessionRecord]) -> Result<()> {
 pub fn render_table(sessions: &[SessionRecord]) -> String {
     let mut table = Table::new();
     table.load_preset(NOTHING);
-    table.set_header(["id", "canonical git root", "runtime", "status"]);
+    table.set_header(["ID", "CANONICAL GIT ROOT", "RUNTIME", "STATUS", "ENDPOINT"]);
 
     for session in sorted_sessions(sessions) {
         table.add_row([
@@ -40,10 +42,16 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
             ),
             Cell::new(session.runtime().unwrap_or("unknown")),
             Cell::new(session.status.as_str()),
+            Cell::new(
+                session
+                    .attach_endpoint
+                    .as_ref()
+                    .map_or_else(|| "unknown".to_string(), ToString::to_string),
+            ),
         ]);
     }
 
-    table.to_string()
+    table::render_table(table)
 }
 
 pub fn render_json(sessions: &[SessionRecord]) -> Result<String> {
@@ -72,6 +80,7 @@ struct LsJsonRow<'a> {
     canonical_git_root: Option<&'a str>,
     runtime: Option<&'a str>,
     status: &'static str,
+    endpoint: Option<String>,
     container_name: &'a str,
 }
 
@@ -82,6 +91,7 @@ impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
             canonical_git_root: session.canonical_git_root().map(|root| root.as_str()),
             runtime: session.runtime(),
             status: session.status.as_str(),
+            endpoint: session.attach_endpoint.as_ref().map(ToString::to_string),
             container_name: &session.container_name,
         }
     }

@@ -10,6 +10,7 @@ use crate::session::{
 };
 
 use super::runtime_health::{HostRuntimeHealthProbe, RuntimeHealthProbe};
+use super::table;
 
 pub fn run(args: HealthArgs) -> Result<()> {
     let podman = Podman::new();
@@ -36,12 +37,12 @@ pub fn render_table(rows: &[HealthRow]) -> String {
     let mut table = Table::new();
     table.load_preset(NOTHING);
     table.set_header([
-        "id",
-        "canonical git root",
-        "runtime",
-        "health",
-        "reason",
-        "endpoint",
+        "ID",
+        "CANONICAL GIT ROOT",
+        "RUNTIME",
+        "HEALTH",
+        "REASON",
+        "ENDPOINT",
     ]);
 
     for row in rows {
@@ -55,7 +56,7 @@ pub fn render_table(rows: &[HealthRow]) -> String {
         ]);
     }
 
-    table.to_string()
+    table::render_table(table)
 }
 
 pub fn render_json(rows: &[HealthRow]) -> Result<String> {

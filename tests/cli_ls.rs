@@ -7,7 +7,7 @@ use agentbox::metadata::{
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
-use agentbox::runtime::RuntimeKind;
+use agentbox::runtime::{AttachEndpoint, RuntimeKind};
 use agentbox::session::{SessionMetadata, SessionRecord, SessionStatus};
 use clap::Parser;
 
@@ -41,14 +41,16 @@ fn ls_renders_all_status_rows_in_stable_order() {
         alpha < beta && beta < gamma && gamma < delta,
         "roots sort lexicographically"
     );
-    assert!(table.lines().next().unwrap().trim_start().starts_with("id"));
+    assert!(table.lines().next().unwrap().starts_with("ID"));
     assert!(table.contains("hash"));
     assert!(table.contains("running"));
     assert!(table.contains("orphaned"));
     assert!(table.contains("failed"));
     assert!(table.contains("duplicate"));
+    assert!(table.contains("http://127.0.0.1:4096"));
     assert!(!table.contains("container name"));
     assert!(!table.contains("alpha-one"));
+    assert!(table.ends_with('\n'));
     assert_no_box_drawing_borders(&table);
 }
 
@@ -63,6 +65,7 @@ fn ls_renders_unknown_for_unrecoverable_failed_fields() {
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
         (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
     ]));
+    session.attach_endpoint = None;
 
     let table = render_table(&[session]);
 
@@ -91,6 +94,7 @@ fn ls_renders_json_rows_in_stable_order() {
     assert_eq!(rows[0]["canonical_git_root"], "/workspace/a");
     assert_eq!(rows[0]["runtime"], "opencode");
     assert_eq!(rows[0]["status"], "running");
+    assert_eq!(rows[0]["endpoint"], "http://127.0.0.1:4096");
     assert_eq!(json.matches('\n').count(), 1);
 }
 
@@ -105,6 +109,7 @@ fn ls_renders_null_for_unrecoverable_json_fields() {
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
         (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
     ]));
+    session.attach_endpoint = None;
 
     let json = render_json(&[session]).unwrap();
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
@@ -113,6 +118,7 @@ fn ls_renders_null_for_unrecoverable_json_fields() {
     assert!(rows[0]["id"].is_null());
     assert!(rows[0]["canonical_git_root"].is_null());
     assert!(rows[0]["runtime"].is_null());
+    assert!(rows[0]["endpoint"].is_null());
     assert_eq!(rows[0]["status"], "failed");
     assert_eq!(rows[0]["container_name"], "broken");
 }
@@ -141,7 +147,11 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
         container_name: name.to_string(),
         metadata: metadata(root, name),
         runtime_kind: Some(RuntimeKind::Opencode),
-        attach_endpoint: None,
+        attach_endpoint: Some(AttachEndpoint {
+            scheme: "http".to_string(),
+            host_ip: "127.0.0.1".to_string(),
+            host_port: 4096,
+        }),
         container_running: status != SessionStatus::Failed(None),
         status,
     }
