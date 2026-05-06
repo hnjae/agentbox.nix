@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn run_detached_args_are_stable_and_complete() {
         let spec = RuntimeCreateSpec {
-            image: "localhost/agentbox-opencode:local".to_string(),
+            image: "localhost/agentbox-opencode:ctx-0123456789abcdef".to_string(),
             labels: BTreeMap::from([
                 ("io.agentbox.managed".to_string(), "true".to_string()),
                 ("io.agentbox.runtime".to_string(), "opencode".to_string()),
@@ -137,7 +137,7 @@ mod tests {
                 "--network=none",
                 "--publish",
                 "127.0.0.1::4096",
-                "localhost/agentbox-opencode:local",
+                "localhost/agentbox-opencode:ctx-0123456789abcdef",
                 "opencode",
                 "serve",
                 "--hostname",

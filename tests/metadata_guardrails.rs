@@ -9,7 +9,7 @@
 use std::fs;
 
 use agentbox::lock::lock_path_in_state_dir;
-use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE};
+use agentbox::runtime::RuntimeKind;
 use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
 use camino::Utf8Path;
 
@@ -172,7 +172,7 @@ fn write_workspace_inspect(harness: &Harness, workspace: &WorkspaceIdentity) -> 
         &workspace.container_name,
         &running_workspace_inspect_fixture_with_host_port(
             workspace,
-            DEFAULT_IMAGE,
+            &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             endpoint.port(),
         ),

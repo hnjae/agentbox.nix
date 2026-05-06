@@ -18,7 +18,7 @@ use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
     PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
 };
-use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_DEFAULT_IMAGE};
+use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
 use camino::Utf8Path;
@@ -163,7 +163,7 @@ pub fn managed_container_models_with_hash(
 fn managed_ps_model(id: &str, name: &str, git_root_hash: &str, running: bool) -> PodmanPsContainer {
     PodmanPsContainer {
         id: id.to_string(),
-        image: OPENCODE_DEFAULT_IMAGE.to_string(),
+        image: RuntimeKind::Opencode.default_image(),
         command: Some(vec![OPENCODE_BINARY.to_string()]),
         created: 1713681300,
         created_at: FIXTURE_CREATED_AT.to_string(),
@@ -211,7 +211,7 @@ impl ManagedInspectFixture {
             id: container_name.to_string(),
             container_name: container_name.to_string(),
             git_root: git_root.to_string(),
-            image: OPENCODE_DEFAULT_IMAGE.to_string(),
+            image: RuntimeKind::Opencode.default_image(),
             running: true,
             include_cache_mount: true,
             labels,
@@ -388,13 +388,8 @@ pub fn managed_labels(
     runtime: RuntimeKind,
     logical_name: &str,
 ) -> BTreeMap<String, String> {
-    managed_labels_for_image(
-        git_root,
-        git_root_hash,
-        runtime,
-        OPENCODE_DEFAULT_IMAGE,
-        logical_name,
-    )
+    let image = RuntimeKind::Opencode.default_image();
+    managed_labels_for_image(git_root, git_root_hash, runtime, &image, logical_name)
 }
 
 pub fn opencode_managed_labels(

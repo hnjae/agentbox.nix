@@ -18,8 +18,7 @@ use agentbox::preflight::{
     check_host_prerequisites_with_snapshot, required_host_mount_destinations,
 };
 use agentbox::runtime::default_image::{
-    CODEX_DEFAULT_IMAGE, OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE, embedded_default_image_paths,
-    materialize_default_image_context,
+    default_image_context_hash, embedded_default_image_paths, materialize_default_image_context,
 };
 use agentbox::runtime::{AttachEndpoint, RuntimeKind, RuntimeMountKind};
 use std::fs;
@@ -43,6 +42,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     .unwrap();
 
     let runtime = RuntimeKind::Opencode;
+    let default_image = runtime.default_image();
     let spec = runtime.create_spec(
         &workspace,
         &preflight.host_nix_mounts,
@@ -50,7 +50,7 @@ fn opencode_create_spec_matches_mvp_contract() {
         runtime.server_command().argv,
     );
 
-    assert_eq!(spec.image, DEFAULT_IMAGE);
+    assert_eq!(spec.image.as_str(), default_image.as_str());
     assert_eq!(
         spec.labels.get(LABEL_MANAGED),
         Some(&LABEL_MANAGED_VALUE.to_string())
@@ -71,10 +71,7 @@ fn opencode_create_spec_matches_mvp_contract() {
         spec.labels.get(LABEL_RUNTIME).map(String::as_str),
         Some(RuntimeKind::Opencode.as_str())
     );
-    assert_eq!(
-        spec.labels.get(LABEL_IMAGE),
-        Some(&DEFAULT_IMAGE.to_string())
-    );
+    assert_eq!(spec.labels.get(LABEL_IMAGE), Some(&default_image));
     assert_eq!(
         spec.labels.get(LABEL_LAUNCH_DIRECTORY),
         Some(&workspace.canonical_target.to_string())
@@ -293,8 +290,16 @@ fn codex_create_spec_includes_host_codex_config_mount() {
 
 #[test]
 fn runtime_adapters_own_default_image_references() {
-    assert_eq!(RuntimeKind::Opencode.default_image(), DEFAULT_IMAGE);
-    assert_eq!(RuntimeKind::Codex.default_image(), CODEX_DEFAULT_IMAGE);
+    let context_hash = default_image_context_hash();
+
+    assert_eq!(
+        RuntimeKind::Opencode.default_image(),
+        format!("localhost/agentbox-opencode:ctx-{context_hash}")
+    );
+    assert_eq!(
+        RuntimeKind::Codex.default_image(),
+        format!("localhost/agentbox-codex:ctx-{context_hash}")
+    );
 }
 
 #[test]

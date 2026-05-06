@@ -170,7 +170,7 @@ fn attach_to_codex_session_passes_yolo_flag_to_remote_client() {
     )]));
     harness.write_inspect(
         "running-id",
-        &running_workspace_inspect_fixture(workspace, image, RuntimeKind::Codex),
+        &running_workspace_inspect_fixture(workspace, &image, RuntimeKind::Codex),
     );
 
     let mut command = harness.locked_agentbox_command(workspace);

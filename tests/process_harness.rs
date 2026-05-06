@@ -9,7 +9,7 @@
 use agentbox::git::Git;
 use agentbox::podman::{Podman, PodmanBuildOptions};
 use agentbox::process::ProcessRunner;
-use agentbox::runtime::default_image::OPENCODE_DEFAULT_IMAGE as DEFAULT_IMAGE;
+use agentbox::runtime::RuntimeKind;
 use camino::Utf8Path;
 use std::fs;
 
@@ -158,10 +158,11 @@ fn podman_inspect_parses_stable_json_fields_from_a_fake_binary() {
 #[test]
 fn podman_image_exists_treats_exit_status_one_as_missing() {
     let fake_bins = support::FakeBinDir::new();
-    fake_bins.install_exact_failure("podman", &["image", "exists", DEFAULT_IMAGE], "", 1);
+    let image = RuntimeKind::Opencode.default_image();
+    fake_bins.install_exact_failure("podman", &["image", "exists", &image], "", 1);
 
     let exists = Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
-        .image_exists(DEFAULT_IMAGE)
+        .image_exists(&image)
         .unwrap();
 
     assert!(!exists);
@@ -170,10 +171,11 @@ fn podman_image_exists_treats_exit_status_one_as_missing() {
 #[test]
 fn podman_image_exists_returns_true_when_podman_reports_local_presence() {
     let fake_bins = support::FakeBinDir::new();
-    fake_bins.install_exact_response("podman", &["image", "exists", DEFAULT_IMAGE], "");
+    let image = RuntimeKind::Opencode.default_image();
+    fake_bins.install_exact_response("podman", &["image", "exists", &image], "");
 
     let exists = Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
-        .image_exists(DEFAULT_IMAGE)
+        .image_exists(&image)
         .unwrap();
 
     assert!(exists);
@@ -206,6 +208,7 @@ fn podman_container_exists_returns_true_when_podman_reports_presence() {
 #[test]
 fn podman_build_image_uses_containerfile_and_context_arguments() {
     let fake_bins = support::FakeBinDir::new();
+    let image = RuntimeKind::Opencode.default_image();
     let sandbox = tempfile::tempdir().unwrap();
     let context = Utf8Path::from_path(sandbox.path())
         .unwrap()
@@ -219,7 +222,7 @@ fn podman_build_image_uses_containerfile_and_context_arguments() {
         &[
             "build",
             "-t",
-            DEFAULT_IMAGE,
+            &image,
             "-f",
             containerfile.as_str(),
             context.as_str(),
@@ -229,7 +232,7 @@ fn podman_build_image_uses_containerfile_and_context_arguments() {
 
     Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
         .build_image(
-            DEFAULT_IMAGE,
+            &image,
             containerfile.as_ref(),
             context.as_ref(),
             &PodmanBuildOptions::default(),

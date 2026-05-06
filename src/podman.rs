@@ -28,8 +28,8 @@ mod run;
 use model::parse_json;
 pub use model::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
-    PodmanHealth, PodmanHostConfig, PodmanNamespaces, PodmanNetworkEndpoint, PodmanNetworkSettings,
-    PodmanPortBinding, PodmanPsContainer, PodmanPsPort, PodmanVolume,
+    PodmanHealth, PodmanHostConfig, PodmanImage, PodmanNamespaces, PodmanNetworkEndpoint,
+    PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer, PodmanPsPort, PodmanVolume,
 };
 
 const PODMAN_PROGRAM: &str = "podman";
@@ -75,6 +75,15 @@ impl Podman {
         self.run_podman_json("`podman volume ls --format json`", |command| {
             command.args(["volume", "ls", "--format", "json"]);
         })
+    }
+
+    pub fn images_with_label(&self, label_filter: &str) -> Result<Vec<PodmanImage>> {
+        self.run_podman_json(
+            "`podman image ls --filter label --format json`",
+            |command| {
+                command.args(["image", "ls", "--filter", label_filter, "--format", "json"]);
+            },
+        )
     }
 
     pub fn inspect(&self, name: &str) -> Result<Vec<PodmanContainerInspect>> {

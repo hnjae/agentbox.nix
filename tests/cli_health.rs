@@ -34,7 +34,7 @@ fn health_reports_running_opencode_session_as_healthy() {
         "running-id",
         &running_workspace_inspect_fixture_with_host_port(
             workspace,
-            RuntimeKind::Opencode.default_image(),
+            &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             port,
         ),
@@ -74,7 +74,7 @@ fn health_reports_running_codex_session_as_healthy() {
         "running-id",
         &running_workspace_inspect_fixture_with_host_port(
             workspace,
-            RuntimeKind::Codex.default_image(),
+            &RuntimeKind::Codex.default_image(),
             RuntimeKind::Codex,
             port,
         ),
@@ -110,7 +110,7 @@ fn health_reports_unhealthy_opencode_without_failing() {
         "running-id",
         &running_workspace_inspect_fixture_with_host_port(
             workspace,
-            RuntimeKind::Opencode.default_image(),
+            &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             port,
         ),
@@ -147,7 +147,7 @@ fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
         "healthy-id",
         &running_workspace_inspect_fixture_with_host_port(
             healthy,
-            RuntimeKind::Opencode.default_image(),
+            &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             healthy_port,
         ),
@@ -156,7 +156,7 @@ fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
         "unhealthy-id",
         &running_workspace_inspect_fixture_with_host_port(
             unhealthy,
-            RuntimeKind::Opencode.default_image(),
+            &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             unhealthy_port,
         ),
@@ -228,7 +228,7 @@ fn health_filters_non_running_session_statuses() {
         "running-id",
         &running_workspace_inspect_fixture_with_host_port(
             running,
-            RuntimeKind::Opencode.default_image(),
+            &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             port,
         ),
@@ -277,7 +277,7 @@ fn health_target_probes_only_matching_stable_id_prefix() {
         "selected-id",
         &running_workspace_inspect_fixture_with_host_port(
             selected,
-            RuntimeKind::Opencode.default_image(),
+            &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             selected_port,
         ),
@@ -286,7 +286,7 @@ fn health_target_probes_only_matching_stable_id_prefix() {
         "other-id",
         &running_workspace_inspect_fixture_with_host_port(
             other,
-            RuntimeKind::Opencode.default_image(),
+            &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             other_port,
         ),

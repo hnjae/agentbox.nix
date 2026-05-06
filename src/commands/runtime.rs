@@ -13,6 +13,10 @@ use camino::Utf8Path;
 
 use crate::cli::{RuntimeArgs, RuntimeCommand};
 use crate::diagnostic;
+use crate::metadata::{
+    LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_IMAGE,
+    LABEL_IMAGE_CONTEXT_HASH, LABEL_RUNTIME,
+};
 use crate::podman::{Podman, PodmanBuildOptions};
 use crate::process::ProcessRunner;
 use crate::runtime::RuntimeKind;
@@ -20,10 +24,7 @@ use crate::{Error, Result};
 
 mod image_state;
 
-use image_state::{
-    RuntimeImageState, read_runtime_image_state, remove_runtime_image_state,
-    write_runtime_image_state,
-};
+use image_state::{RuntimeImageState, read_runtime_image_state, write_runtime_image_state};
 
 pub fn run(args: RuntimeArgs, verbose: bool) -> Result<()> {
     match args.command {
@@ -38,9 +39,9 @@ pub(super) fn ensure_default_runtime_image(
     mut phase: impl FnMut(String),
 ) -> Result<Option<String>> {
     let default_image = runtime.default_image();
-    if podman.image_exists(default_image)? {
+    if podman.image_exists(&default_image)? {
         phase(format!("using runtime image `{default_image}`"));
-        return installed_version_if_known(runtime, default_image);
+        return installed_version_if_known(runtime, &default_image);
     }
 
     phase(format!("building runtime image `{default_image}`"));
@@ -52,8 +53,11 @@ pub(super) fn ensure_default_runtime_image(
     })
 }
 
-pub(super) fn remove_default_runtime_image_state(runtime: RuntimeKind) -> Result<()> {
-    remove_runtime_image_state(runtime)
+pub(super) fn remove_default_runtime_image_state_if_image(
+    runtime: RuntimeKind,
+    image: &str,
+) -> Result<()> {
+    image_state::remove_runtime_image_state_if_image(runtime, image)
 }
 
 fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
@@ -62,11 +66,15 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
     diagnostic::info(format!("resolving latest `{}` version", package.name));
     let latest_version = resolve_latest_runtime_version(package.name)?;
     let image = runtime.default_image();
-    let image_exists = podman.image_exists(image)?;
+    let context_hash = runtime.default_image_context_hash();
+    let image_exists = podman.image_exists(&image)?;
     let prior_state = read_runtime_image_state(runtime)?;
 
     if let Some(state) = prior_state.filter(|state| {
-        image_exists && state.installed_version == latest_version && state.image == image
+        image_exists
+            && state.installed_version == latest_version
+            && state.image == image
+            && state.image_context_hash.as_deref() == Some(context_hash)
     }) {
         let state = state.with_latest_check(latest_version.clone(), now_unix_seconds()?);
         write_runtime_image_state(runtime, &state)?;
@@ -117,6 +125,16 @@ fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> 
             (package.build_arg.to_string(), version.to_string()),
         ]),
         labels: BTreeMap::from([
+            (
+                LABEL_DEFAULT_RUNTIME_IMAGE.to_string(),
+                LABEL_DEFAULT_RUNTIME_IMAGE_VALUE.to_string(),
+            ),
+            (LABEL_RUNTIME.to_string(), runtime.as_str().to_string()),
+            (LABEL_IMAGE.to_string(), runtime.default_image()),
+            (
+                LABEL_IMAGE_CONTEXT_HASH.to_string(),
+                runtime.default_image_context_hash().to_string(),
+            ),
             (package.package_label.to_string(), package.name.to_string()),
             (package.version_label.to_string(), version.to_string()),
             (
@@ -128,7 +146,7 @@ fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> 
     };
 
     podman.build_image(
-        runtime.default_image(),
+        &runtime.default_image(),
         context.containerfile().as_ref(),
         context.root(),
         &options,

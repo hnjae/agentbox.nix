@@ -141,7 +141,7 @@ impl RuntimeKind {
         runtime_mounts: &[RuntimeMount],
         command: impl Into<Vec<String>>,
     ) -> RuntimeCreateSpec {
-        let image = self.default_image().to_string();
+        let image = self.default_image();
         let attach = self.attach_spec();
         let labels = managed_session_labels(ManagedSessionLabelInput::from_workspace(
             workspace, &image, self,

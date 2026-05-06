@@ -61,7 +61,7 @@ mod tests {
 
         assert_eq!(
             build_image_args(
-                "localhost/agentbox-opencode:local",
+                "localhost/agentbox-opencode:ctx-0123456789abcdef",
                 Utf8Path::new("/tmp/context/Containerfile"),
                 Utf8Path::new("/tmp/context"),
                 &options,
@@ -69,7 +69,7 @@ mod tests {
             strings([
                 "build",
                 "-t",
-                "localhost/agentbox-opencode:local",
+                "localhost/agentbox-opencode:ctx-0123456789abcdef",
                 "-f",
                 "/tmp/context/Containerfile",
                 "--build-arg",

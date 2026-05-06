@@ -10,9 +10,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use agentbox::lock::lock_path_in_state_dir;
+use agentbox::metadata::{
+    LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_IMAGE_CONTEXT_HASH,
+    LABEL_RUNTIME,
+};
+use agentbox::runtime::RuntimeKind;
 use agentbox::workspace::WorkspaceIdentity;
 use assert_cmd::Command as AssertCommand;
 use assert_cmd::cargo::cargo_bin;
+use serde_json::json;
 use tempfile::TempDir;
 
 use super::{fake_git_script, path_with_prepend, read_log_lines, write_executable};
@@ -40,7 +46,18 @@ impl CliHarness {
         fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
         fs::create_dir_all(home.path().join(".local/share/opencode")).unwrap();
         fs::create_dir(home.path().join(".codex")).unwrap();
-        fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
+        for runtime in RuntimeKind::variants() {
+            fs::write(
+                image_exists_fixture_path(fixtures.path(), &runtime.default_image()),
+                "present\n",
+            )
+            .unwrap();
+        }
+        fs::write(
+            fixtures.path().join("images.json"),
+            default_images_fixture(),
+        )
+        .unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
         fs::write(fixtures.path().join("volumes.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("git"), fake_git_script());
@@ -79,6 +96,10 @@ impl CliHarness {
         fs::write(self.fixtures.path().join("volumes.json"), json).unwrap();
     }
 
+    pub fn write_images(&self, json: &str) {
+        fs::write(self.fixtures.path().join("images.json"), json).unwrap();
+    }
+
     pub fn write_inspect(&self, name: &str, json: &str) {
         fs::write(
             self.fixtures.path().join(format!("inspect-{name}.json")),
@@ -101,11 +122,22 @@ impl CliHarness {
     }
 
     pub fn mark_default_image_absent(&self) {
-        match fs::remove_file(self.fixtures.path().join("image.exists")) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => panic!("failed to remove image.exists fixture: {error}"),
+        remove_file_if_exists(self.fixtures.path().join("image.exists"));
+        for entry in fs::read_dir(self.fixtures.path()).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name();
+            if name.to_string_lossy().starts_with("image-exists-") {
+                remove_file_if_exists(entry.path());
+            }
         }
+    }
+
+    pub fn mark_image_present(&self, image: &str) {
+        fs::write(
+            image_exists_fixture_path(self.fixtures.path(), image),
+            "present\n",
+        )
+        .unwrap();
     }
 
     pub fn write_logs(&self, name: &str, logs: &str) {
@@ -220,6 +252,56 @@ fn collect_files(root: &Path, current: &Path, files: &mut Vec<PathBuf>) {
             files.push(path.strip_prefix(root).unwrap().to_path_buf());
         }
     }
+}
+
+fn remove_file_if_exists(path: impl AsRef<Path>) {
+    match fs::remove_file(path.as_ref()) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => panic!(
+            "failed to remove fixture file `{}`: {error}",
+            path.as_ref().display()
+        ),
+    }
+}
+
+fn image_exists_fixture_path(root: &Path, image: &str) -> PathBuf {
+    root.join(format!("image-exists-{}", safe_image_name(image)))
+}
+
+fn safe_image_name(image: &str) -> String {
+    image
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn default_images_fixture() -> String {
+    let images = RuntimeKind::variants()
+        .iter()
+        .map(|runtime| runtime_image_fixture(*runtime, &runtime.default_image()))
+        .collect::<Vec<_>>();
+    serde_json::to_string(&images).unwrap()
+}
+
+fn runtime_image_fixture(runtime: RuntimeKind, image: &str) -> serde_json::Value {
+    let (repository, tag) = image.rsplit_once(':').unwrap();
+    json!({
+        "Repository": repository,
+        "Tag": tag,
+        "Names": [image],
+        "Labels": {
+            LABEL_DEFAULT_RUNTIME_IMAGE: LABEL_DEFAULT_RUNTIME_IMAGE_VALUE,
+            LABEL_RUNTIME: runtime.as_str(),
+            LABEL_IMAGE_CONTEXT_HASH: runtime.default_image_context_hash(),
+        },
+    })
 }
 
 fn fake_podman_script() -> &'static str {

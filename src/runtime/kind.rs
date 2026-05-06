@@ -13,7 +13,7 @@ use clap::ValueEnum;
 
 use crate::{Error, Result};
 
-use super::default_image::DefaultImageBuildContext;
+use super::default_image::{self, DefaultImageBuildContext};
 use super::profile::{self, RuntimeHostStateMount, RuntimePackageSpec};
 use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand, RuntimeHealthCheck};
 
@@ -41,8 +41,12 @@ impl RuntimeKind {
         profile::supported_runtime_values()
     }
 
-    pub fn default_image(self) -> &'static str {
-        self.profile().default_image
+    pub fn default_image(self) -> String {
+        default_image::default_image(self)
+    }
+
+    pub fn default_image_context_hash(self) -> &'static str {
+        default_image::default_image_context_hash()
     }
 
     pub fn materialize_default_image_context(self) -> Result<DefaultImageBuildContext> {

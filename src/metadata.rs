@@ -30,9 +30,12 @@ pub const LABEL_OPENCODE_PACKAGE: &str = "io.agentbox.opencode.package";
 pub const LABEL_OPENCODE_VERSION: &str = "io.agentbox.opencode.version";
 pub const LABEL_OPENCODE_INSTALL_SOURCE: &str = "io.agentbox.opencode.install_source";
 pub const LABEL_OPENCODE_RESOLVED_AT: &str = "io.agentbox.opencode.resolved_at";
+pub const LABEL_DEFAULT_RUNTIME_IMAGE: &str = "io.agentbox.default_runtime_image";
+pub const LABEL_IMAGE_CONTEXT_HASH: &str = "io.agentbox.image_context_hash";
 
 pub const LABEL_MANAGED_VALUE: &str = "true";
 pub const LABEL_SCHEMA_VALUE: &str = "1";
+pub const LABEL_DEFAULT_RUNTIME_IMAGE_VALUE: &str = "true";
 
 pub const REQUIRED_SESSION_MARKER_LABEL_VALUES: &[(&str, &str)] = &[
     (LABEL_MANAGED, LABEL_MANAGED_VALUE),
@@ -47,6 +50,10 @@ pub const REQUIRED_SESSION_METADATA_LABELS: &[&str] =
 
 pub(crate) fn managed_label_filter() -> String {
     format!("label={LABEL_MANAGED}={LABEL_MANAGED_VALUE}")
+}
+
+pub(crate) fn default_runtime_image_label_filter() -> String {
+    format!("label={LABEL_DEFAULT_RUNTIME_IMAGE}={LABEL_DEFAULT_RUNTIME_IMAGE_VALUE}")
 }
 
 /// Input values for constructing the complete managed-session container label set.

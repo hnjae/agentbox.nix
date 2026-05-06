@@ -8,8 +8,12 @@
 
 use std::fs;
 
+use agentbox::metadata::{
+    LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_IMAGE_CONTEXT_HASH,
+    LABEL_RUNTIME,
+};
 use agentbox::prompt;
-use agentbox::runtime::default_image::{CODEX_DEFAULT_IMAGE, OPENCODE_DEFAULT_IMAGE};
+use agentbox::runtime::RuntimeKind;
 use predicates::prelude::*;
 use serde_json::json;
 
@@ -19,6 +23,7 @@ mod support;
 use support::{
     CliHarness as Harness, managed_inspect_fixture, managed_ps_entry,
     opencode_managed_labels as managed_labels, operation_names, ps_fixture,
+    running_workspace_inspect_fixture_with_host_port,
 };
 
 const UNUSED_VOLUME: &str = "agentbox-unused-abcdef123456";
@@ -27,6 +32,8 @@ const USED_VOLUME: &str = "agentbox-used-abcdef123456";
 #[test]
 fn clean_dry_run_prints_candidates_without_deleting() {
     let harness = Harness::new();
+    let opencode_image = RuntimeKind::Opencode.default_image();
+    let codex_image = RuntimeKind::Codex.default_image();
     harness.write_volumes(&volumes_fixture(&[UNUSED_VOLUME]));
 
     harness
@@ -34,12 +41,15 @@ fn clean_dry_run_prints_candidates_without_deleting() {
         .success()
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains("INFO: cleanup candidates:"))
-        .stderr(predicate::str::contains(OPENCODE_DEFAULT_IMAGE))
-        .stderr(predicate::str::contains(CODEX_DEFAULT_IMAGE))
+        .stderr(predicate::str::contains(opencode_image.clone()))
+        .stderr(predicate::str::contains(codex_image.clone()))
         .stderr(predicate::str::contains(UNUSED_VOLUME));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "image", "volume"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "image", "image", "volume"]
+    );
     assert!(
         !log.iter().any(|line| line.contains(" rm ")),
         "dry-run must not remove images or volumes"
@@ -76,6 +86,8 @@ fn clean_confirmation_errors_are_stable() {
 #[test]
 fn clean_yes_removes_unused_default_images_and_cache_volumes() {
     let harness = Harness::new();
+    let opencode_image = RuntimeKind::Opencode.default_image();
+    let codex_image = RuntimeKind::Codex.default_image();
     harness.write_volumes(&volumes_fixture(&[UNUSED_VOLUME]));
 
     harness
@@ -83,10 +95,10 @@ fn clean_yes_removes_unused_default_images_and_cache_volumes() {
         .success()
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains(format!(
-            "removed image `{OPENCODE_DEFAULT_IMAGE}`"
+            "removed image `{opencode_image}`"
         )))
         .stderr(predicate::str::contains(format!(
-            "removed image `{CODEX_DEFAULT_IMAGE}`"
+            "removed image `{codex_image}`"
         )))
         .stderr(predicate::str::contains(format!(
             "removed volume `{UNUSED_VOLUME}`"
@@ -94,10 +106,10 @@ fn clean_yes_removes_unused_default_images_and_cache_volumes() {
 
     let log = harness.read_log();
     assert!(log.iter().any(|line| {
-        line.starts_with("image ") && line.contains(&format!("args=rm {OPENCODE_DEFAULT_IMAGE}"))
+        line.starts_with("image ") && line.contains(&format!("args=rm {opencode_image}"))
     }));
     assert!(log.iter().any(|line| {
-        line.starts_with("image ") && line.contains(&format!("args=rm {CODEX_DEFAULT_IMAGE}"))
+        line.starts_with("image ") && line.contains(&format!("args=rm {codex_image}"))
     }));
     assert!(log.iter().any(|line| {
         line.starts_with("volume ") && line.contains(&format!("args=rm {UNUSED_VOLUME}"))
@@ -109,6 +121,8 @@ fn clean_skips_images_and_volumes_used_by_any_container() {
     let fixture = support::temp_workspace("nested");
     let workspace = &fixture.workspace;
     let harness = Harness::new();
+    let opencode_image = RuntimeKind::Opencode.default_image();
+    let codex_image = RuntimeKind::Codex.default_image();
     harness.write_ps(&ps_fixture(vec![managed_ps_entry(
         "used-id",
         USED_VOLUME,
@@ -135,20 +149,19 @@ fn clean_skips_images_and_volumes_used_by_any_container() {
         .success()
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains(format!(
-            "image `{OPENCODE_DEFAULT_IMAGE}`: used by container `{USED_VOLUME}`"
+            "image `{opencode_image}`: used by container `{USED_VOLUME}`"
         )))
         .stderr(predicate::str::contains(format!(
             "volume `{USED_VOLUME}`: mounted by container `{USED_VOLUME}`"
         )))
         .stderr(predicate::str::contains(format!(
-            "removed image `{CODEX_DEFAULT_IMAGE}`"
+            "removed image `{codex_image}`"
         )));
 
     let log = harness.read_log();
     assert!(
         !log.iter().any(|line| {
-            line.starts_with("image ")
-                && line.contains(&format!("args=rm {OPENCODE_DEFAULT_IMAGE}"))
+            line.starts_with("image ") && line.contains(&format!("args=rm {opencode_image}"))
         }),
         "used image must not be removed"
     );
@@ -184,11 +197,16 @@ fn clean_only_considers_agentbox_cache_volume_name_shape() {
 #[test]
 fn clean_removes_runtime_image_state_after_image_delete() {
     let harness = Harness::new();
+    let image = RuntimeKind::Opencode.default_image();
     let state_path = harness
         .state_home_path()
         .join("agentbox/runtime/opencode.json");
     fs::create_dir_all(state_path.parent().unwrap()).unwrap();
-    fs::write(&state_path, "{}\n").unwrap();
+    fs::write(
+        &state_path,
+        runtime_state("opencode", "opencode-ai", &image),
+    )
+    .unwrap();
 
     harness
         .agentbox_assert(&["clean", "--yes", "--images"])
@@ -197,6 +215,85 @@ fn clean_removes_runtime_image_state_after_image_delete() {
     assert!(
         !state_path.exists(),
         "opencode runtime image state should be removed after image deletion"
+    );
+}
+
+#[test]
+fn clean_removes_unused_labeled_old_hash_images() {
+    let harness = Harness::new();
+    let old_image = "localhost/agentbox-opencode:ctx-0000000000000000";
+    harness.write_images(&images_fixture(&[runtime_image_fixture(
+        RuntimeKind::Opencode,
+        old_image,
+        "0000000000000000",
+    )]));
+
+    harness
+        .agentbox_assert(&["clean", "--yes", "--images"])
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
+            "removed image `{old_image}`"
+        )));
+
+    let log = harness.read_log();
+    assert!(log.iter().any(|line| {
+        line.starts_with("image ") && line.contains(&format!("args=rm {old_image}"))
+    }));
+}
+
+#[test]
+fn clean_preserves_runtime_image_state_when_active_image_is_still_in_use() {
+    let fixture = support::temp_workspace("nested");
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let current_image = RuntimeKind::Opencode.default_image();
+    let current_hash = RuntimeKind::Opencode.default_image_context_hash();
+    let old_image = "localhost/agentbox-opencode:ctx-0000000000000000";
+    harness.write_images(&images_fixture(&[
+        runtime_image_fixture(RuntimeKind::Opencode, &current_image, current_hash),
+        runtime_image_fixture(RuntimeKind::Opencode, old_image, "0000000000000000"),
+    ]));
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        &workspace.container_name,
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &current_image,
+            RuntimeKind::Opencode,
+            49152,
+        ),
+    );
+
+    let state_path = harness
+        .state_home_path()
+        .join("agentbox/runtime/opencode.json");
+    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+    fs::write(
+        &state_path,
+        runtime_state("opencode", "opencode-ai", &current_image),
+    )
+    .unwrap();
+
+    harness
+        .agentbox_assert(&["clean", "--yes", "--images"])
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
+            "image `{current_image}`: used by container `{}`",
+            workspace.container_name
+        )))
+        .stderr(predicate::str::contains(format!(
+            "removed image `{old_image}`"
+        )));
+
+    assert!(
+        state_path.exists(),
+        "current runtime image state should be preserved while its image is in use"
     );
 }
 
@@ -239,4 +336,44 @@ fn volumes_fixture(names: &[&str]) -> String {
             .collect::<Vec<_>>(),
     )
     .unwrap()
+}
+
+fn images_fixture(images: &[serde_json::Value]) -> String {
+    serde_json::to_string(images).unwrap()
+}
+
+fn runtime_image_fixture(
+    runtime: RuntimeKind,
+    image: &str,
+    context_hash: &str,
+) -> serde_json::Value {
+    let (repository, tag) = image.rsplit_once(':').unwrap();
+    json!({
+        "Repository": repository,
+        "Tag": tag,
+        "Names": [image],
+        "Labels": {
+            LABEL_DEFAULT_RUNTIME_IMAGE: LABEL_DEFAULT_RUNTIME_IMAGE_VALUE,
+            LABEL_RUNTIME: runtime.as_str(),
+            LABEL_IMAGE_CONTEXT_HASH: context_hash,
+        },
+    })
+}
+
+fn runtime_state(runtime: &str, package: &str, image: &str) -> String {
+    format!(
+        r#"{{
+  "runtime": "{runtime}",
+  "package": "{package}",
+  "install_source": "npm",
+  "image": "{image}",
+  "image_context_hash": "{}",
+  "installed_version": "0.99.0",
+  "latest_seen_version": "0.99.0",
+  "latest_checked_at": 1,
+  "image_built_at": 1
+}}
+"#,
+        RuntimeKind::Opencode.default_image_context_hash()
+    )
 }

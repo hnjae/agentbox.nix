@@ -51,6 +51,10 @@ last_arg() {
     printf '%s\n' "$last"
 }
 
+safe_image_name() {
+    printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
+}
+
 validate_build_context() {
     containerfile=
     context_dir=
@@ -115,10 +119,14 @@ case "$cmd" in
         shift || true
         case "$subcommand" in
             exists)
-                if [ -f "$fixtures/image.exists" ]; then
+                target=${1:?missing image exists target}
+                if [ -f "$fixtures/image.exists" ] || [ -f "$fixtures/image-exists-$(safe_image_name "$target")" ]; then
                     exit 0
                 fi
                 exit 1
+                ;;
+            ls)
+                cat "$fixtures/images.json"
                 ;;
             rm)
                 maybe_fail image-rm

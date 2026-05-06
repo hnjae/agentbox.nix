@@ -8,7 +8,7 @@ _:
     @just --list
 
 build:
-    podman build -t localhost/agentbox-opencode:local -f Containerfile .
+    podman build -t localhost/agentbox-opencode:dev -f Containerfile .
 
 test:
     ./tests/podman-entrypoint-contract.sh

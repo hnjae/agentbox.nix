@@ -106,7 +106,6 @@ const CODEX_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[RuntimeHostStateMoun
 const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
     kind: RuntimeKind::Opencode,
     name: "opencode",
-    default_image: default_image::OPENCODE_DEFAULT_IMAGE,
     materialize_default_image_context: default_image::materialize_default_image_context,
     package: RuntimePackageSpec {
         name: OPENCODE_NPM_PACKAGE,
@@ -135,7 +134,6 @@ const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
 const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
     kind: RuntimeKind::Codex,
     name: "codex",
-    default_image: default_image::CODEX_DEFAULT_IMAGE,
     materialize_default_image_context: default_image::materialize_default_image_context,
     package: RuntimePackageSpec {
         name: CODEX_NPM_PACKAGE,
@@ -167,7 +165,6 @@ const RUNTIME_PROFILES: &[RuntimeProfile] = &[OPENCODE_PROFILE, CODEX_PROFILE];
 pub(super) struct RuntimeProfile {
     pub(super) kind: RuntimeKind,
     pub(super) name: &'static str,
-    pub(super) default_image: &'static str,
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
     pub(super) package: RuntimePackageSpec,
     pub(super) attach: RuntimeAttachSpec,

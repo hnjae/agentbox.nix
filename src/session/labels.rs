@@ -408,7 +408,7 @@ mod tests {
             canonical_git_root: GIT_ROOT,
             git_root_hash: git_root_hash.as_str(),
             runtime: RuntimeKind::Opencode,
-            image: "localhost/agentbox-opencode:local",
+            image: "localhost/agentbox-opencode:ctx-0123456789abcdef",
             launch_directory: GIT_ROOT,
             logical_name: CONTAINER_NAME,
         })

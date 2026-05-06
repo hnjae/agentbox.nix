@@ -21,6 +21,7 @@ pub(super) struct RuntimeImageState {
     package: String,
     install_source: String,
     pub(super) image: String,
+    pub(super) image_context_hash: Option<String>,
     pub(super) installed_version: String,
     latest_seen_version: String,
     latest_checked_at: u64,
@@ -40,6 +41,7 @@ impl RuntimeImageState {
             package: package.name.to_string(),
             install_source: package.install_source.to_string(),
             image: runtime.default_image().to_string(),
+            image_context_hash: Some(runtime.default_image_context_hash().to_string()),
             installed_version: version.clone(),
             latest_seen_version: version,
             latest_checked_at,
@@ -97,6 +99,18 @@ pub(super) fn remove_runtime_image_state(runtime: RuntimeKind) -> Result<()> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),
     }
+}
+
+pub(super) fn remove_runtime_image_state_if_image(runtime: RuntimeKind, image: &str) -> Result<()> {
+    let Some(state) = read_runtime_image_state(runtime)? else {
+        return Ok(());
+    };
+
+    if state.image == image {
+        remove_runtime_image_state(runtime)?;
+    }
+
+    Ok(())
 }
 
 fn runtime_image_state_path(runtime: RuntimeKind) -> Result<PathBuf> {

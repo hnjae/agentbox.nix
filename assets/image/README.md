@@ -31,12 +31,11 @@ checks the host-attached prerequisites, uses the Podman-volume-backed
 active `runtime` profile under `/home/user/.local/state/nix/profile` with
 `nix profile add`, and then hands off to `/entrypoint` for the final command.
 
-The local MVP build tags default runtime images as
-`localhost/agentbox-opencode:local` and `localhost/agentbox-codex:local`.
-OpenCode images install OpenCode from npm package `opencode-ai`, and Codex
-images install Codex from npm package `@openai/codex`, at the version selected
-by the image build. The container defaults to the non-root `user` account with
-`HOME=/home/user`.
+The `agentbox` CLI tags default runtime images with a content hash for the
+embedded image build context. OpenCode images install OpenCode from npm package
+`opencode-ai`, and Codex images install Codex from npm package
+`@openai/codex`, at the version selected by the image build. The container
+defaults to the non-root `user` account with `HOME=/home/user`.
 
 For later `podman exec` calls, use `/entrypoint <cmd>` as the supported
 interface. `/entrypoint` re-checks the runtime contract and rebuilds
