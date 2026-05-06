@@ -134,68 +134,111 @@ fn http_get_response(
     let _ = stream.set_read_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
     let _ = stream.set_write_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
 
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
-        endpoint.host_ip, endpoint.host_port,
-    );
-    if stream.write_all(request.as_bytes()).is_err() {
-        return None;
-    }
+    write_http_get_request(endpoint, stream, path)?;
 
     let mut response = Vec::new();
-    let body_start = loop {
-        if let Some(body_start) = http_body_start(&response) {
-            break body_start;
-        }
-        if response.len() >= MAX_HTTP_RESPONSE_BYTES {
-            return None;
-        }
-        let mut buffer = [0_u8; 512];
-        match stream.read(&mut buffer) {
-            Ok(0) => return None,
-            Ok(bytes_read) => response.extend_from_slice(&buffer[..bytes_read]),
-            Err(_) => return None,
-        }
-    };
-
+    let body_start = read_until_http_body(stream, &mut response)?;
     let (status_code, content_length) = parse_http_response_headers(&response[..body_start])?;
-    if let Some(content_length) = content_length {
-        let response_len = body_start.checked_add(content_length)?;
-        if response_len > MAX_HTTP_RESPONSE_BYTES {
-            return None;
-        }
-        while response.len() < response_len {
-            let mut buffer = [0_u8; 512];
-            match stream.read(&mut buffer) {
-                Ok(0) => return None,
-                Ok(bytes_read) => response.extend_from_slice(&buffer[..bytes_read]),
-                Err(_) => return None,
+
+    match content_length {
+        Some(content_length) => {
+            let response_len = body_start.checked_add(content_length)?;
+            if response_len > MAX_HTTP_RESPONSE_BYTES {
+                return None;
             }
+            read_declared_response_body(stream, &mut response, response_len)?;
         }
-        response.truncate(response_len);
-    } else {
-        while response.len() < MAX_HTTP_RESPONSE_BYTES {
-            let mut buffer = [0_u8; 512];
-            match stream.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(bytes_read) => response.extend_from_slice(&buffer[..bytes_read]),
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                    ) =>
-                {
-                    break;
-                }
-                Err(_) => return None,
-            }
-        }
+        None => read_undeclared_response_body(stream, &mut response)?,
     }
 
     Some(HttpResponse {
         status_code,
         body: response[body_start..].to_vec(),
     })
+}
+
+fn write_http_get_request(
+    endpoint: &AttachEndpoint,
+    stream: &mut TcpStream,
+    path: &str,
+) -> Option<()> {
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
+        endpoint.host_ip, endpoint.host_port,
+    );
+    stream.write_all(request.as_bytes()).ok()
+}
+
+fn read_until_http_body(stream: &mut TcpStream, response: &mut Vec<u8>) -> Option<usize> {
+    loop {
+        if let Some(body_start) = http_body_start(response) {
+            return Some(body_start);
+        }
+        if response.len() >= MAX_HTTP_RESPONSE_BYTES {
+            return None;
+        }
+
+        match read_http_chunk(stream, response) {
+            HttpRead::Data => {}
+            HttpRead::End | HttpRead::Timeout | HttpRead::Error => return None,
+        }
+    }
+}
+
+fn read_declared_response_body(
+    stream: &mut TcpStream,
+    response: &mut Vec<u8>,
+    response_len: usize,
+) -> Option<()> {
+    while response.len() < response_len {
+        match read_http_chunk(stream, response) {
+            HttpRead::Data => {}
+            HttpRead::End | HttpRead::Timeout | HttpRead::Error => return None,
+        }
+    }
+
+    response.truncate(response_len);
+    Some(())
+}
+
+fn read_undeclared_response_body(stream: &mut TcpStream, response: &mut Vec<u8>) -> Option<()> {
+    while response.len() < MAX_HTTP_RESPONSE_BYTES {
+        match read_http_chunk(stream, response) {
+            HttpRead::Data => {}
+            HttpRead::End | HttpRead::Timeout => break,
+            HttpRead::Error => return None,
+        }
+    }
+
+    Some(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HttpRead {
+    Data,
+    End,
+    Timeout,
+    Error,
+}
+
+fn read_http_chunk(stream: &mut TcpStream, response: &mut Vec<u8>) -> HttpRead {
+    let mut buffer = [0_u8; 512];
+    match stream.read(&mut buffer) {
+        Ok(0) => HttpRead::End,
+        Ok(bytes_read) => {
+            response.extend_from_slice(&buffer[..bytes_read]);
+            HttpRead::Data
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            HttpRead::Timeout
+        }
+        Err(_) => HttpRead::Error,
+    }
 }
 
 fn http_body_start(response: &[u8]) -> Option<usize> {

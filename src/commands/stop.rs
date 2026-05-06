@@ -192,57 +192,67 @@ enum StopTarget {
 }
 
 fn stop_git_root(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> {
-    let failures = with_locked_git_root(git_root, |locked| {
-        let sessions = exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
-
-        if sessions.is_empty() {
-            return Err(Error::msg(format!(
-                "no managed session exists for `{git_root}`"
-            )));
-        }
-
-        if sessions.len() > 1 && !force {
-            return Err(Error::msg(format!(
-                "duplicate managed sessions exist for `{git_root}`; rerun `agentbox stop --force {}` to remove all exact matches",
-                target.display()
-            )));
-        }
-
-        let failures = sessions
-            .iter()
-            .filter_map(|session| cleanup_managed_container(locked.podman(), session))
-            .collect::<Vec<_>>();
-
-        Ok(failures)
-    })?;
-
-    finish_cleanup(git_root.as_str(), &failures)
+    stop_exact_git_root_matches(git_root, force, target, ExactGitRootStopMode::Scoped)
 }
 
 fn stop_exact_stored_git_root_path(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> {
+    stop_exact_git_root_matches(
+        git_root,
+        force,
+        target,
+        ExactGitRootStopMode::ExactStoredPath,
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExactGitRootStopMode {
+    Scoped,
+    ExactStoredPath,
+}
+
+impl ExactGitRootStopMode {
+    fn target_ref(self, git_root: &Utf8Path) -> String {
+        match self {
+            Self::Scoped => format!("`{git_root}`"),
+            Self::ExactStoredPath => format!("exact stored git-root path `{git_root}`"),
+        }
+    }
+
+    fn discover_sessions(
+        self,
+        locked: &super::workspace_flow::LockedGitRoot<'_>,
+    ) -> Result<Vec<SessionRecord>> {
+        match self {
+            Self::Scoped => locked.discover_sessions(),
+            Self::ExactStoredPath => discover_managed_sessions(locked.podman()),
+        }
+    }
+}
+
+fn stop_exact_git_root_matches(
+    git_root: &Utf8Path,
+    force: bool,
+    target: &Path,
+    mode: ExactGitRootStopMode,
+) -> Result<()> {
     let failures = with_locked_git_root(git_root, |locked| {
-        let sessions =
-            exact_git_root_matches(discover_managed_sessions(locked.podman())?, git_root);
+        let sessions = exact_git_root_matches(mode.discover_sessions(&locked)?, git_root);
+        let target_ref = mode.target_ref(git_root);
 
         if sessions.is_empty() {
             return Err(Error::msg(format!(
-                "no managed session exists for exact stored git-root path `{git_root}`"
+                "no managed session exists for {target_ref}"
             )));
         }
 
         if sessions.len() > 1 && !force {
             return Err(Error::msg(format!(
-                "duplicate managed sessions exist for exact stored git-root path `{git_root}`; rerun `agentbox stop --force {}` to remove all exact matches",
+                "duplicate managed sessions exist for {target_ref}; rerun `agentbox stop --force {}` to remove all exact matches",
                 target.display()
             )));
         }
 
-        let failures = sessions
-            .iter()
-            .filter_map(|session| cleanup_managed_container(locked.podman(), session))
-            .collect::<Vec<_>>();
-
-        Ok(failures)
+        Ok(cleanup_sessions(locked.podman(), sessions.iter()))
     })?;
 
     finish_cleanup(git_root.as_str(), &failures)
@@ -334,10 +344,7 @@ fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<Cleanup
         let git_root = group.canonical_git_root;
         let sessions = group.sessions;
         let mut group_failures = with_locked_git_root(&git_root, |locked| {
-            Ok(sessions
-                .iter()
-                .filter_map(|session| cleanup_managed_container(locked.podman(), session))
-                .collect::<Vec<_>>())
+            Ok(cleanup_sessions(locked.podman(), sessions.iter()))
         })?;
         failures.append(&mut group_failures);
     }
@@ -352,28 +359,33 @@ fn cleanup_all_running_matches(sessions: Vec<SessionRecord>) -> Result<Vec<Clean
     for group in partition.rooted {
         let git_root = group.canonical_git_root;
         let mut group_failures = with_locked_git_root(&git_root, |locked| {
-            Ok(
-                exact_git_root_matches(locked.discover_sessions()?, locked.git_root())
+            let sessions = exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
+            Ok(cleanup_sessions(
+                locked.podman(),
+                sessions
                     .iter()
-                    .filter(|session| session.container_running())
-                    .filter_map(|session| cleanup_managed_container(locked.podman(), session))
-                    .collect::<Vec<_>>(),
-            )
+                    .filter(|session| session.container_running()),
+            ))
         })?;
         failures.append(&mut group_failures);
     }
 
     if !partition.unrooted.is_empty() {
         let podman = Podman::new();
-        failures.extend(
-            partition
-                .unrooted
-                .iter()
-                .filter_map(|session| cleanup_managed_container(&podman, session)),
-        );
+        failures.extend(cleanup_sessions(&podman, partition.unrooted.iter()));
     }
 
     Ok(failures)
+}
+
+fn cleanup_sessions<'a>(
+    podman: &Podman,
+    sessions: impl IntoIterator<Item = &'a SessionRecord>,
+) -> Vec<CleanupFailure> {
+    sessions
+        .into_iter()
+        .filter_map(|session| cleanup_managed_container(podman, session))
+        .collect()
 }
 
 fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
