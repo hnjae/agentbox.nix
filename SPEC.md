@@ -327,6 +327,10 @@ Rules:
 - The host client process uses the host environment of the `agentbox attach`
   invocation; `attach` does not re-evaluate `.envrc` from the requested
   directory or stored launch directory.
+- For Codex sessions, the host client command includes
+  `--dangerously-bypass-approvals-and-sandbox` when connecting with `--remote`,
+  matching Codex 0.128.0 behavior that requires the YOLO flag on both the
+  app-server and attaching client sides.
 - When the requested directory differs from the stored launch directory,
   `attach` prints a short notice before launching the host client.
 - The running server process keeps the working directory and environment from
