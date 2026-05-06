@@ -248,6 +248,7 @@ fn runtime_adapters_render_host_client_commands() {
         codex.host_client_command(&codex_endpoint).argv,
         vec![
             "codex".to_string(),
+            "--dangerously-bypass-approvals-and-sandbox".to_string(),
             "--remote".to_string(),
             "ws://127.0.0.1:49153".to_string(),
         ]

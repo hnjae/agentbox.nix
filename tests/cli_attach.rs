@@ -9,6 +9,7 @@
 use std::fs;
 
 use agentbox::metadata::LABEL_LAUNCH_DIRECTORY;
+use agentbox::runtime::RuntimeKind;
 use agentbox::workspace::resolve_workspace_identity;
 
 #[path = "support/mod.rs"]
@@ -17,7 +18,7 @@ mod support;
 use support::{
     CliHarness as Harness, managed_inspect_fixture, managed_ps_entry,
     opencode_managed_labels as managed_labels, opencode_workspace_labels, operation_names,
-    ps_fixture, workspace_ps_entry,
+    ps_fixture, running_workspace_inspect_fixture, workspace_ps_entry,
 };
 
 #[test]
@@ -96,6 +97,35 @@ fn attach_does_not_wrap_host_client_with_direnv_when_envrc_applies() {
     assert!(log[2].contains(&format!("cwd={}", workspace.canonical_target)));
     assert!(!log.iter().any(|line| line.starts_with("direnv ")));
     assert!(!log.iter().any(|line| line.contains("direnv exec .")));
+}
+
+#[test]
+fn attach_to_codex_session_passes_yolo_flag_to_remote_client() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "running-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &running_workspace_inspect_fixture(workspace, image, RuntimeKind::Codex),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("attach").arg(target);
+
+    command.assert().success().stderr("");
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "codex"]);
+    assert!(
+        log[2].contains("--dangerously-bypass-approvals-and-sandbox --remote ws://127.0.0.1:49152")
+    );
+    assert!(log[2].contains(&format!("cwd={}", workspace.canonical_target)));
 }
 
 #[test]

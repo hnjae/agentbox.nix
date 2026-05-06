@@ -32,6 +32,7 @@ const NPM_INSTALL_SOURCE: &str = "npm";
 
 const OPENCODE_NPM_PACKAGE: &str = "opencode-ai";
 const CODEX_NPM_PACKAGE: &str = "@openai/codex";
+const CODEX_YOLO_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
 
 const OPENCODE_SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
     ServerCommandArg::Literal("opencode"),
@@ -49,13 +50,16 @@ const OPENCODE_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientComman
 
 const CODEX_SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
     ServerCommandArg::Literal("codex"),
-    ServerCommandArg::Literal("--dangerously-bypass-approvals-and-sandbox"),
+    ServerCommandArg::Literal(CODEX_YOLO_FLAG),
     ServerCommandArg::Literal("app-server"),
     ServerCommandArg::Literal("--listen"),
     ServerCommandArg::ContainerListenEndpoint,
 ]);
+// Codex 0.128.0 requires the YOLO flag on the attaching `codex --remote`
+// client as well as on the app-server process.
 const CODEX_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTemplate::new(&[
     HostClientCommandArg::Literal("codex"),
+    HostClientCommandArg::Literal(CODEX_YOLO_FLAG),
     HostClientCommandArg::Literal("--remote"),
     HostClientCommandArg::AttachEndpoint,
 ]);
