@@ -16,6 +16,7 @@ The MVP is workspace-centric rather than name-centric:
 - `agentbox runtime update <opencode|codex>`
 - `agentbox attach <directory>`
 - `agentbox ls`
+- `agentbox health`
 - `agentbox stop <directory>`
 
 `agentbox run --runtime <opencode|codex> <directory>` resolves `<directory>` to
@@ -367,6 +368,50 @@ Rules:
 - `ls` prints a compact human-readable table in the MVP.
 - The MVP does not require machine-readable `ls` output.
 
+### `agentbox health`
+
+`health` reports runtime health for currently running managed workspace
+sessions from live Podman discovery.
+
+Expected output fields:
+
+- canonical git root
+- runtime
+- health
+- reason
+- endpoint
+- concrete container name
+
+Health values:
+
+- `healthy`: the runtime's official health endpoint responded successfully.
+- `unhealthy`: the runtime's official health endpoint did not respond with the
+  runtime-specific healthy result, or required runtime/endpoint metadata was not
+  recoverable from the running session.
+
+Runtime probes:
+
+- OpenCode is probed with `GET /global/health` on the discovered attach
+  endpoint. The session is healthy only when the response is `HTTP 200` and the
+  JSON response body has `healthy: true`.
+- Codex is probed with `GET /readyz` on the discovered attach endpoint. The
+  session is healthy only when the response is `HTTP 200`.
+
+Rules:
+
+- `health` includes only sessions whose discovered session status is `running`.
+- Failed, stopped, orphaned, and duplicate sessions are not included.
+- `health` probes each running session once and does not wait for recovery.
+- `health` prints a compact human-readable table in the MVP.
+- A healthy row uses reason `ok`.
+- An unhealthy row uses a concise reason such as `unreachable`, `HTTP 503`,
+  `malformed JSON`, or `healthy=false`.
+- If there are no running sessions, `health` prints an empty table with headers
+  and exits `0`.
+- Unhealthy rows do not make the command fail; discovery or Podman failures
+  remain command failures.
+- The MVP does not require machine-readable `health` output.
+
 ### `agentbox stop <directory>`
 
 `stop` stops the workspace session for the resolved repository, including
@@ -432,9 +477,10 @@ Required package output paths:
 - `share/fish/vendor_completions.d/agentbox.fish`
 - `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`,
   `share/man/man1/agentbox-attach.1`, `share/man/man1/agentbox-ls.1`,
-  `share/man/man1/agentbox-stop.1`, `share/man/man1/agentbox-runtime.1`, and
-  `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the Nix
-  fixup phase compresses manual pages
+  `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`,
+  `share/man/man1/agentbox-runtime.1`, and
+  `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the
+  Nix fixup phase compresses manual pages
 
 `nix build '.#default'` must produce those files in its result path.
 
