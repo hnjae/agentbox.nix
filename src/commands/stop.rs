@@ -15,7 +15,7 @@ use crate::paths::path_buf_to_utf8;
 use crate::podman::Podman;
 use crate::prompt;
 use crate::session::{
-    SessionGroup, SessionRecord, SessionStatus, discover_managed_sessions, exact_git_root_matches,
+    SessionGroup, SessionRecord, discover_managed_sessions, exact_git_root_matches,
     partition_sessions_by_git_root, select_stable_id_prefix,
 };
 use crate::workspace::resolve_workspace_identity;
@@ -144,14 +144,7 @@ pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandi
 }
 
 fn stop_prompt_candidate_matches(session: &SessionRecord) -> bool {
-    session.stable_id().is_some()
-        && matches!(
-            session.status,
-            SessionStatus::Running
-                | SessionStatus::Orphaned
-                | SessionStatus::Duplicate
-                | SessionStatus::Failed(_)
-        )
+    session.is_stop_target_candidate()
 }
 
 fn stop_prompt_candidate(session: &SessionRecord) -> Option<StopPromptCandidate> {

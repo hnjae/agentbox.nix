@@ -1,8 +1,15 @@
 use comfy_table::Table;
+use serde::Serialize;
+
+use crate::error::Result;
 
 pub(super) fn render_table(mut table: Table) -> String {
     trim_outer_padding(&mut table);
     format!("{}\n", table.trim_fmt())
+}
+
+pub(super) fn render_json<T: Serialize + ?Sized>(value: &T) -> Result<String> {
+    Ok(format!("{}\n", serde_json::to_string(value)?))
 }
 
 fn trim_outer_padding(table: &mut Table) {

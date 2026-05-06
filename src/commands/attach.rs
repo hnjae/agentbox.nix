@@ -15,7 +15,7 @@ use crate::cli::AttachArgs;
 use crate::podman::Podman;
 use crate::process::{ProcessRunner, format_status, run_command_status};
 use crate::prompt;
-use crate::session::{SessionRecord, SessionStatus, discover_managed_sessions};
+use crate::session::{SessionRecord, discover_managed_sessions};
 use crate::session::{prepare_attach_session, run_command_hint, select_single_session};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
@@ -92,8 +92,7 @@ pub type AttachPromptCandidate = prompt::Choice<PathBuf>;
 pub fn attach_prompt_candidates(sessions: &[SessionRecord]) -> Vec<AttachPromptCandidate> {
     let mut candidates = sessions
         .iter()
-        .filter(|session| session.status == SessionStatus::Running)
-        .filter(|session| session.attach_endpoint.is_some())
+        .filter(|session| session.is_attachable_candidate())
         .filter_map(attach_prompt_candidate)
         .collect::<Vec<_>>();
     prompt::sort_choices_by_label(&mut candidates);

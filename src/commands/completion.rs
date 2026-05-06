@@ -5,7 +5,7 @@ use crate::cli::{Cli, CompletionRootCommand, CompletionShell, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
-use crate::session::{SessionRecord, SessionStatus, discover_managed_sessions};
+use crate::session::{SessionRecord, discover_managed_sessions};
 
 pub fn run(shell: CompletionShell) -> Result<()> {
     match shell {
@@ -65,10 +65,8 @@ pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
 
 fn completion_candidate_matches(command: CompletionRootCommand, session: &SessionRecord) -> bool {
     match command {
-        CompletionRootCommand::Attach => session.status == SessionStatus::Running,
-        CompletionRootCommand::Health | CompletionRootCommand::Stop => {
-            session.stable_id().is_some()
-        }
+        CompletionRootCommand::Attach => session.is_attachable_candidate(),
+        CompletionRootCommand::Health | CompletionRootCommand::Stop => session.has_stable_id(),
     }
 }
 

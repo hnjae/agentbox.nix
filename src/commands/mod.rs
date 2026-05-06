@@ -14,12 +14,12 @@ pub mod clean;
 pub mod completion;
 pub mod health;
 pub mod ls;
+mod output;
 pub mod run;
 pub mod runtime;
 mod runtime_command;
 mod server_readiness;
 pub mod stop;
-mod table;
 mod workspace_flow;
 
 pub fn dispatch(command: Command, verbose: bool) -> Result<()> {

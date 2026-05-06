@@ -49,6 +49,16 @@ impl SessionStatus {
         matches!(self, Self::Failed(_))
     }
 
+    pub(crate) fn is_running(self) -> bool {
+        matches!(self, Self::Running)
+    }
+
+    pub(crate) fn is_stop_target_candidate(self) -> bool {
+        match self {
+            Self::Running | Self::Orphaned | Self::Duplicate | Self::Failed(_) => true,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Running => "running",

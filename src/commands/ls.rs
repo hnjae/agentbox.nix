@@ -6,7 +6,7 @@ use crate::error::Result;
 use crate::podman::Podman;
 use crate::session::{SessionRecord, discover_managed_sessions, sorted_session_refs_by_identity};
 
-use super::table;
+use super::output;
 
 pub fn run(args: LsArgs) -> Result<()> {
     let podman = Podman::new();
@@ -43,7 +43,7 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
         ]);
     }
 
-    table::render_table(table)
+    output::render_table(table)
 }
 
 pub fn render_json(sessions: &[SessionRecord]) -> Result<String> {
@@ -52,7 +52,7 @@ pub fn render_json(sessions: &[SessionRecord]) -> Result<String> {
         .map(LsJsonRow::from)
         .collect::<Vec<_>>();
 
-    Ok(format!("{}\n", serde_json::to_string(&rows)?))
+    output::render_json(&rows)
 }
 
 #[derive(Debug, Serialize)]

@@ -7,11 +7,11 @@ use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::{HostRuntimeHealthProbe, RuntimeHealthProbe};
 use crate::session::{
-    SessionDisplay, SessionRecord, SessionStatus, discover_managed_sessions,
-    select_stable_id_prefix, sort_session_refs_by_identity,
+    SessionDisplay, SessionRecord, discover_managed_sessions, select_stable_id_prefix,
+    sort_session_refs_by_identity,
 };
 
-use super::table;
+use super::output;
 
 pub fn run(args: HealthArgs) -> Result<()> {
     let podman = Podman::new();
@@ -57,13 +57,13 @@ fn render_table(rows: &[HealthRow<'_>]) -> String {
         ]);
     }
 
-    table::render_table(table)
+    output::render_table(table)
 }
 
 fn render_json(rows: &[HealthRow<'_>]) -> Result<String> {
     let rows = rows.iter().map(HealthJsonRow::from).collect::<Vec<_>>();
 
-    Ok(format!("{}\n", serde_json::to_string(&rows)?))
+    output::render_json(&rows)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,7 +95,7 @@ fn selected_health_sessions<'a>(
     let Some(target) = target else {
         return Ok(sessions
             .iter()
-            .filter(|session| session.status == SessionStatus::Running)
+            .filter(|session| session.is_running())
             .collect());
     };
 
@@ -106,7 +106,7 @@ fn selected_health_sessions<'a>(
             "stable id `{selection_id}` matches multiple managed sessions; health requires a single running session",
         )));
     };
-    if session.status != SessionStatus::Running {
+    if !session.is_running() {
         return Err(Error::msg(format!(
             "managed session `{}` is `{}`; health only probes running sessions",
             session.stable_id().unwrap_or(&selection_id),
