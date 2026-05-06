@@ -15,6 +15,7 @@ use crate::metadata::{
     REQUIRED_SESSION_MARKER_LABEL_VALUES, REQUIRED_SESSION_METADATA_LABELS,
     REQUIRED_SESSION_WORKSPACE_IDENTITY_LABELS,
 };
+use crate::paths::path_is_or_descendant;
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
 use crate::workspace::git_root_hash12;
 
@@ -229,9 +230,7 @@ impl RequiredSessionLabels {
 
     fn launch_directory_is_valid(&self) -> bool {
         self.launch_directory.is_absolute()
-            && self
-                .launch_directory
-                .starts_with(self.identity.canonical_git_root())
+            && path_is_or_descendant(&self.launch_directory, self.identity.canonical_git_root())
     }
 }
 

@@ -10,11 +10,13 @@ use std::fs;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use crate::paths::path_is_or_descendant;
+
 pub(super) fn envrc_applies_within_git_root(
     target_directory: &Utf8Path,
     git_root: &Utf8Path,
 ) -> bool {
-    if target_directory != git_root && !target_directory.starts_with(git_root) {
+    if !path_is_or_descendant(target_directory, git_root) {
         return false;
     }
 
@@ -43,7 +45,7 @@ pub(super) fn path_reaches_mount_root(path: &Utf8Path, mount_root: &Utf8Path) ->
 }
 
 fn normalized_path_reaches_mount_root(path: &Utf8Path, normalized_mount_root: &Utf8Path) -> bool {
-    is_path_or_descendant(&normalize_path(path), normalized_mount_root)
+    path_is_or_descendant(&normalize_path(path), normalized_mount_root)
 }
 
 fn symlink_expansion_reaches_mount_root(
@@ -87,10 +89,6 @@ fn resolve_symlink_target(link_path: &Utf8Path, target: &Utf8Path) -> Utf8PathBu
         .parent()
         .map(|parent| parent.join(target))
         .unwrap_or_else(|| target.to_owned())
-}
-
-fn is_path_or_descendant(path: &Utf8Path, root: &Utf8Path) -> bool {
-    path == root || path.starts_with(root)
 }
 
 fn normalize_path(path: &Utf8Path) -> Utf8PathBuf {
