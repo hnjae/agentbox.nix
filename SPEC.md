@@ -518,11 +518,14 @@ Example:
 This same absolute path rule is required so file paths emitted by the runtime
 match the host filesystem layout.
 
-The runtime process runs as the image-local `user` account, and that account's
-UID/GID inside the container must map to the invoking host user. A workspace
-file owned by the invoking host user must therefore appear owned by the runtime
-user inside the container. `agentbox` must not mutate workspace ownership or
-permissions to achieve this.
+The runtime process runs as the image-local `user` account with UID `1000` and
+home `/home/user`. The runtime user's primary GID inside the container is mapped
+from the invoking host user's primary GID in Podman's user namespace. The
+runtime also preserves the invoking host user's supplemental group access using
+Podman's `keep-groups` behavior. A workspace file owned by, or group-writable
+for, the invoking host user must therefore be accessible to the runtime user
+according to normal host ownership and permission bits. `agentbox` must not
+mutate workspace ownership or permissions to achieve this.
 
 ### Launch Directory CWD
 
@@ -850,7 +853,12 @@ MVP isolation expectations:
 
 Runtime user and bind-mount rules:
 
-- The container runs as the non-root `user` account with home `/home/user`.
+- The container runs as the non-root image-local `user` account with UID `1000`
+  and home `/home/user`.
+- The runtime user's primary GID is the invoking host user's primary GID as
+  mapped by Podman's user namespace configuration.
+- The invoking host user's supplemental groups are preserved for bind-mount
+  permission checks using Podman's `keep-groups` behavior.
 - The workspace bind mount is read-write by default.
 - The Podman-managed runtime cache volume at `/home/user/.cache/nix` is writable
   by the runtime user.
