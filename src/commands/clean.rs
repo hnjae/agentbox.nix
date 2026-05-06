@@ -6,10 +6,9 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::io::{self, IsTerminal};
-
 use crate::cli::CleanArgs;
 use crate::podman::{Podman, PodmanContainerInspect};
+use crate::prompt;
 use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
 
@@ -213,19 +212,11 @@ fn skipped_lines(skipped: &[SkippedResource]) -> impl Iterator<Item = String> + 
 }
 
 fn confirm_interactive() -> Result<bool> {
-    let stdin = io::stdin();
-    if !stdin.is_terminal() {
-        return Err(Error::msg(
-            "agentbox clean requires --yes or --dry-run when stdin is not a TTY",
-        ));
-    }
-
-    eprint!("Proceed? [y/N] ");
-
-    let mut input = String::new();
-    stdin.read_line(&mut input)?;
-    let response = input.trim();
-    Ok(response.eq_ignore_ascii_case("y") || response.eq_ignore_ascii_case("yes"))
+    prompt::confirm(
+        "Proceed?",
+        false,
+        "agentbox clean requires --yes or --dry-run when stdin or stderr is not a TTY",
+    )
 }
 
 fn apply_clean_plan(podman: &Podman, plan: &CleanPlan) -> Result<()> {

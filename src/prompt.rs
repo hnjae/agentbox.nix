@@ -9,7 +9,7 @@
 use std::fmt::Display;
 use std::io::{self, IsTerminal};
 
-use inquire::{InquireError, MultiSelect, Select};
+use inquire::{Confirm, InquireError, MultiSelect, Select};
 
 use crate::{Error, Result};
 
@@ -41,11 +41,28 @@ where
         .map_err(selection_error)
 }
 
+pub fn confirm(message: &'static str, default: bool, non_tty_error: &'static str) -> Result<bool> {
+    require_interactive_terminal(non_tty_error)?;
+    Confirm::new(message)
+        .with_default(default)
+        .prompt_skippable()
+        .map(|answer| answer.unwrap_or(false))
+        .map_err(confirmation_error)
+}
+
 pub fn require_interactive_terminal(non_tty_error: &'static str) -> Result<()> {
     if io::stdin().is_terminal() && io::stderr().is_terminal() {
         Ok(())
     } else {
         Err(Error::msg(non_tty_error))
+    }
+}
+
+pub fn confirmation_error(error: InquireError) -> Error {
+    match error {
+        InquireError::OperationInterrupted => Error::msg("confirmation interrupted"),
+        InquireError::NotTTY => Error::msg("interactive confirmation requires a TTY"),
+        error => Error::msg(format!("interactive confirmation failed: {error}")),
     }
 }
 

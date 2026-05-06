@@ -8,6 +8,7 @@
 
 use std::fs;
 
+use agentbox::prompt;
 use agentbox::runtime::default_image::{CODEX_DEFAULT_IMAGE, OPENCODE_DEFAULT_IMAGE};
 use predicates::prelude::*;
 use serde_json::json;
@@ -53,13 +54,21 @@ fn clean_requires_confirmation_when_stdin_is_not_a_tty() {
         .agentbox_assert(&["clean"])
         .failure()
         .stderr(predicate::str::contains(
-            "agentbox clean requires --yes or --dry-run when stdin is not a TTY",
+            "agentbox clean requires --yes or --dry-run when stdin or stderr is not a TTY",
         ));
 
     let log = harness.read_log();
     assert!(
         !log.iter().any(|line| line.contains(" rm ")),
         "non-TTY refusal must happen before deletion"
+    );
+}
+
+#[test]
+fn clean_confirmation_errors_are_stable() {
+    assert_eq!(
+        prompt::confirmation_error(inquire::InquireError::OperationInterrupted).to_string(),
+        "confirmation interrupted",
     );
 }
 
