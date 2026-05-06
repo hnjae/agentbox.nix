@@ -191,6 +191,23 @@ fn completion_scripts_offer_stop_all() {
 }
 
 #[test]
+fn completion_scripts_offer_stop_candidates_at_every_target_position() {
+    let bash = capture_completion_script_shell("bash");
+    assert!(bash.contains("COMP_WORDS[*]:2:COMP_CWORD-2"));
+    assert!(bash.contains("_agentbox_completion_roots stop"));
+    assert!(!bash.contains("\"$COMP_CWORD\" -eq 3 && \"${COMP_WORDS[2]}\" == \"--force\""));
+
+    let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("CURRENT >= 3"));
+    assert!(zsh.contains("stop_words_before"));
+    assert!(zsh.contains("_agentbox_completion_roots stop"));
+
+    let fish = capture_completion_script_shell("fish");
+    assert!(fish.contains("__agentbox_stop_all_seen"));
+    assert!(fish.contains("and not __agentbox_stop_all_seen"));
+}
+
+#[test]
 fn completion_scripts_offer_clean_flags() {
     let bash = capture_completion_script_shell("bash");
     assert!(bash.contains("clean)"));

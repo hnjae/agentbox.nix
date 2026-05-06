@@ -7,13 +7,17 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::cli::StopArgs;
 use crate::podman::Podman;
-use crate::session::{SessionRecord, discover_managed_sessions, select_stable_id_prefix};
+use crate::prompt;
+use crate::session::{
+    SessionRecord, SessionStatus, discover_managed_sessions, select_stable_id_prefix,
+};
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
@@ -28,16 +32,48 @@ pub fn run(args: StopArgs) -> Result<()> {
         return stop_all_running();
     }
 
-    if args.targets.is_empty() {
-        return Err(Error::msg(
-            "missing stop target; pass a workspace, stable id prefix, or --all",
-        ));
+    let targets = if args.targets.is_empty() {
+        select_stop_targets()?
+    } else {
+        args.targets
+    };
+
+    stop_targets(&targets, args.force)
+}
+
+fn select_stop_targets() -> Result<Vec<PathBuf>> {
+    let non_tty_error =
+        "agentbox stop requires a target or --all when stdin or stderr is not a TTY";
+    prompt::require_interactive_terminal(non_tty_error)?;
+    let podman = Podman::new();
+    let candidates = stop_prompt_candidates(&discover_managed_sessions(&podman)?);
+
+    if candidates.is_empty() {
+        eprintln!("agentbox stop: no managed sessions available to stop");
+        return Ok(Vec::new());
     }
 
-    stop_targets(&args.targets, args.force)
+    let selected = prompt::select_many("Select sessions to stop", candidates, non_tty_error)?;
+    if selected.is_empty() {
+        eprintln!("agentbox stop: no sessions selected");
+        return Ok(Vec::new());
+    }
+
+    let mut targets = selected
+        .into_iter()
+        .map(|candidate| candidate.target)
+        .collect::<Vec<_>>();
+    targets.sort();
+    targets.dedup();
+
+    Ok(targets)
 }
 
 fn stop_targets(targets: &[PathBuf], force: bool) -> Result<()> {
+    if targets.is_empty() {
+        return Ok(());
+    }
+
     if targets.len() == 1 {
         return stop_target(&targets[0], force);
     }
@@ -90,6 +126,60 @@ fn render_target_stop_failures(failures: &[TargetStopFailure]) -> String {
         .join("; ");
 
     format!("failed to stop {} {noun}: {details}", failures.len())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StopPromptCandidate {
+    label: String,
+    target: PathBuf,
+}
+
+impl StopPromptCandidate {
+    fn new(label: String, target: PathBuf) -> Self {
+        Self { label, target }
+    }
+
+    pub fn target(&self) -> &Path {
+        &self.target
+    }
+}
+
+impl fmt::Display for StopPromptCandidate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.label)
+    }
+}
+
+pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandidate> {
+    let mut candidates = sessions
+        .iter()
+        .filter(|session| stop_prompt_candidate_matches(session))
+        .filter_map(stop_prompt_candidate)
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.label.cmp(&right.label));
+    candidates
+}
+
+fn stop_prompt_candidate_matches(session: &SessionRecord) -> bool {
+    session.stable_id().is_some()
+        && matches!(
+            session.status,
+            SessionStatus::Running
+                | SessionStatus::Orphaned
+                | SessionStatus::Duplicate
+                | SessionStatus::Failed(_)
+        )
+}
+
+fn stop_prompt_candidate(session: &SessionRecord) -> Option<StopPromptCandidate> {
+    let id = session.stable_id()?;
+    let root = session
+        .canonical_git_root()
+        .map_or("unknown", |root| root.as_str());
+    let runtime = session.runtime().unwrap_or("unknown");
+    let label = format!("{id} {root} {runtime} {}", session.status.as_str());
+
+    Some(StopPromptCandidate::new(label, PathBuf::from(id)))
 }
 
 enum StopTarget {

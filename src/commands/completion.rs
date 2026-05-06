@@ -110,16 +110,18 @@ _agentbox() {
             fi
             ;;
         stop)
-            if [[ "$COMP_CWORD" -eq 2 ]]; then
-                if [[ "$cur" == --* ]]; then
-                    COMPREPLY=( $(compgen -W "--force --all" -- "$cur") )
-                else
-                    _agentbox_completion_roots stop
-                fi
-            elif [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[2]}" == "--force" ]]; then
+            local stop_words_before
+            stop_words_before="${COMP_WORDS[*]:2:COMP_CWORD-2}"
+            if [[ " $stop_words_before " == *" --all "* ]]; then
+                return 0
+            fi
+
+            if [[ "$cur" == --* ]]; then
+                COMPREPLY=( $(compgen -W "--force --all" -- "$cur") )
+            else
                 _agentbox_completion_roots stop
             fi
-        ;;
+            ;;
         run)
             if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--runtime" ]]; then
                 COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
@@ -201,11 +203,22 @@ _agentbox() {
       (( CURRENT == 3 )) && _agentbox_completion_roots attach
       ;;
     stop)
-      if (( CURRENT == 3 )); then
-        _values 'option' '--force[clean up duplicate or failed exact matches]' '--all[stop every running managed session]'
-        _agentbox_completion_roots stop
-      elif (( CURRENT == 4 && "$words[3]" == "--force" )); then
-        _agentbox_completion_roots stop
+      if (( CURRENT >= 3 )); then
+        local stop_words_before
+        stop_words_before=""
+        if (( CURRENT > 3 )); then
+          stop_words_before="${words[3,CURRENT-1]}"
+        fi
+
+        if [[ " $stop_words_before " == *" --all "* ]]; then
+          return
+        fi
+
+        if [[ "$PREFIX" == -* ]]; then
+          _values 'option' '--force[clean up duplicate or failed exact matches]' '--all[stop every running managed session]'
+        else
+          _agentbox_completion_roots stop
+        fi
       fi
       ;;
     run)
@@ -274,6 +287,10 @@ function __agentbox_completion_roots --argument-names command
     end
 end
 
+function __agentbox_stop_all_seen
+    commandline -opc | contains -- --all
+end
+
 complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "@SUBCOMMAND_NAMES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots attach)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from ls" -s o -l output -r -a "@OUTPUT_VALUES@"
@@ -281,7 +298,7 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from health" -s o -l output -
 complete -c agentbox -f -n "__fish_seen_subcommand_from health" -a "(__agentbox_completion_roots health)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate or failed exact matches"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l all -d "Stop every running managed session"
-complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots stop)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop; and not __agentbox_stop_all_seen" -a "(__agentbox_completion_roots stop)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l dry-run -d "Print cleanup candidates without deleting"
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l yes -d "Delete cleanup candidates without prompting"
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l images -d "Consider default runtime images"

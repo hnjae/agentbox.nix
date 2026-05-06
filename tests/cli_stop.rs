@@ -8,7 +8,9 @@
 
 use std::path::Path;
 
-use agentbox::metadata::LABEL_GIT_ROOT;
+use agentbox::commands::stop::stop_prompt_candidates;
+use agentbox::metadata::{LABEL_ATTACH_SCHEME, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH};
+use agentbox::session::discover_managed_sessions_from_ps;
 use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
 
@@ -17,8 +19,9 @@ mod support;
 
 use support::{
     CliHarness as Harness, cached_managed_inspect_fixture as managed_inspect_fixture,
-    managed_ps_entry, opencode_managed_labels as managed_labels,
-    opencode_workspace_inspect_fixture, operation_names, ps_fixture, workspace_ps_entry,
+    inspect_models_by_id, managed_container_models, managed_ps_entry,
+    opencode_managed_labels as managed_labels, opencode_workspace_inspect_fixture, operation_names,
+    ps_fixture, workspace_ps_entry,
 };
 
 #[test]
@@ -53,6 +56,74 @@ fn stop_stops_the_container_and_leaves_the_volume_and_workspace_untouched() {
         !log.iter().any(|line| line.starts_with("volume ")),
         "stop must not delete the matching cache volume"
     );
+}
+
+#[test]
+fn stop_without_targets_requires_tty_for_selection() {
+    let harness = install_harness();
+
+    harness
+        .agentbox_assert(&["stop"])
+        .failure()
+        .stderr(predicates::str::contains(
+            "agentbox stop requires a target or --all when stdin or stderr is not a TTY",
+        ));
+
+    assert!(harness.read_log().is_empty());
+}
+
+#[test]
+fn stop_prompt_candidates_include_stop_completion_eligible_sessions() {
+    let running_fixture = support::temp_workspace("running");
+    let failed_fixture = support::temp_workspace("failed");
+    let unidentifiable_fixture = support::temp_workspace("unidentifiable");
+    let running = &running_fixture.workspace;
+    let failed = &failed_fixture.workspace;
+    let unidentifiable = &unidentifiable_fixture.workspace;
+    let (running_ps, running_inspect) = managed_container_models(
+        &running.container_name,
+        running.canonical_git_root.as_ref(),
+        true,
+        true,
+    );
+    let (failed_ps, mut failed_inspect) = managed_container_models(
+        &failed.container_name,
+        failed.canonical_git_root.as_ref(),
+        true,
+        true,
+    );
+    let (unidentifiable_ps, mut unidentifiable_inspect) = managed_container_models(
+        &unidentifiable.container_name,
+        unidentifiable.canonical_git_root.as_ref(),
+        true,
+        true,
+    );
+    failed_inspect.config.labels.remove(LABEL_ATTACH_SCHEME);
+    unidentifiable_inspect
+        .config
+        .labels
+        .remove(LABEL_GIT_ROOT_HASH);
+
+    let sessions = discover_managed_sessions_from_ps(
+        vec![running_ps, failed_ps, unidentifiable_ps],
+        inspect_models_by_id(vec![
+            running_inspect,
+            failed_inspect,
+            unidentifiable_inspect,
+        ]),
+    )
+    .unwrap();
+
+    let candidates = stop_prompt_candidates(&sessions);
+    let mut targets = candidates
+        .iter()
+        .map(|candidate| candidate.target().to_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    targets.sort();
+    let mut expected = vec![failed.hash12.clone(), running.hash12.clone()];
+    expected.sort();
+
+    assert_eq!(targets, expected);
 }
 
 #[test]

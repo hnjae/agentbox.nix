@@ -9,7 +9,7 @@
 use std::fmt::Display;
 use std::io::{self, IsTerminal};
 
-use inquire::{InquireError, Select};
+use inquire::{InquireError, MultiSelect, Select};
 
 use crate::{Error, Result};
 
@@ -23,6 +23,20 @@ where
 {
     require_interactive_terminal(non_tty_error)?;
     Select::new(message, options)
+        .prompt()
+        .map_err(selection_error)
+}
+
+pub fn select_many<T>(
+    message: &'static str,
+    options: Vec<T>,
+    non_tty_error: &'static str,
+) -> Result<Vec<T>>
+where
+    T: Display,
+{
+    require_interactive_terminal(non_tty_error)?;
+    MultiSelect::new(message, options)
         .prompt()
         .map_err(selection_error)
 }
