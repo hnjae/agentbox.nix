@@ -197,6 +197,27 @@ Global flags:
   commands that support verbose diagnostics. Diagnostic output is written to
   stderr and must not replace machine-readable or success output on stdout.
 
+Global output rules:
+
+- stdout is reserved for user-requested data output: `ls`, `health`, shell
+  completion output, hidden completion root output, `--help`, and `--version`.
+  Status messages, progress, success summaries, cancellation notices, verbose
+  traces, forwarded external command output, and application errors are written
+  to stderr.
+- Application stderr logs use one line per message with this shape:
+  `[2026-05-06T22:15:56+09:00] INFO: message`.
+- Log timestamps use the local UTC offset. If the local offset cannot be
+  determined, timestamps use UTC with `+00:00`.
+- Log severities are `ERR`, `WARNING`, `INFO`, and `DEBUG`.
+- ANSI color is used only when stderr is a TTY and `NO_COLOR` is not set.
+  Timestamps and `DEBUG` labels are bright black, `ERR` labels are red,
+  `WARNING` labels are yellow, and `INFO` labels are blue.
+- Clap parse errors and usage text keep Clap's native stderr format. `--help`
+  and `--version` keep Clap's native stdout format.
+- Interactive prompt UI is rendered on stderr without being wrapped as log
+  lines. `attach` runs the runtime host client with inherited stdio and does
+  not wrap the client output as logs.
+
 ### `agentbox run [--runtime <opencode|codex>] <directory>`
 
 `run` launches a new workspace session as a detached runtime server.
@@ -238,12 +259,13 @@ Expected behavior:
 
 Progress and diagnostics:
 
-- `run` prints short phase progress to stderr while checking prerequisites,
-  resolving session state, ensuring the runtime image, starting the detached
-  container, and waiting for the runtime server endpoint.
-- `run` keeps its final success message on stdout.
+- `run` prints short `INFO` log progress to stderr while checking
+  prerequisites, resolving session state, ensuring the runtime image, starting
+  the detached container, and waiting for the runtime server endpoint.
+- `run` prints its final success message as an `INFO` log on stderr. Successful
+  `run` does not write to stdout.
 - With `--verbose`, `run` also prints the external commands it executes and
-  forwards non-JSON Podman command output to stderr.
+  forwards non-JSON Podman command output as `DEBUG` logs on stderr.
 - If the runtime container fails to start, exits before readiness, or times out
   before becoming reachable, `run` includes a short `podman logs --tail` excerpt
   for the managed container when Podman can provide one.
@@ -253,7 +275,7 @@ Runtime rules:
 - `run` accepts only `opencode` and `codex` in the MVP.
 - `--runtime` selects the runtime for the new session when it is present.
 - When `--runtime` is absent in an interactive terminal, the runtime prompt is
-  rendered on stderr and the final success message remains on stdout.
+  rendered on stderr and the final success message is an `INFO` log on stderr.
 - Canceling the runtime prompt with Escape exits non-zero with
   `selection canceled`.
 - Interrupting the runtime prompt with Ctrl-C exits non-zero with
@@ -325,21 +347,24 @@ Volume cleanup rules:
 
 Confirmation and output rules:
 
-- If no resources are cleanup candidates, `clean` prints `nothing to clean` and
-  exits successfully.
-- With `--dry-run`, `clean` prints cleanup candidates and skip reasons, deletes
-  nothing, and exits successfully.
+- If no resources are cleanup candidates, `clean` emits an `INFO` log
+  `nothing to clean` on stderr and exits successfully.
+- With `--dry-run`, `clean` emits cleanup candidates and skip reasons as `INFO`
+  logs on stderr, deletes nothing, and exits successfully.
 - With `--yes`, `clean` deletes cleanup candidates without prompting.
 - Without `--dry-run` or `--yes`, `clean` renders an interactive confirmation
   prompt on stderr only when stdin and stderr are terminals. The default answer
   is No. Case-insensitive `y` or `yes` approves cleanup; `n`, `no`, an empty
-  response, or prompt cancellation prints `aborted` and exits successfully.
+  response, or prompt cancellation emits a `WARNING` log `aborted` on stderr
+  and exits successfully.
 - Interrupting the confirmation prompt with Ctrl-C exits non-zero with
   `confirmation interrupted`.
 - When stdin or stderr is not a TTY, `clean` fails unless `--yes` or
   `--dry-run` is set.
 - If deletion of one candidate fails, `clean` continues deleting the remaining
   candidates, then exits non-zero with a summary of failed resources.
+- Cleanup candidate, skip, deletion, abort, and no-op messages are stderr logs.
+  Successful `clean` does not write to stdout.
 
 Safety rules:
 
@@ -372,6 +397,8 @@ Rules:
 - The update command does not write metadata under runtime host state
   directories such as `~/.codex`, `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`,
   or `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`.
+- Progress and result messages from `runtime update` are `INFO` logs on stderr.
+  Successful `runtime update` does not write to stdout.
 
 ### `agentbox attach [directory]`
 
@@ -598,11 +625,11 @@ Expected behavior:
     fail with a clear error that a stop target or `--all` is required in
     non-interactive use.
 20. If no selector candidates exist, print
-    `agentbox stop: no managed sessions available to stop` to stderr and exit
-    successfully without stopping anything.
+    `agentbox stop: no managed sessions available to stop` as an `INFO` log on
+    stderr and exit successfully without stopping anything.
 21. If the selector returns an empty selection, print
-    `agentbox stop: no sessions selected` to stderr and exit successfully
-    without stopping anything.
+    `agentbox stop: no sessions selected` as a `WARNING` log on stderr and exit
+    successfully without stopping anything.
 22. If `--all` is set, do not accept a `<target>` and stop all running managed
     sessions discovered from live Podman state.
 23. `stop --all` stops running, orphaned, duplicate, and otherwise malformed
@@ -635,6 +662,8 @@ Safety rules:
   a matched session when its git-root label is recoverable.
 - `stop` never deletes the user workspace.
 - `stop` never directly removes images or named cache volumes.
+- Stop status and no-op messages are stderr logs. Successful `stop` does not
+  write to stdout.
 
 ## Completion And Installed Assets
 
