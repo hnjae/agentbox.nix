@@ -48,11 +48,25 @@ check: static-checks test
 
 [group('build')]
 build:
-    nix --no-warn-dirty build -- '.#default'
+    nix --no-warn-dirty build -- '.#agentbox'
 
 [group('build')]
+[script('sh')]
 install:
-    nix --no-warn-dirty profile add -- '.#default'
+    set -eu
+
+    repo_url="git+file://$(git rev-parse --show-toplevel)"
+    profile_json="$(nix profile list --json)"
+
+    if printf '%s\n' "${profile_json}" \
+        | jq --exit-status --arg repo_url "${repo_url}" \
+            '.elements.agentbox.originalUrl == $repo_url' \
+            >/dev/null
+    then
+        nix --no-warn-dirty profile upgrade agentbox
+    else
+        nix --no-warn-dirty profile add -- '.#agentbox'
+    fi
 
 [group('build')]
 build-rs:
