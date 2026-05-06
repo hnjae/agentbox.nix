@@ -28,6 +28,3 @@ which = "8"
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
-
-[lints.clippy]
-cargo = "warn"
