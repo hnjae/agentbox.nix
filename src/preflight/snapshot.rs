@@ -7,7 +7,11 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::ffi::CString;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
@@ -47,6 +51,7 @@ pub struct HostDirectoryPreflightSnapshot {
     pub is_directory: bool,
     pub readable: bool,
     pub writable: bool,
+    pub searchable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,10 +127,13 @@ impl HostDirectoryPreflightSnapshot {
         let is_directory = metadata.as_ref().is_some_and(fs::Metadata::is_dir);
         let readable = source
             .as_ref()
-            .is_some_and(|path| fs::read_dir(path.as_std_path()).is_ok());
-        let writable = metadata
+            .is_some_and(|path| current_user_has_access(path, AccessMode::Read));
+        let writable = source
             .as_ref()
-            .is_some_and(|metadata| !metadata.permissions().readonly());
+            .is_some_and(|path| current_user_has_access(path, AccessMode::Write));
+        let searchable = source
+            .as_ref()
+            .is_some_and(|path| current_user_has_access(path, AccessMode::Search));
 
         Self {
             source,
@@ -133,7 +141,45 @@ impl HostDirectoryPreflightSnapshot {
             is_directory,
             readable,
             writable,
+            searchable,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AccessMode {
+    Read,
+    Write,
+    Search,
+}
+
+#[cfg(unix)]
+fn current_user_has_access(path: &Utf8Path, mode: AccessMode) -> bool {
+    let Ok(path) = CString::new(path.as_std_path().as_os_str().as_bytes()) else {
+        return false;
+    };
+
+    // access(2) checks the real uid/gid, which matches the host user whose
+    // state directory will be mounted into the runtime.
+    unsafe { libc::access(path.as_ptr(), access_mode_flag(mode)) == 0 }
+}
+
+#[cfg(unix)]
+fn access_mode_flag(mode: AccessMode) -> libc::c_int {
+    match mode {
+        AccessMode::Read => libc::R_OK,
+        AccessMode::Write => libc::W_OK,
+        AccessMode::Search => libc::X_OK,
+    }
+}
+
+#[cfg(not(unix))]
+fn current_user_has_access(path: &Utf8Path, mode: AccessMode) -> bool {
+    match mode {
+        AccessMode::Read => fs::read_dir(path.as_std_path()).is_ok(),
+        AccessMode::Write => fs::metadata(path.as_std_path())
+            .is_ok_and(|metadata| !metadata.permissions().readonly()),
+        AccessMode::Search => path.as_std_path().is_dir(),
     }
 }
 
@@ -228,4 +274,62 @@ fn unix_socket_exists(path: &Utf8Path) -> bool {
 #[cfg(not(unix))]
 fn unix_socket_exists(_path: &Utf8Path) -> bool {
     false
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    #[test]
+    fn host_directory_detect_uses_current_user_access_not_any_writable_mode_bit() {
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+
+        let sandbox = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(sandbox.path().to_path_buf()).unwrap();
+        let state_directory = root.join("state");
+        fs::create_dir(&state_directory).unwrap();
+        fs::set_permissions(&state_directory, fs::Permissions::from_mode(0o020)).unwrap();
+
+        let snapshot = HostDirectoryPreflightSnapshot::detect(Some(state_directory.clone()));
+
+        fs::set_permissions(&state_directory, fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert!(snapshot.exists);
+        assert!(snapshot.is_directory);
+        assert!(!snapshot.readable);
+        assert!(!snapshot.writable);
+        assert!(!snapshot.searchable);
+    }
+
+    #[test]
+    fn host_directory_detect_accepts_read_write_search_access_without_probe_file() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(sandbox.path().to_path_buf()).unwrap();
+        let state_directory = root.join("state");
+        fs::create_dir(&state_directory).unwrap();
+        fs::set_permissions(&state_directory, fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert_eq!(
+            fs::read_dir(&state_directory).unwrap().count(),
+            0,
+            "test setup should start with an empty directory"
+        );
+
+        let snapshot = HostDirectoryPreflightSnapshot::detect(Some(state_directory.clone()));
+
+        assert!(snapshot.exists);
+        assert!(snapshot.is_directory);
+        assert!(snapshot.readable);
+        assert!(snapshot.writable);
+        assert!(snapshot.searchable);
+        assert_eq!(
+            fs::read_dir(&state_directory).unwrap().count(),
+            0,
+            "access detection must not create probe files"
+        );
+    }
 }

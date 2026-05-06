@@ -94,7 +94,10 @@ fn stop_targets(targets: &[PathBuf], force: bool) -> Result<()> {
 
 fn stop_target(target: &Path, force: bool) -> Result<()> {
     match resolve_stop_target(target)? {
-        StopTarget::GitRoot(git_root) => stop_git_root(&git_root, force, target),
+        StopTarget::ResolvedGitRoot(git_root) => stop_git_root(&git_root, force, target),
+        StopTarget::ExactStoredGitRootPath(git_root) => {
+            stop_exact_stored_git_root_path(&git_root, force, target)
+        }
         StopTarget::StableId(prefix) => stop_stable_id(&prefix, force, target),
     }
 }
@@ -183,7 +186,8 @@ fn stop_prompt_candidate(session: &SessionRecord) -> Option<StopPromptCandidate>
 }
 
 enum StopTarget {
-    GitRoot(Utf8PathBuf),
+    ResolvedGitRoot(Utf8PathBuf),
+    ExactStoredGitRootPath(Utf8PathBuf),
     StableId(String),
 }
 
@@ -200,6 +204,35 @@ fn stop_git_root(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> 
         if sessions.len() > 1 && !force {
             return Err(Error::msg(format!(
                 "duplicate managed sessions exist for `{git_root}`; rerun `agentbox stop --force {}` to remove all exact matches",
+                target.display()
+            )));
+        }
+
+        let failures = sessions
+            .iter()
+            .filter_map(|session| cleanup_managed_container(locked.podman(), session))
+            .collect::<Vec<_>>();
+
+        Ok(failures)
+    })?;
+
+    finish_cleanup(git_root.as_str(), &failures)
+}
+
+fn stop_exact_stored_git_root_path(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> {
+    let failures = with_locked_git_root(git_root, |locked| {
+        let sessions =
+            exact_full_root_matches(discover_managed_sessions(locked.podman())?, git_root);
+
+        if sessions.is_empty() {
+            return Err(Error::msg(format!(
+                "no managed session exists for exact stored git-root path `{git_root}`"
+            )));
+        }
+
+        if sessions.len() > 1 && !force {
+            return Err(Error::msg(format!(
+                "duplicate managed sessions exist for exact stored git-root path `{git_root}`; rerun `agentbox stop --force {}` to remove all exact matches",
                 target.display()
             )));
         }
@@ -248,13 +281,13 @@ fn stop_all_running() -> Result<()> {
 fn resolve_stop_target(target: &Path) -> Result<StopTarget> {
     if target.exists() {
         return resolve_workspace_identity(target)
-            .map(|workspace| StopTarget::GitRoot(workspace.canonical_git_root));
+            .map(|workspace| StopTarget::ResolvedGitRoot(workspace.canonical_git_root));
     }
 
     if target.is_absolute() {
         let git_root = Utf8PathBuf::from_path_buf(target.to_path_buf())
             .map_err(|path| Error::msg(format!("non-utf8 path: {path:?}")))?;
-        return Ok(StopTarget::GitRoot(git_root));
+        return Ok(StopTarget::ExactStoredGitRootPath(git_root));
     }
 
     let prefix = target.to_str().ok_or_else(|| {

@@ -53,6 +53,7 @@ fn host_directory(path: &str) -> HostDirectoryPreflightSnapshot {
         is_directory: true,
         readable: true,
         writable: true,
+        searchable: true,
     }
 }
 

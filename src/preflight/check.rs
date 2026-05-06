@@ -207,7 +207,7 @@ impl<'a> HostStateMountRequirement<'a> {
             )));
         }
 
-        if !self.state.readable || !self.state.writable {
+        if !self.state.readable || !self.state.writable || !self.state.searchable {
             return Err(Error::msg(format!(
                 "Host {} {} directory is not readable and writable: {source}",
                 self.spec.product_name, self.spec.description,

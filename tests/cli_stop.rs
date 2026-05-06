@@ -396,6 +396,113 @@ fn stop_allows_exact_missing_path_match_for_orphaned_root_identity() {
 }
 
 #[test]
+fn stop_force_allows_exact_missing_path_match_for_failed_root_identity() {
+    let repo = support::temp_git_repo();
+    let root = repo.path().canonicalize().unwrap();
+    let root_string = root.to_str().unwrap().to_string();
+    let hash = git_root_hash12(Utf8Path::new(&root_string));
+    let container_name = "failed-session";
+    let harness = install_harness();
+    let mut labels = managed_labels(&root_string, &hash, container_name);
+    labels.remove(LABEL_ATTACH_SCHEME);
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        "failed-id",
+        container_name,
+        &hash,
+    )]));
+    harness.write_inspect(
+        "failed-id",
+        &managed_inspect_fixture(container_name, &root_string, true, labels),
+    );
+    drop(repo);
+
+    run_command(&harness, Path::new(&root_string), &["--force"]).success();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
+}
+
+#[test]
+fn stop_missing_absolute_path_without_exact_stored_match_fails() {
+    let fixture = support::temp_workspace("nested");
+    let workspace = &fixture.workspace;
+    let target = fixture
+        .workspace
+        .canonical_git_root
+        .with_file_name("missing-agentbox-root");
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "session-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "session-id",
+        &opencode_workspace_inspect_fixture(workspace, true, true),
+    );
+
+    run_command(&harness, target.as_std_path(), &[])
+        .failure()
+        .stderr(predicates::str::contains(
+            "no managed session exists for exact stored git-root path",
+        ))
+        .stderr(predicates::str::contains(target.as_str()));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
+}
+
+#[test]
+fn stop_duplicate_exact_missing_stored_path_requires_force_before_cleanup() {
+    let repo = support::temp_git_repo();
+    let root = repo.path().canonicalize().unwrap();
+    let root_string = root.to_str().unwrap().to_string();
+    let hash = git_root_hash12(Utf8Path::new(&root_string));
+    let harness = install_harness();
+    write_duplicate_stored_git_root_sessions(&harness, &root_string, &hash);
+    drop(repo);
+
+    run_command(&harness, Path::new(&root_string), &[])
+        .failure()
+        .stderr(predicates::str::contains(
+            "duplicate managed sessions exist for exact stored git-root path",
+        ))
+        .stderr(predicates::str::contains("agentbox stop --force"));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "inspect"]);
+}
+
+#[test]
+fn stop_force_removes_duplicate_exact_missing_stored_path_matches() {
+    let repo = support::temp_git_repo();
+    let root = repo.path().canonicalize().unwrap();
+    let root_string = root.to_str().unwrap().to_string();
+    let hash = git_root_hash12(Utf8Path::new(&root_string));
+    let harness = install_harness();
+    write_duplicate_stored_git_root_sessions(&harness, &root_string, &hash);
+    drop(repo);
+
+    run_command(&harness, Path::new(&root_string), &["--force"]).success();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "inspect",
+            "inspect",
+            "stop",
+            "container-exists",
+            "stop",
+            "container-exists"
+        ]
+    );
+}
+
+#[test]
 fn stop_accepts_case_insensitive_stable_id_prefix() {
     let fixture = support::temp_workspace("nested");
     let workspace = &fixture.workspace;
@@ -713,4 +820,19 @@ fn run_command(
 
 fn run_all_command(harness: &Harness) -> assert_cmd::assert::Assert {
     harness.agentbox_assert(&["stop", "--all"])
+}
+
+fn write_duplicate_stored_git_root_sessions(harness: &Harness, root: &str, hash: &str) {
+    harness.write_ps(&ps_fixture(vec![
+        managed_ps_entry("dup-a-id", "dup-a", hash),
+        managed_ps_entry("dup-b-id", "dup-b", hash),
+    ]));
+    harness.write_inspect(
+        "dup-a-id",
+        &managed_inspect_fixture("dup-a", root, true, managed_labels(root, hash, "dup-a")),
+    );
+    harness.write_inspect(
+        "dup-b-id",
+        &managed_inspect_fixture("dup-b", root, true, managed_labels(root, hash, "dup-b")),
+    );
 }

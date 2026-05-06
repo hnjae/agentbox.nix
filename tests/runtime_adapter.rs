@@ -209,6 +209,14 @@ fn opencode_preflight_rejects_unusable_state_directories() {
         snapshot,
         "Host OpenCode data directory is not readable and writable",
     );
+
+    let mut snapshot =
+        support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode);
+    support::host_state_mut(&mut snapshot, OPENCODE_DATA_DESTINATION).searchable = false;
+    assert_opencode_preflight_error(
+        snapshot,
+        "Host OpenCode data directory is not readable and writable",
+    );
 }
 
 #[test]
