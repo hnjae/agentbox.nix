@@ -6,7 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fmt;
 use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -61,7 +60,7 @@ fn select_stop_targets() -> Result<Vec<PathBuf>> {
 
     let mut targets = selected
         .into_iter()
-        .map(|candidate| candidate.target)
+        .map(prompt::Choice::into_value)
         .collect::<Vec<_>>();
     targets.sort();
     targets.dedup();
@@ -131,27 +130,7 @@ fn render_target_stop_failures(failures: &[TargetStopFailure]) -> String {
     format!("failed to stop {} {noun}: {details}", failures.len())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StopPromptCandidate {
-    label: String,
-    target: PathBuf,
-}
-
-impl StopPromptCandidate {
-    fn new(label: String, target: PathBuf) -> Self {
-        Self { label, target }
-    }
-
-    pub fn target(&self) -> &Path {
-        &self.target
-    }
-}
-
-impl fmt::Display for StopPromptCandidate {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.label)
-    }
-}
+pub type StopPromptCandidate = prompt::Choice<PathBuf>;
 
 pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandidate> {
     let mut candidates = sessions
@@ -159,7 +138,7 @@ pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandi
         .filter(|session| stop_prompt_candidate_matches(session))
         .filter_map(stop_prompt_candidate)
         .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| left.label.cmp(&right.label));
+    prompt::sort_choices_by_label(&mut candidates);
     candidates
 }
 
@@ -181,7 +160,7 @@ fn stop_prompt_candidate(session: &SessionRecord) -> Option<StopPromptCandidate>
     let runtime = display.runtime_or_unknown();
     let label = format!("{id} {root} {runtime} {}", session.status.as_str());
 
-    Some(StopPromptCandidate::new(label, PathBuf::from(id)))
+    Some(prompt::Choice::new(label, PathBuf::from(id)))
 }
 
 enum StopTarget {
@@ -263,7 +242,7 @@ fn stop_stable_id(prefix: &str, force: bool, target: &Path) -> Result<()> {
     let selection = select_stable_id_prefix(&sessions, prefix)?;
     let id = selection.id().to_string();
 
-    if selection.sessions().len() > 1 && !force {
+    if selection.has_duplicate_sessions() && !force {
         return Err(Error::msg(format!(
             "duplicate managed sessions exist for stable id `{id}`; rerun `agentbox stop --force {}` to remove all exact matches",
             target.display()

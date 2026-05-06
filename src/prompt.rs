@@ -13,6 +13,39 @@ use inquire::{Confirm, InquireError, MultiSelect, Select};
 
 use crate::{Error, Result};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Choice<T> {
+    label: String,
+    value: T,
+}
+
+impl<T> Choice<T> {
+    pub fn new(label: impl Into<String>, value: T) -> Self {
+        Self {
+            label: label.into(),
+            value,
+        }
+    }
+
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+
+    pub fn into_value(self) -> T {
+        self.value
+    }
+}
+
+impl<T> Display for Choice<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.label)
+    }
+}
+
+pub(crate) fn sort_choices_by_label<T>(choices: &mut [Choice<T>]) {
+    choices.sort_by(|left, right| left.label.cmp(&right.label));
+}
+
 pub fn select_one<T>(
     message: &'static str,
     options: Vec<T>,

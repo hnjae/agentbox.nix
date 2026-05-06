@@ -100,18 +100,16 @@ fn selected_health_sessions<'a>(
     };
 
     let selection = select_stable_id_prefix(sessions, target)?;
-    if selection.sessions().len() != 1 {
+    let selection_id = selection.id().to_string();
+    let Some(session) = selection.into_single_session() else {
         return Err(Error::msg(format!(
-            "stable id `{}` matches multiple managed sessions; health requires a single running session",
-            selection.id()
+            "stable id `{selection_id}` matches multiple managed sessions; health requires a single running session",
         )));
-    }
-
-    let session = selection.into_sessions().remove(0);
+    };
     if session.status != SessionStatus::Running {
         return Err(Error::msg(format!(
             "managed session `{}` is `{}`; health only probes running sessions",
-            session.stable_id().unwrap_or(target),
+            session.stable_id().unwrap_or(&selection_id),
             session.status.as_str()
         )));
     }

@@ -6,7 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -52,7 +51,7 @@ fn select_attach_directory() -> Result<PathBuf> {
         candidates,
         "agentbox attach requires a target when stdin or stderr is not a TTY",
     )?;
-    Ok(selected.directory)
+    Ok(selected.into_value())
 }
 
 fn attach_directory(directory: &Path) -> Result<()> {
@@ -88,27 +87,7 @@ fn attach_directory(directory: &Path) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AttachPromptCandidate {
-    label: String,
-    directory: PathBuf,
-}
-
-impl AttachPromptCandidate {
-    fn new(label: String, directory: PathBuf) -> Self {
-        Self { label, directory }
-    }
-
-    pub fn directory(&self) -> &Path {
-        &self.directory
-    }
-}
-
-impl fmt::Display for AttachPromptCandidate {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.label)
-    }
-}
+pub type AttachPromptCandidate = prompt::Choice<PathBuf>;
 
 pub fn attach_prompt_candidates(sessions: &[SessionRecord]) -> Vec<AttachPromptCandidate> {
     let mut candidates = sessions
@@ -117,7 +96,7 @@ pub fn attach_prompt_candidates(sessions: &[SessionRecord]) -> Vec<AttachPromptC
         .filter(|session| session.attach_endpoint.is_some())
         .filter_map(attach_prompt_candidate)
         .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| left.label.cmp(&right.label));
+    prompt::sort_choices_by_label(&mut candidates);
     candidates
 }
 
@@ -130,10 +109,7 @@ fn attach_prompt_candidate(session: &SessionRecord) -> Option<AttachPromptCandid
         display.runtime_or_unknown()
     );
 
-    Some(AttachPromptCandidate::new(
-        label,
-        root.as_std_path().to_path_buf(),
-    ))
+    Some(prompt::Choice::new(label, root.as_std_path().to_path_buf()))
 }
 
 fn no_session_error(workspace: &WorkspaceIdentity) -> Error {

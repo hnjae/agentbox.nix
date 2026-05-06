@@ -114,7 +114,7 @@ fn attach_prompt_candidates_include_only_attachable_running_sessions() {
 
     assert_eq!(candidates.len(), 1);
     assert_eq!(
-        candidates[0].directory(),
+        candidates[0].value().as_path(),
         running.canonical_git_root.as_std_path()
     );
 }
