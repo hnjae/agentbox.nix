@@ -20,6 +20,7 @@ pub mod error;
 pub mod git;
 pub mod lock;
 pub mod metadata;
+mod paths;
 pub mod podman;
 pub mod preflight;
 pub mod process;

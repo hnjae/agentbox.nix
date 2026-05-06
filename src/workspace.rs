@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{Error, Result};
 use crate::git::Git;
+use crate::paths::{absolute_utf8_path, canonicalize_utf8_path, path_is_or_descendant};
 
 const CONTAINER_PREFIX: &str = "agentbox-";
 const MAX_CONTAINER_NAME_LEN: usize = 63;
@@ -36,12 +37,12 @@ pub fn resolve_workspace_identity_with_git(
     directory: impl AsRef<Path>,
     git: &Git,
 ) -> Result<WorkspaceIdentity> {
-    let requested_target = absolute_path(directory.as_ref())?;
+    let requested_target = absolute_utf8_path(directory.as_ref())?;
     let git_root = git_root_for(&requested_target, git)?;
-    let canonical_git_root = canonicalize_utf8(&git_root)?;
-    let canonical_target = canonicalize_utf8(&requested_target)?;
+    let canonical_git_root = canonicalize_utf8_path(&git_root)?;
+    let canonical_target = canonicalize_utf8_path(&requested_target)?;
 
-    if !is_within_root(&canonical_target, &canonical_git_root) {
+    if !path_is_or_descendant(&canonical_target, &canonical_git_root) {
         return Err(Error::escaped_git_target(
             requested_target.as_ref(),
             canonical_git_root.as_ref(),
@@ -107,31 +108,11 @@ pub fn container_name_from_canonical_root(root: impl AsRef<str>) -> String {
     format!("{CONTAINER_PREFIX}{suffix}-{hash}")
 }
 
-fn absolute_path(path: &Path) -> Result<Utf8PathBuf> {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-
-    Utf8PathBuf::from_path_buf(absolute)
-        .map_err(|path| Error::msg(format!("non-utf8 path: {path:?}")))
-}
-
-fn canonicalize_utf8(path: &Utf8Path) -> Result<Utf8PathBuf> {
-    Utf8PathBuf::from_path_buf(std::fs::canonicalize(path.as_std_path())?)
-        .map_err(|path| Error::msg(format!("non-utf8 path: {path:?}")))
-}
-
 fn git_root_for(directory: &Utf8Path, git: &Git) -> Result<Utf8PathBuf> {
     match git.resolve_toplevel(directory) {
         Ok(root) => Ok(root),
         Err(error) => Err(error.into_error(directory)),
     }
-}
-
-fn is_within_root(target: &Utf8Path, root: &Utf8Path) -> bool {
-    target == root || target.starts_with(root)
 }
 
 fn escape_root(path: &str) -> String {

@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::cli::StopArgs;
+use crate::paths::path_buf_to_utf8;
 use crate::podman::Podman;
 use crate::prompt;
 use crate::session::{
@@ -273,8 +274,7 @@ fn resolve_stop_target(target: &Path) -> Result<StopTarget> {
     }
 
     if target.is_absolute() {
-        let git_root = Utf8PathBuf::from_path_buf(target.to_path_buf())
-            .map_err(|path| Error::msg(format!("non-utf8 path: {path:?}")))?;
+        let git_root = path_buf_to_utf8(target.to_path_buf())?;
         return Ok(StopTarget::ExactStoredGitRootPath(git_root));
     }
 

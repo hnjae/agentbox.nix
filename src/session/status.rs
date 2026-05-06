@@ -13,6 +13,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::Error;
 use crate::git::Git;
+use crate::paths::canonicalize_utf8_path;
 use crate::podman::PodmanContainerMount;
 use crate::runtime::AttachEndpoint;
 
@@ -238,8 +239,8 @@ pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<S
 }
 
 fn git_root_is_orphaned(git_root: &Utf8Path, git: &Git) -> bool {
-    let canonical_git_root = match canonicalize_utf8(git_root) {
-        Some(canonical_git_root) if canonical_git_root == git_root => canonical_git_root,
+    let canonical_git_root = match canonicalize_utf8_path(git_root) {
+        Ok(canonical_git_root) if canonical_git_root == git_root => canonical_git_root,
         _ => return true,
     };
 
@@ -253,12 +254,10 @@ fn git_root_is_orphaned(git_root: &Utf8Path, git: &Git) -> bool {
     }
 
     match git.rev_parse_show_toplevel(&canonical_git_root) {
-        Ok(resolved_git_root) => canonicalize_utf8(&resolved_git_root)
-            .is_none_or(|resolved_git_root| resolved_git_root != canonical_git_root),
+        Ok(resolved_git_root) => match canonicalize_utf8_path(&resolved_git_root) {
+            Ok(resolved_git_root) => resolved_git_root != canonical_git_root,
+            Err(_) => true,
+        },
         Err(_) => true,
     }
-}
-
-fn canonicalize_utf8(path: &Utf8Path) -> Option<Utf8PathBuf> {
-    Utf8PathBuf::from_path_buf(std::fs::canonicalize(path.as_std_path()).ok()?).ok()
 }
