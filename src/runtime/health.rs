@@ -6,16 +6,14 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-use crate::runtime::{
-    AttachEndpoint, RuntimeHealthCheck, RuntimeHealthResponsePolicy, RuntimeKind,
-};
+use super::RuntimeKind;
+use super::http_probe::{self, HttpResponse};
+use super::spec::{AttachEndpoint, RuntimeHealthCheck, RuntimeHealthResponsePolicy};
 
 const ENDPOINT_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
-const MAX_HTTP_RESPONSE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RuntimeHealth {
@@ -84,7 +82,10 @@ fn endpoint_connection_health(
     endpoint: &AttachEndpoint,
     stream: &mut TcpStream,
 ) -> RuntimeHealth {
-    let Some(response) = http_get_response(endpoint, stream, health_check.path) else {
+    let _ = stream.set_read_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
+
+    let Some(response) = http_probe::get_response(endpoint, stream, health_check.path) else {
         return RuntimeHealth::unhealthy("unreachable");
     };
 
@@ -116,159 +117,9 @@ struct HealthyFlagResponse {
     healthy: bool,
 }
 
-struct HttpResponse {
-    status_code: u16,
-    body: Vec<u8>,
-}
-
-fn http_get_response(
-    endpoint: &AttachEndpoint,
-    stream: &mut TcpStream,
-    path: &str,
-) -> Option<HttpResponse> {
-    let _ = stream.set_read_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
-
-    write_http_get_request(endpoint, stream, path)?;
-
-    let mut response = Vec::new();
-    let body_start = read_until_http_body(stream, &mut response)?;
-    let (status_code, content_length) = parse_http_response_headers(&response[..body_start])?;
-
-    match content_length {
-        Some(content_length) => {
-            let response_len = body_start.checked_add(content_length)?;
-            if response_len > MAX_HTTP_RESPONSE_BYTES {
-                return None;
-            }
-            read_declared_response_body(stream, &mut response, response_len)?;
-        }
-        None => read_undeclared_response_body(stream, &mut response)?,
-    }
-
-    Some(HttpResponse {
-        status_code,
-        body: response[body_start..].to_vec(),
-    })
-}
-
-fn write_http_get_request(
-    endpoint: &AttachEndpoint,
-    stream: &mut TcpStream,
-    path: &str,
-) -> Option<()> {
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
-        endpoint.host_ip, endpoint.host_port,
-    );
-    stream.write_all(request.as_bytes()).ok()
-}
-
-fn read_until_http_body(stream: &mut TcpStream, response: &mut Vec<u8>) -> Option<usize> {
-    loop {
-        if let Some(body_start) = http_body_start(response) {
-            return Some(body_start);
-        }
-        if response.len() >= MAX_HTTP_RESPONSE_BYTES {
-            return None;
-        }
-
-        match read_http_chunk(stream, response) {
-            HttpRead::Data => {}
-            HttpRead::End | HttpRead::Timeout | HttpRead::Error => return None,
-        }
-    }
-}
-
-fn read_declared_response_body(
-    stream: &mut TcpStream,
-    response: &mut Vec<u8>,
-    response_len: usize,
-) -> Option<()> {
-    while response.len() < response_len {
-        match read_http_chunk(stream, response) {
-            HttpRead::Data => {}
-            HttpRead::End | HttpRead::Timeout | HttpRead::Error => return None,
-        }
-    }
-
-    response.truncate(response_len);
-    Some(())
-}
-
-fn read_undeclared_response_body(stream: &mut TcpStream, response: &mut Vec<u8>) -> Option<()> {
-    while response.len() < MAX_HTTP_RESPONSE_BYTES {
-        match read_http_chunk(stream, response) {
-            HttpRead::Data => {}
-            HttpRead::End | HttpRead::Timeout => break,
-            HttpRead::Error => return None,
-        }
-    }
-
-    Some(())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HttpRead {
-    Data,
-    End,
-    Timeout,
-    Error,
-}
-
-fn read_http_chunk(stream: &mut TcpStream, response: &mut Vec<u8>) -> HttpRead {
-    let mut buffer = [0_u8; 512];
-    match stream.read(&mut buffer) {
-        Ok(0) => HttpRead::End,
-        Ok(bytes_read) => {
-            response.extend_from_slice(&buffer[..bytes_read]);
-            HttpRead::Data
-        }
-        Err(error)
-            if matches!(
-                error.kind(),
-                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-            ) =>
-        {
-            HttpRead::Timeout
-        }
-        Err(_) => HttpRead::Error,
-    }
-}
-
-fn http_body_start(response: &[u8]) -> Option<usize> {
-    response
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|position| position + 4)
-}
-
-fn parse_http_response_headers(headers: &[u8]) -> Option<(u16, Option<usize>)> {
-    let headers = std::str::from_utf8(headers).ok()?;
-    let mut lines = headers.split("\r\n");
-    let status_line = lines.next()?;
-    let mut status_parts = status_line.split_whitespace();
-    let http_version = status_parts.next()?;
-    if !http_version.starts_with("HTTP/1.") {
-        return None;
-    }
-    let status_code = status_parts.next()?.parse().ok()?;
-    let mut content_length = None;
-
-    for line in lines {
-        let Some((name, value)) = line.split_once(':') else {
-            continue;
-        };
-        if name.eq_ignore_ascii_case("content-length") {
-            content_length = Some(value.trim().parse().ok()?);
-        }
-    }
-
-    Some((status_code, content_length))
-}
-
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
 
@@ -401,10 +252,7 @@ mod tests {
     }
 
     fn runtime_probe_contract(runtime: RuntimeKind) -> (&'static str, &'static str) {
-        match runtime {
-            RuntimeKind::Opencode => ("http", "/global/health"),
-            RuntimeKind::Codex => ("ws", "/readyz"),
-        }
+        (runtime.attach_spec().scheme, runtime.health_check().path)
     }
 
     fn http_response(status: &str, body: &str) -> ProbeResponse {

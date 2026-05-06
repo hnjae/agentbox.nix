@@ -5,12 +5,12 @@ use crate::Error;
 use crate::cli::{HealthArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
+use crate::runtime::{HostRuntimeHealthProbe, RuntimeHealthProbe};
 use crate::session::{
     SessionDisplay, SessionRecord, SessionStatus, discover_managed_sessions,
     select_stable_id_prefix, sort_session_refs_by_identity,
 };
 
-use super::runtime_health::{HostRuntimeHealthProbe, RuntimeHealthProbe};
 use super::table;
 
 pub fn run(args: HealthArgs) -> Result<()> {
@@ -189,8 +189,7 @@ mod tests {
 
     use serde_json::Value;
 
-    use crate::commands::runtime_health::RuntimeHealth;
-    use crate::runtime::{AttachEndpoint, RuntimeKind};
+    use crate::runtime::{AttachEndpoint, RuntimeHealth, RuntimeKind};
     use crate::session::{SessionMetadata, SessionRecord, SessionStatus};
 
     use super::*;

@@ -9,12 +9,10 @@
 use std::time::{Duration, Instant};
 
 use crate::podman::{Podman, PodmanContainerInspect};
-use crate::runtime::{AttachEndpoint, RuntimeKind};
+use crate::runtime::{AttachEndpoint, HostRuntimeHealthProbe, RuntimeHealthProbe, RuntimeKind};
 use crate::session::discover_attach_endpoint_from_inspect;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
-
-use super::runtime_health::{HostRuntimeHealthProbe, RuntimeHealthProbe};
 
 const SERVER_READINESS_TIMEOUT: Duration = Duration::from_secs(30);
 const SERVER_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(200);
