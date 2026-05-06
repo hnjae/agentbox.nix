@@ -369,8 +369,15 @@ Rules:
 - For `failed` sessions, fields that cannot be recovered from live Podman state
   are shown as `unknown`. The concrete container name must still be shown so the
   user or operator can inspect or remove the broken container.
-- `ls` prints a compact borderless human-readable table in the MVP.
-- The MVP does not require machine-readable `ls` output.
+- By default, `ls` prints a compact borderless human-readable table.
+- `ls --output table` and `ls -o table` explicitly select the same table output.
+- `ls --output json`, `ls --output=json`, and `ls -o json` print a compact
+  single-line JSON array followed by a newline.
+- JSON rows contain stable keys: `canonical_git_root`, `runtime`, `status`, and
+  `container_name`.
+- JSON uses `null` for unrecoverable `canonical_git_root` or `runtime` values
+  instead of the table's `unknown` placeholder.
+- JSON rows use the same ordering as table rows.
 
 ### `agentbox health`
 
@@ -406,15 +413,23 @@ Rules:
 - `health` includes only sessions whose discovered session status is `running`.
 - Failed, stopped, orphaned, and duplicate sessions are not included.
 - `health` probes each running session once and does not wait for recovery.
-- `health` prints a compact borderless human-readable table in the MVP.
+- By default, `health` prints a compact borderless human-readable table.
+- `health --output table` and `health -o table` explicitly select the same table
+  output.
+- `health --output json`, `health --output=json`, and `health -o json` print a
+  compact single-line JSON array followed by a newline.
+- JSON rows contain stable keys: `canonical_git_root`, `runtime`, `health`,
+  `reason`, `endpoint`, and `container_name`.
+- JSON uses `null` for unrecoverable `canonical_git_root`, `runtime`, or
+  `endpoint` values instead of the table's `unknown` placeholder.
+- JSON rows use the same ordering as table rows.
 - A healthy row uses reason `ok`.
 - An unhealthy row uses a concise reason such as `unreachable`, `HTTP 503`,
   `malformed JSON`, or `healthy=false`.
 - If there are no running sessions, `health` prints an empty table with headers
-  and exits `0`.
+  by default, prints `[]` in JSON mode, and exits `0`.
 - Unhealthy rows do not make the command fail; discovery or Podman failures
   remain command failures.
-- The MVP does not require machine-readable `health` output.
 
 ### `agentbox stop <directory>`
 
