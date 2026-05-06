@@ -18,3 +18,4 @@ pub use spec::{
     AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeAttachSpec, RuntimeCommand, RuntimeCreateSpec,
     RuntimeMount, RuntimeMountKind,
 };
+pub(crate) use spec::{RuntimeHealthCheck, RuntimeHealthResponsePolicy};

@@ -108,6 +108,18 @@ pub struct RuntimeAttachSpec {
     pub container_port: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RuntimeHealthCheck {
+    pub(crate) path: &'static str,
+    pub(crate) response_policy: RuntimeHealthResponsePolicy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RuntimeHealthResponsePolicy {
+    HttpOk,
+    JsonHealthyFlag,
+}
+
 impl RuntimeAttachSpec {
     pub fn container_listen_endpoint(self) -> String {
         format!(

@@ -10,12 +10,12 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-use crate::runtime::{AttachEndpoint, RuntimeKind};
+use crate::runtime::{
+    AttachEndpoint, RuntimeHealthCheck, RuntimeHealthResponsePolicy, RuntimeKind,
+};
 
 const ENDPOINT_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const MAX_HTTP_RESPONSE_BYTES: usize = 64 * 1024;
-const OPENCODE_HEALTH_PATH: &str = "/global/health";
-const CODEX_READY_PATH: &str = "/readyz";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RuntimeHealth {
@@ -68,7 +68,7 @@ impl RuntimeHealthProbe for HostRuntimeHealthProbe {
                 continue;
             };
 
-            let health = endpoint_connection_health(runtime, endpoint, &mut stream);
+            let health = endpoint_connection_health(runtime.health_check(), endpoint, &mut stream);
             if health.is_healthy() {
                 return health;
             }
@@ -80,44 +80,39 @@ impl RuntimeHealthProbe for HostRuntimeHealthProbe {
 }
 
 fn endpoint_connection_health(
-    runtime: RuntimeKind,
+    health_check: RuntimeHealthCheck,
     endpoint: &AttachEndpoint,
     stream: &mut TcpStream,
 ) -> RuntimeHealth {
-    match runtime {
-        RuntimeKind::Opencode => opencode_endpoint_health(endpoint, stream),
-        RuntimeKind::Codex => codex_endpoint_health(endpoint, stream),
-    }
-}
-
-fn opencode_endpoint_health(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> RuntimeHealth {
-    let Some(response) = http_get_response(endpoint, stream, OPENCODE_HEALTH_PATH) else {
+    let Some(response) = http_get_response(endpoint, stream, health_check.path) else {
         return RuntimeHealth::unhealthy("unreachable");
     };
+
+    health_response_status(response, health_check.response_policy)
+}
+
+fn health_response_status(
+    response: HttpResponse,
+    response_policy: RuntimeHealthResponsePolicy,
+) -> RuntimeHealth {
     if response.status_code != 200 {
         return RuntimeHealth::unhealthy(format!("HTTP {}", response.status_code));
     }
 
-    match serde_json::from_slice::<OpencodeHealthResponse>(&response.body) {
-        Ok(health) if health.healthy => RuntimeHealth::healthy(),
-        Ok(_) => RuntimeHealth::unhealthy("healthy=false"),
-        Err(_) => RuntimeHealth::unhealthy("malformed JSON"),
-    }
-}
-
-fn codex_endpoint_health(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> RuntimeHealth {
-    let Some(response) = http_get_response(endpoint, stream, CODEX_READY_PATH) else {
-        return RuntimeHealth::unhealthy("unreachable");
-    };
-    if response.status_code == 200 {
-        RuntimeHealth::healthy()
-    } else {
-        RuntimeHealth::unhealthy(format!("HTTP {}", response.status_code))
+    match response_policy {
+        RuntimeHealthResponsePolicy::HttpOk => RuntimeHealth::healthy(),
+        RuntimeHealthResponsePolicy::JsonHealthyFlag => {
+            match serde_json::from_slice::<HealthyFlagResponse>(&response.body) {
+                Ok(health) if health.healthy => RuntimeHealth::healthy(),
+                Ok(_) => RuntimeHealth::unhealthy("healthy=false"),
+                Err(_) => RuntimeHealth::unhealthy("malformed JSON"),
+            }
+        }
     }
 }
 
 #[derive(serde::Deserialize)]
-struct OpencodeHealthResponse {
+struct HealthyFlagResponse {
     healthy: bool,
 }
 

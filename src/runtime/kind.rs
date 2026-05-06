@@ -15,7 +15,7 @@ use crate::{Error, Result};
 
 use super::default_image::DefaultImageBuildContext;
 use super::profile::{self, RuntimeHostStateMount, RuntimePackageSpec};
-use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand};
+use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand, RuntimeHealthCheck};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 #[value(rename_all = "kebab-case")]
@@ -60,6 +60,10 @@ impl RuntimeKind {
 
     pub fn attach_spec(self) -> RuntimeAttachSpec {
         self.profile().attach
+    }
+
+    pub(crate) fn health_check(self) -> RuntimeHealthCheck {
+        self.profile().health_check
     }
 
     pub fn server_command(self) -> RuntimeCommand {

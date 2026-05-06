@@ -25,7 +25,7 @@ use super::command::{
 };
 use super::default_image::{self, DefaultImageBuildContext};
 use super::kind::RuntimeKind;
-use super::spec::RuntimeAttachSpec;
+use super::spec::{RuntimeAttachSpec, RuntimeHealthCheck, RuntimeHealthResponsePolicy};
 
 const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
 const NPM_INSTALL_SOURCE: &str = "npm";
@@ -33,6 +33,8 @@ const NPM_INSTALL_SOURCE: &str = "npm";
 const OPENCODE_NPM_PACKAGE: &str = "opencode-ai";
 const CODEX_NPM_PACKAGE: &str = "@openai/codex";
 const CODEX_YOLO_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
+const OPENCODE_HEALTH_PATH: &str = "/global/health";
+const CODEX_READY_PATH: &str = "/readyz";
 
 const OPENCODE_SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
     ServerCommandArg::Literal("opencode"),
@@ -120,6 +122,10 @@ const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
         container_listen_ip: CONTAINER_LISTEN_IP,
         container_port: 4096,
     },
+    health_check: RuntimeHealthCheck {
+        path: OPENCODE_HEALTH_PATH,
+        response_policy: RuntimeHealthResponsePolicy::JsonHealthyFlag,
+    },
     host_state_mounts: OPENCODE_HOST_STATE_MOUNTS,
     default_env: OPENCODE_DEFAULT_ENV,
     server_command: OPENCODE_SERVER_COMMAND,
@@ -145,6 +151,10 @@ const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
         container_listen_ip: CONTAINER_LISTEN_IP,
         container_port: 1455,
     },
+    health_check: RuntimeHealthCheck {
+        path: CODEX_READY_PATH,
+        response_policy: RuntimeHealthResponsePolicy::HttpOk,
+    },
     host_state_mounts: CODEX_HOST_STATE_MOUNTS,
     default_env: CODEX_DEFAULT_ENV,
     server_command: CODEX_SERVER_COMMAND,
@@ -161,6 +171,7 @@ pub(super) struct RuntimeProfile {
     pub(super) materialize_default_image_context: fn() -> Result<DefaultImageBuildContext>,
     pub(super) package: RuntimePackageSpec,
     pub(super) attach: RuntimeAttachSpec,
+    pub(super) health_check: RuntimeHealthCheck,
     pub(super) host_state_mounts: &'static [RuntimeHostStateMount],
     pub(super) default_env: &'static [RuntimeDefaultEnv],
     pub(super) server_command: ServerCommandTemplate,
