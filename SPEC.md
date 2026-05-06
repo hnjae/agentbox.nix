@@ -219,8 +219,9 @@ Expected behavior:
    launch-directory working directory.
 8. Start the selected runtime server for the session. If `direnv` applies, the
    server starts with the launch directory's `direnv` environment.
-9. Wait until the runtime server endpoint is reachable or the container exits.
-10. Report the discovered attach endpoint and suggest
+9. Wait until the runtime server endpoint is ready for attachment or the
+   container exits.
+10. Report that the discovered attach endpoint is ready and suggest
     `agentbox attach <directory>`.
 
 Progress and diagnostics:
@@ -622,6 +623,9 @@ Endpoint rules:
 - For `http` attach endpoints, `run` treats the endpoint as reachable only after
   the host-published endpoint returns an HTTP response. A TCP accept followed by
   a reset is not sufficient readiness.
+- For Codex `ws` attach endpoints, `run` treats the endpoint as ready only after
+  `GET /readyz` on the same host-published endpoint returns `HTTP 200`. A TCP
+  connection alone is not sufficient readiness.
 - The attach endpoint is published only on the host loopback interface by
   default.
 - The default host attach IP is `127.0.0.1`.
