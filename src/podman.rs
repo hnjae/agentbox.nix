@@ -12,6 +12,7 @@ use std::process::Command;
 use camino::Utf8Path;
 use serde::de::DeserializeOwned;
 
+use crate::diagnostic;
 use crate::metadata::managed_label_filter;
 use crate::process::{
     ProcessOutput, ProcessRunner, describe_command, format_status, run_command, run_command_status,
@@ -242,7 +243,7 @@ impl Podman {
 
     fn trace(&self, command: &Command) {
         if self.verbose {
-            eprintln!("agentbox: running {}", describe_command(command));
+            diagnostic::debug(format!("running {}", describe_command(command)));
         }
     }
 }
@@ -263,8 +264,5 @@ fn emit_stream(text: &str) {
         return;
     }
 
-    eprint!("{text}");
-    if !text.ends_with('\n') {
-        eprintln!();
-    }
+    diagnostic::debug(text);
 }

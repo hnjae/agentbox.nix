@@ -21,9 +21,13 @@ fn runtime_update_codex_rebuilds_and_records_state_when_state_is_missing() {
 
     let mut command = harness.agentbox_command();
     command.args(["runtime", "update", "codex"]);
-    command.assert().success().stdout(predicate::str::contains(
-        "updated codex runtime image `localhost/agentbox-codex:local` to 0.99.0",
-    ));
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "INFO: updated codex runtime image `localhost/agentbox-codex:local` to 0.99.0",
+        ));
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["image", "build"]);
@@ -48,9 +52,13 @@ fn runtime_update_opencode_rebuilds_and_records_state_when_state_is_missing() {
 
     let mut command = harness.agentbox_command();
     command.args(["runtime", "update", "opencode"]);
-    command.assert().success().stdout(predicate::str::contains(
-        "updated opencode runtime image `localhost/agentbox-opencode:local` to 0.99.0",
-    ));
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "INFO: updated opencode runtime image `localhost/agentbox-opencode:local` to 0.99.0",
+        ));
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["image", "build"]);
@@ -92,9 +100,13 @@ fn runtime_update_codex_skips_rebuild_when_image_and_state_are_current() {
 
     let mut command = harness.agentbox_command();
     command.args(["runtime", "update", "codex"]);
-    command.assert().success().stdout(predicate::str::contains(
-        "codex runtime image `localhost/agentbox-codex:local` is already up to date at 0.99.0",
-    ));
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "INFO: codex runtime image `localhost/agentbox-codex:local` is already up to date at 0.99.0",
+        ));
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["image"]);
@@ -126,9 +138,13 @@ fn runtime_update_opencode_skips_rebuild_when_image_and_state_are_current() {
 
     let mut command = harness.agentbox_command();
     command.args(["runtime", "update", "opencode"]);
-    command.assert().success().stdout(predicate::str::contains(
-        "opencode runtime image `localhost/agentbox-opencode:local` is already up to date at 0.99.0",
-    ));
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "INFO: opencode runtime image `localhost/agentbox-opencode:local` is already up to date at 0.99.0",
+        ));
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["image"]);

@@ -44,19 +44,21 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     command
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!(
-            "is ready at `{expected_endpoint}`"
-        )))
+        .stdout(predicate::str::is_empty())
         .stderr(
-            predicate::str::contains("agentbox: checking workspace prerequisites")
+            predicate::str::contains("INFO: checking workspace prerequisites")
                 .and(predicate::str::contains(
-                    "agentbox: checking existing managed sessions",
+                    "INFO: checking existing managed sessions",
                 ))
-                .and(predicate::str::contains("agentbox: building runtime image"))
-                .and(predicate::str::contains("agentbox: starting container"))
+                .and(predicate::str::contains("INFO: building runtime image"))
+                .and(predicate::str::contains("INFO: starting container"))
                 .and(predicate::str::contains(
-                    "agentbox: waiting for `opencode` runtime server",
-                )),
+                    "INFO: waiting for `opencode` runtime server",
+                ))
+                .and(predicate::str::contains(format!(
+                    "INFO: managed session `{}` for `{}` is ready at `{expected_endpoint}`",
+                    workspace.container_name, workspace.canonical_git_root
+                ))),
         );
     endpoint.wait();
 
@@ -174,10 +176,17 @@ fn run_launches_codex_server_in_yolo_mode() {
     command.args(["run", "--runtime", "codex"]).arg(target);
 
     let expected_endpoint = format!("ws://127.0.0.1:{}", endpoint.port());
-    command.assert().success().stdout(
-        predicate::str::contains(format!("is ready at `{expected_endpoint}`"))
-            .and(predicate::str::contains("use `agentbox attach")),
-    );
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(
+            predicate::str::contains("INFO: managed session")
+                .and(predicate::str::contains(format!(
+                    "is ready at `{expected_endpoint}`"
+                )))
+                .and(predicate::str::contains("use `agentbox attach")),
+        );
     endpoint.wait();
 
     let log = harness.read_log();
@@ -278,14 +287,14 @@ fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
         .arg(target);
 
     command.assert().success().stderr(
-        predicate::str::contains("agentbox: running podman ps")
-            .and(predicate::str::contains("agentbox: running podman build"))
-            .and(predicate::str::contains("built"))
-            .and(predicate::str::contains("agentbox: running podman run"))
-            .and(predicate::str::contains("started"))
-            .and(predicate::str::contains("agentbox: running podman inspect"))
+        predicate::str::contains("DEBUG: running podman ps")
+            .and(predicate::str::contains("DEBUG: running podman build"))
+            .and(predicate::str::contains("DEBUG: built"))
+            .and(predicate::str::contains("DEBUG: running podman run"))
+            .and(predicate::str::contains("DEBUG: started"))
+            .and(predicate::str::contains("DEBUG: running podman inspect"))
             .and(predicate::str::contains(
-                "agentbox: waiting for `opencode` runtime server",
+                "INFO: waiting for `opencode` runtime server",
             )),
     );
     endpoint.wait();

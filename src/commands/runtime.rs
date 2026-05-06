@@ -12,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use camino::Utf8Path;
 
 use crate::cli::{RuntimeArgs, RuntimeCommand};
+use crate::diagnostic;
 use crate::podman::{Podman, PodmanBuildOptions};
 use crate::process::ProcessRunner;
 use crate::runtime::RuntimeKind;
@@ -58,7 +59,7 @@ pub(super) fn remove_default_runtime_image_state(runtime: RuntimeKind) -> Result
 fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
     let package = runtime.package_spec();
     let podman = Podman::new().with_verbose(verbose);
-    eprintln!("agentbox: resolving latest `{}` version", package.name);
+    diagnostic::info(format!("resolving latest `{}` version", package.name));
     let latest_version = resolve_latest_runtime_version(package.name)?;
     let image = runtime.default_image();
     let image_exists = podman.image_exists(image)?;
@@ -69,16 +70,20 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
     }) {
         let state = state.with_latest_check(latest_version.clone(), now_unix_seconds()?);
         write_runtime_image_state(runtime, &state)?;
-        println!("{runtime} runtime image `{image}` is already up to date at {latest_version}");
+        diagnostic::info(format!(
+            "{runtime} runtime image `{image}` is already up to date at {latest_version}"
+        ));
         return Ok(());
     }
 
-    eprintln!(
-        "agentbox: building runtime image `{image}` with `{}@{latest_version}`",
+    diagnostic::info(format!(
+        "building runtime image `{image}` with `{}@{latest_version}`",
         package.name
-    );
+    ));
     build_runtime_image_and_record_state(&podman, runtime, &latest_version)?;
-    println!("updated {runtime} runtime image `{image}` to {latest_version}");
+    diagnostic::info(format!(
+        "updated {runtime} runtime image `{image}` to {latest_version}"
+    ));
     Ok(())
 }
 

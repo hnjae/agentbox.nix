@@ -44,6 +44,7 @@ fn health_reports_running_opencode_session_as_healthy() {
     endpoint.wait();
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(workspace.canonical_git_root.as_str()));
     assert!(stdout.contains(&workspace.hash12));
@@ -83,6 +84,7 @@ fn health_reports_running_codex_session_as_healthy() {
     endpoint.wait();
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(workspace.canonical_git_root.as_str()));
     assert!(stdout.contains(&workspace.hash12));
@@ -118,6 +120,7 @@ fn health_reports_unhealthy_opencode_without_failing() {
     endpoint.wait();
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("unhealthy"));
     assert!(stdout.contains("healthy=false"));
@@ -164,6 +167,7 @@ fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
     unhealthy_endpoint.wait();
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
     let rows: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
     let roots = rows
@@ -247,6 +251,7 @@ fn health_filters_non_running_session_statuses() {
     endpoint.wait();
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(&running.hash12));
     assert!(!stdout.contains(&stopped.hash12));
@@ -291,6 +296,7 @@ fn health_target_probes_only_matching_stable_id_prefix() {
     endpoint.wait();
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(&selected.hash12));
     assert!(stdout.contains(selected.canonical_git_root.as_str()));
@@ -391,6 +397,7 @@ fn health_with_no_running_sessions_prints_header_only_table() {
     let output = harness.agentbox_output(&["health"]);
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.starts_with("ID"));
     assert!(stdout.contains("CANONICAL GIT ROOT"));
@@ -413,6 +420,7 @@ fn health_json_with_no_running_sessions_prints_empty_array() {
     let output = harness.agentbox_output(&["health", "--output=json"]);
 
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "[]\n");
 }
 

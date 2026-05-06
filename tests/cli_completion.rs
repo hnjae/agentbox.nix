@@ -42,6 +42,7 @@ fn helper_returns_live_roots_with_runtime_and_status_metadata() {
         .output()
         .unwrap();
     assert!(output.status.success());
+    assert!(output.stderr.is_empty());
     let output = String::from_utf8(output.stdout).unwrap();
 
     assert!(output.contains(workspace.canonical_git_root.as_str()));
@@ -83,6 +84,7 @@ fn helper_filters_attach_and_stop_candidates_by_command() {
         .output()
         .unwrap();
     assert!(attach.status.success());
+    assert!(attach.stderr.is_empty());
     let attach = String::from_utf8(attach.stdout).unwrap();
     assert_eq!(
         first_candidate_value(&attach),
@@ -97,6 +99,7 @@ fn helper_filters_attach_and_stop_candidates_by_command() {
         .output()
         .unwrap();
     assert!(stop.status.success());
+    assert!(stop.stderr.is_empty());
     let stop = String::from_utf8(stop.stdout).unwrap();
     assert_eq!(first_candidate_value(&stop), running_workspace.hash12);
     assert!(stop.contains(&running_workspace.hash12));
@@ -111,6 +114,7 @@ fn helper_filters_attach_and_stop_candidates_by_command() {
         .output()
         .unwrap();
     assert!(health.status.success());
+    assert!(health.stderr.is_empty());
     let health = String::from_utf8(health.stdout).unwrap();
     assert_eq!(first_candidate_value(&health), running_workspace.hash12);
     assert!(health.contains(&running_workspace.hash12));

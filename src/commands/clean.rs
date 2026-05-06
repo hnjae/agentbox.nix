@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 
 use crate::cli::CleanArgs;
+use crate::diagnostic;
 use crate::podman::{Podman, PodmanContainerInspect};
 use crate::prompt;
 use crate::runtime::RuntimeKind;
@@ -25,18 +26,18 @@ pub fn run(args: CleanArgs) -> Result<()> {
     let plan = build_clean_plan(&podman, scope)?;
 
     if args.dry_run {
-        print!("{}", render_plan(&plan));
+        diagnostic::info(render_plan(&plan));
         return Ok(());
     }
 
     if plan.candidates.is_empty() {
-        println!("nothing to clean");
+        diagnostic::info("nothing to clean");
         return Ok(());
     }
 
-    print!("{}", render_plan(&plan));
+    diagnostic::info(render_plan(&plan));
     if !args.yes && !confirm_interactive()? {
-        eprintln!("aborted");
+        diagnostic::warning("aborted");
         return Ok(());
     }
 
@@ -286,11 +287,11 @@ fn apply_clean_plan(podman: &Podman, plan: &CleanPlan) -> Result<()> {
 
     for candidate in &plan.candidates {
         match remove_candidate(podman, candidate) {
-            Ok(()) => println!(
+            Ok(()) => diagnostic::info(format!(
                 "removed {} `{}`",
                 candidate.kind().as_str(),
                 candidate.name()
-            ),
+            )),
             Err(error) => failures.push(DeleteFailure {
                 kind: candidate.kind(),
                 name: candidate.name().to_string(),

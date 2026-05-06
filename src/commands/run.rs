@@ -7,6 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::cli::RunArgs;
+use crate::diagnostic;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites_for_runtime;
 use crate::prompt;
@@ -86,10 +87,10 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         Ok(endpoint)
     })?;
 
-    println!(
+    diagnostic::info(format!(
         "managed session `{}` for `{}` is ready at `{endpoint}`; use `agentbox attach {}` to connect",
         workspace.container_name, workspace.canonical_git_root, workspace.requested_target,
-    );
+    ));
     Ok(())
 }
 
@@ -113,7 +114,7 @@ impl RunDiagnostics {
     }
 
     fn phase(&self, message: impl AsRef<str>) {
-        eprintln!("agentbox: {}", message.as_ref());
+        diagnostic::info(message.as_ref());
     }
 }
 

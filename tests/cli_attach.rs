@@ -226,6 +226,7 @@ fn attach_uses_stored_launch_directory_when_requesting_another_subdirectory() {
     command
         .assert()
         .success()
+        .stderr(predicates::str::contains("INFO: agentbox attach:"))
         .stderr(predicates::str::contains("using stored launch directory"));
 
     let log = harness.read_log();

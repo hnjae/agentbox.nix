@@ -15,6 +15,7 @@ use clap::Parser;
 
 pub mod cli;
 pub mod commands;
+pub mod diagnostic;
 pub mod direnv;
 pub mod error;
 pub mod git;
@@ -39,7 +40,7 @@ pub fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(Error::Cli(error)) => error.exit(),
         Err(error) => {
-            eprintln!("{error}");
+            diagnostic::error(error.to_string());
             ExitCode::FAILURE
         }
     }

@@ -12,6 +12,7 @@ use std::process::Stdio;
 use camino::Utf8Path;
 
 use crate::cli::AttachArgs;
+use crate::diagnostic;
 use crate::podman::Podman;
 use crate::process::{ProcessRunner, format_status, run_command_status};
 use crate::prompt;
@@ -124,10 +125,10 @@ fn report_launch_directory_notice(workspace: &WorkspaceIdentity, launch_director
         return;
     }
 
-    eprintln!(
+    diagnostic::info(format!(
         "agentbox attach: `{}` identified the workspace; using stored launch directory `{}`",
         workspace.canonical_target, launch_directory,
-    );
+    ));
 }
 
 fn run_host_client(process_runner: &ProcessRunner, client: &RuntimeInvocation) -> Result<()> {

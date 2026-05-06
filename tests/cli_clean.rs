@@ -32,10 +32,11 @@ fn clean_dry_run_prints_candidates_without_deleting() {
     harness
         .agentbox_assert(&["clean", "--dry-run"])
         .success()
-        .stdout(predicate::str::contains("cleanup candidates:"))
-        .stdout(predicate::str::contains(OPENCODE_DEFAULT_IMAGE))
-        .stdout(predicate::str::contains(CODEX_DEFAULT_IMAGE))
-        .stdout(predicate::str::contains(UNUSED_VOLUME));
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("INFO: cleanup candidates:"))
+        .stderr(predicate::str::contains(OPENCODE_DEFAULT_IMAGE))
+        .stderr(predicate::str::contains(CODEX_DEFAULT_IMAGE))
+        .stderr(predicate::str::contains(UNUSED_VOLUME));
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "image", "image", "volume"]);
@@ -80,13 +81,14 @@ fn clean_yes_removes_unused_default_images_and_cache_volumes() {
     harness
         .agentbox_assert(&["clean", "--yes"])
         .success()
-        .stdout(predicate::str::contains(format!(
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
             "removed image `{OPENCODE_DEFAULT_IMAGE}`"
         )))
-        .stdout(predicate::str::contains(format!(
+        .stderr(predicate::str::contains(format!(
             "removed image `{CODEX_DEFAULT_IMAGE}`"
         )))
-        .stdout(predicate::str::contains(format!(
+        .stderr(predicate::str::contains(format!(
             "removed volume `{UNUSED_VOLUME}`"
         )));
 
@@ -131,13 +133,14 @@ fn clean_skips_images_and_volumes_used_by_any_container() {
     harness
         .agentbox_assert(&["clean", "--yes"])
         .success()
-        .stdout(predicate::str::contains(format!(
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
             "image `{OPENCODE_DEFAULT_IMAGE}`: used by container `{USED_VOLUME}`"
         )))
-        .stdout(predicate::str::contains(format!(
+        .stderr(predicate::str::contains(format!(
             "volume `{USED_VOLUME}`: mounted by container `{USED_VOLUME}`"
         )))
-        .stdout(predicate::str::contains(format!(
+        .stderr(predicate::str::contains(format!(
             "removed image `{CODEX_DEFAULT_IMAGE}`"
         )));
 
@@ -169,12 +172,13 @@ fn clean_only_considers_agentbox_cache_volume_name_shape() {
 
     let output = harness.agentbox_output(&["clean", "--dry-run", "--volumes"]);
     assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
 
-    assert!(stdout.contains(UNUSED_VOLUME));
-    assert!(!stdout.contains("agentbox-data"));
-    assert!(!stdout.contains("agentbox-short-abc123"));
-    assert!(!stdout.contains("other-agentbox-abcdef123456"));
+    assert!(stderr.contains(UNUSED_VOLUME));
+    assert!(!stderr.contains("agentbox-data"));
+    assert!(!stderr.contains("agentbox-short-abc123"));
+    assert!(!stderr.contains("other-agentbox-abcdef123456"));
 }
 
 #[test]
@@ -205,7 +209,8 @@ fn clean_continues_after_delete_failures_and_exits_nonzero() {
     harness
         .agentbox_assert(&["clean", "--yes"])
         .failure()
-        .stdout(predicate::str::contains(format!(
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
             "removed volume `{UNUSED_VOLUME}`"
         )))
         .stderr(predicate::str::contains("partial clean failed"))

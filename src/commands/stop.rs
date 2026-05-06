@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::cli::StopArgs;
+use crate::diagnostic;
 use crate::paths::path_buf_to_utf8;
 use crate::podman::Podman;
 use crate::prompt;
@@ -49,13 +50,13 @@ fn select_stop_targets() -> Result<Vec<PathBuf>> {
     let candidates = stop_prompt_candidates(&discover_managed_sessions(&podman)?);
 
     if candidates.is_empty() {
-        eprintln!("agentbox stop: no managed sessions available to stop");
+        diagnostic::info("agentbox stop: no managed sessions available to stop");
         return Ok(Vec::new());
     }
 
     let selected = prompt::select_many("Select sessions to stop", candidates, non_tty_error)?;
     if selected.is_empty() {
-        eprintln!("agentbox stop: no sessions selected");
+        diagnostic::warning("agentbox stop: no sessions selected");
         return Ok(Vec::new());
     }
 
