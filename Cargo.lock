@@ -13,6 +13,7 @@ dependencies = [
  "comfy-table",
  "directories",
  "fd-lock",
+ "libc",
  "predicates",
  "serde",
  "serde_json",

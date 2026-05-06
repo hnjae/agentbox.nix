@@ -37,12 +37,14 @@ trap cleanup EXIT INT TERM HUP
 runtime_contract_require_command podman
 runtime_contract_require_command id
 
+runtime_contract_prepare_user_args
 runtime_contract_prepare_cache_volume_mount
 runtime_contract_check_host_paths
 nix_client_path=$(runtime_contract_resolve_nix_client)
 
 set -- \
-    --userns=keep-id:size=65536 \
+    --userns "$runtime_contract_userns" \
+    --user "$runtime_contract_user" \
     --group-add keep-groups \
     --workdir /workspace \
     --name "$container_name" \

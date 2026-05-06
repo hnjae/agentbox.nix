@@ -20,12 +20,14 @@ trap cleanup EXIT INT TERM HUP
 runtime_contract_require_command podman
 runtime_contract_require_command id
 
+runtime_contract_prepare_user_args
 runtime_contract_prepare_cache_volume_mount
 runtime_contract_check_host_paths
 nix_client_path=$(runtime_contract_resolve_nix_client)
 
 set -- \
-    --userns=keep-id:size=65536 \
+    --userns "$runtime_contract_userns" \
+    --user "$runtime_contract_user" \
     --group-add keep-groups \
     --workdir /workspace \
     --name "$container_name" \
@@ -56,8 +58,18 @@ runtime_contract_run_container "$@"
 runtime_contract_wait_for_startup "$container_name"
 
 podman exec "$container_name" /bin/sh -ceu "
+    test \"\$(id -u)\" = 1000
+    test \"\$(id -g)\" = '$runtime_contract_host_gid'
+    test -w '$container_home'
+    test -w '$container_home/.cache'
     test -d '$container_home/.cache/nix'
+    test -w '$container_home/.cache/nix'
+    test -w '$container_home/.config'
+    test -w '$container_home/.local'
+    test -w '$container_home/.local/state'
     test -x '$profile_path/bin/gh'
+    touch '$container_home/.cache/nix/agentbox-writable'
+    touch '$container_home/.local/state/agentbox-writable'
     read -r startup_path </tmp/startup-path
     read -r startup_profiles </tmp/startup-profiles
     read -r startup_xdg_data_dirs </tmp/startup-xdg-data-dirs

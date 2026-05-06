@@ -58,6 +58,12 @@ runtime_contract_prepare_cache_volume_mount() {
     cache_mount="type=volume,dst=/home/user/.cache/nix,U"
 }
 
+runtime_contract_prepare_user_args() {
+    runtime_contract_host_gid=$(id -g)
+    runtime_contract_userns="keep-id:uid=1000,gid=$runtime_contract_host_gid"
+    runtime_contract_user="user:$runtime_contract_host_gid"
+}
+
 runtime_contract_build_image() {
     # shellcheck disable=SC2154
     podman build -t "$image_tag" -f "$repo_root/Containerfile" "$repo_root"

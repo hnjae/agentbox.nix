@@ -14,10 +14,14 @@ pub(super) fn run_detached_args(
     container_name: &str,
     spec: &RuntimeCreateSpec,
     workdir: Option<&str>,
+    host_gid: libc::gid_t,
 ) -> Vec<String> {
     let mut args = PodmanArgs::from(["run", "--detach", "--rm"]);
+    let gid = host_gid.to_string();
     args.option("--name", container_name);
-    args.option("--userns", "keep-id:uid=1000,gid=1000");
+    args.option("--userns", format!("keep-id:uid=1000,gid={gid}"));
+    args.option("--user", format!("user:{gid}"));
+    args.option("--group-add", "keep-groups");
 
     if let Some(workdir) = workdir {
         args.option("--workdir", workdir);
@@ -46,6 +50,11 @@ pub(super) fn run_detached_args(
     args.flag(spec.image.as_str());
     args.extend(spec.command.iter().map(String::as_str));
     args.into_vec()
+}
+
+pub(super) fn current_primary_gid() -> libc::gid_t {
+    // SAFETY: getgid has no preconditions and only returns the current process real GID.
+    unsafe { libc::getgid() }
 }
 
 fn render_mount(mount: &RuntimeMount) -> String {
@@ -100,7 +109,7 @@ mod tests {
         };
 
         assert_eq!(
-            run_detached_args("agentbox-demo", &spec, Some("/workspace")),
+            run_detached_args("agentbox-demo", &spec, Some("/workspace"), 1234),
             strings([
                 "run",
                 "--detach",
@@ -108,7 +117,11 @@ mod tests {
                 "--name",
                 "agentbox-demo",
                 "--userns",
-                "keep-id:uid=1000,gid=1000",
+                "keep-id:uid=1000,gid=1234",
+                "--user",
+                "user:1234",
+                "--group-add",
+                "keep-groups",
                 "--workdir",
                 "/workspace",
                 "--label",

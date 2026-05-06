@@ -81,7 +81,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[3].contains("--rm"));
     assert!(!log[3].contains("--rmi"));
     assert!(log[3].contains("--detach"));
-    assert!(log[3].contains("--userns keep-id:uid=1000,gid=1000"));
+    assert_runtime_user_args(&log[3]);
     assert!(!log[3].contains("--interactive"));
     assert!(!log[3].contains("--tty"));
     assert!(log[3].contains("--label io.agentbox.image=localhost/agentbox-opencode:local"));
@@ -193,6 +193,7 @@ fn run_launches_codex_server_in_yolo_mode() {
     assert!(log[2].contains("--label io.agentbox.codex.package=@openai/codex"));
     assert!(log[2].contains("--label io.agentbox.codex.version=0.99.0"));
     assert!(run.contains("--label io.agentbox.runtime=codex"));
+    assert_runtime_user_args(run);
     assert!(run.contains("--label io.agentbox.codex.version=0.99.0"));
     assert!(run.contains(&format!("--label io.agentbox.image={image}")));
     assert!(run.contains("--label io.agentbox.attach_scheme=ws"));
@@ -210,6 +211,18 @@ fn run_launches_codex_server_in_yolo_mode() {
     let state = fs::read_to_string(state_path).unwrap();
     assert!(state.contains("\"package\": \"@openai/codex\""));
     assert!(state.contains("\"installed_version\": \"0.99.0\""));
+}
+
+fn assert_runtime_user_args(run: &str) {
+    let gid = current_primary_gid().to_string();
+    assert!(run.contains(&format!("--userns keep-id:uid=1000,gid={gid}")));
+    assert!(run.contains(&format!("--user user:{gid}")));
+    assert!(run.contains("--group-add keep-groups"));
+}
+
+fn current_primary_gid() -> libc::gid_t {
+    // SAFETY: getgid has no preconditions and only returns the current process real GID.
+    unsafe { libc::getgid() }
 }
 
 #[test]

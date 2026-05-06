@@ -158,8 +158,14 @@ impl Podman {
         spec: &RuntimeCreateSpec,
         workdir: Option<&str>,
     ) -> Result<()> {
+        let host_gid = run::current_primary_gid();
         self.run_podman_forwarding_output_when_verbose(|command| {
-            command.args(run::run_detached_args(container_name, spec, workdir));
+            command.args(run::run_detached_args(
+                container_name,
+                spec,
+                workdir,
+                host_gid,
+            ));
         })
         .map(|_| ())
     }
