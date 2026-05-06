@@ -23,6 +23,7 @@ pub mod metadata;
 pub mod podman;
 pub mod preflight;
 pub mod process;
+pub mod prompt;
 pub mod runtime;
 pub mod session;
 mod state;

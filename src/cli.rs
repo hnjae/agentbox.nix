@@ -151,8 +151,8 @@ impl fmt::Display for OutputFormat {
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RunArgs {
     /// Runtime to launch for this run.
-    #[arg(long, value_enum, required = true)]
-    pub runtime: RuntimeKind,
+    #[arg(long, value_enum)]
+    pub runtime: Option<RuntimeKind>,
 
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,

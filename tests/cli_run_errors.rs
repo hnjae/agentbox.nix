@@ -9,8 +9,10 @@
 use std::path::Path;
 
 use agentbox::metadata::{LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME};
+use agentbox::prompt;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::git_root_hash12;
+use assert_cmd::Command as AssertCommand;
 use camino::Utf8Path;
 
 #[path = "support/mod.rs"]
@@ -21,6 +23,29 @@ use support::{
     opencode_workspace_inspect_fixture, opencode_workspace_labels, operation_names, ps_fixture,
     running_managed_inspect_fixture as managed_inspect_fixture, workspace_ps_entry,
 };
+
+#[test]
+fn missing_runtime_requires_tty_for_prompting() {
+    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+
+    command.args(["run", "/tmp/workspace"]);
+
+    command.assert().failure().stderr(predicates::str::contains(
+        "agentbox run requires --runtime when stdin or stderr is not a TTY",
+    ));
+}
+
+#[test]
+fn prompt_selection_errors_are_stable() {
+    assert_eq!(
+        prompt::selection_error(inquire::InquireError::OperationCanceled).to_string(),
+        "selection canceled",
+    );
+    assert_eq!(
+        prompt::selection_error(inquire::InquireError::OperationInterrupted).to_string(),
+        "selection interrupted",
+    );
+}
 
 #[test]
 fn existing_managed_session_suggests_attach_before_image_work() {

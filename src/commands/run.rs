@@ -9,7 +9,9 @@
 use crate::cli::RunArgs;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites_for_runtime;
+use crate::prompt;
 use crate::runtime::RuntimeCreateSpec;
+use crate::runtime::RuntimeKind;
 use crate::session::{
     classify_create_error_or_else, existing_session_error, select_single_session,
 };
@@ -24,7 +26,7 @@ use super::workspace_flow::with_locked_workspace;
 const RUN_FAILURE_LOG_TAIL_LINES: usize = 80;
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
-    let runtime = args.runtime;
+    let runtime = selected_runtime(args.runtime)?;
     let diagnostics = RunDiagnostics::new(verbose);
     let (workspace, endpoint) = with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
@@ -89,6 +91,17 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         workspace.container_name, workspace.canonical_git_root, workspace.requested_target,
     );
     Ok(())
+}
+
+fn selected_runtime(runtime: Option<RuntimeKind>) -> Result<RuntimeKind> {
+    match runtime {
+        Some(runtime) => Ok(runtime),
+        None => prompt::select_one(
+            "Select runtime",
+            RuntimeKind::variants().to_vec(),
+            "agentbox run requires --runtime when stdin or stderr is not a TTY",
+        ),
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

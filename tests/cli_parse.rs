@@ -62,7 +62,7 @@ fn core_commands_parse_into_expected_variants() {
     assert_eq!(
         run.command,
         Command::Run(RunArgs {
-            runtime: RuntimeKind::Opencode,
+            runtime: Some(RuntimeKind::Opencode),
             directory: "/tmp/workspace".into(),
         })
     );
@@ -363,17 +363,6 @@ fn run_rejects_image_override() {
 }
 
 #[test]
-fn run_requires_runtime_selection() {
-    let error = Cli::try_parse_from(["agentbox", "run", "/tmp/workspace"]).unwrap_err();
-
-    assert_eq!(error.exit_code(), 2);
-    assert!(
-        error.to_string().contains("--runtime <RUNTIME>"),
-        "expected clap to mention the missing runtime option"
-    );
-}
-
-#[test]
 fn run_accepts_runtime_selection() {
     let cli =
         Cli::try_parse_from(["agentbox", "run", "--runtime", "codex", "/tmp/workspace"]).unwrap();
@@ -381,7 +370,20 @@ fn run_accepts_runtime_selection() {
     assert_eq!(
         cli.command,
         Command::Run(RunArgs {
-            runtime: RuntimeKind::Codex,
+            runtime: Some(RuntimeKind::Codex),
+            directory: "/tmp/workspace".into(),
+        })
+    );
+}
+
+#[test]
+fn run_accepts_missing_runtime_for_prompting() {
+    let cli = Cli::try_parse_from(["agentbox", "run", "/tmp/workspace"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Run(RunArgs {
+            runtime: None,
             directory: "/tmp/workspace".into(),
         })
     );

@@ -25,6 +25,10 @@ pub enum RuntimeKind {
 }
 
 impl RuntimeKind {
+    pub fn variants() -> &'static [Self] {
+        &[Self::Opencode, Self::Codex]
+    }
+
     pub fn as_str(self) -> &'static str {
         profile::runtime_profile(self).name
     }
