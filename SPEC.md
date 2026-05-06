@@ -64,7 +64,8 @@ Conditionally required host tools:
 
 - the running session's runtime host client command for `attach`
 - `npm` when `agentbox` must resolve the latest runtime npm package version
-  for initial default image creation or `agentbox runtime update <runtime>`
+  for initial default image creation, a default runtime image rebuild after the
+  embedded image build context changes, or `agentbox runtime update <runtime>`
 - `direnv` when a matching `.envrc` applies to the directory whose environment
   is used by the command: the `run` target directory for server startup
 
@@ -287,17 +288,33 @@ Runtime rules:
 Image rules:
 
 - `run` does not accept a user-supplied image reference.
-- `run` always uses the selected runtime's default image reference.
+- `run` always uses the selected runtime's current default image reference.
 - The default image may be built or reused by `agentbox`; users do not need to
   supply a build context.
-- If the selected runtime is `codex` and the default image is missing, `run`
-  resolves the latest `@openai/codex` npm version, builds the Codex default
-  image with that version, and records the version metadata in agentbox state.
-- If the selected runtime is `opencode` and the default image is missing, `run`
-  resolves the latest `opencode-ai` npm version, builds the OpenCode default
-  image with that version, and records the version metadata in agentbox state.
+- The selected runtime's current default image reference is
+  `localhost/agentbox-<runtime>:ctx-<16-hex>`, where `<runtime>` is `opencode`
+  or `codex` and `<16-hex>` is the first 16 lowercase hexadecimal characters
+  of the SHA-256 digest over agentbox's embedded runtime image build context.
+- The default image context hash is deterministic over these embedded image
+  input paths and file contents: `Containerfile`, `bootstrap`, `entrypoint`,
+  `lib/runtime-contract.sh`, and `runtime-packages.nix`. Documentation,
+  developer tooling, and image tests such as `README.md`, `justfile`, and
+  `tests/**` are not image inputs and do not affect the default image
+  reference.
+- If the selected runtime is `codex` and the current default image is missing,
+  `run` resolves the latest `@openai/codex` npm version, builds the Codex
+  default image with that version, and records the version metadata, image
+  reference, and image context hash in agentbox state.
+- If the selected runtime is `opencode` and the current default image is
+  missing, `run` resolves the latest `opencode-ai` npm version, builds the
+  OpenCode default image with that version, and records the version metadata,
+  image reference, and image context hash in agentbox state.
 - If the selected runtime's default image already exists, `run` reuses it
   without checking the npm registry.
+- Existing legacy `localhost/agentbox-opencode:local` and
+  `localhost/agentbox-codex:local` images are not current default image
+  references and do not prevent `run` from building the current
+  content-hash-tagged image.
 - `agentbox` records the exact default image reference on the running managed
   container so live discovery can report it while the container exists.
 - Default runtime images are not removed by `stop`; image cleanup and image
@@ -326,13 +343,16 @@ Selection rules:
 
 Image cleanup rules:
 
-- `clean` only considers the exact default image references
-  `localhost/agentbox-opencode:local` and `localhost/agentbox-codex:local`.
-- A default runtime image is skipped when any Podman container, managed or
-  unmanaged, currently uses that exact image reference.
-- When a default runtime image is deleted successfully, the corresponding
-  runtime image metadata file under `$XDG_STATE_HOME/agentbox/runtime` is
-  removed if it exists.
+- `clean` considers agentbox-owned default runtime images discovered from
+  image labels, including old content-hash-tagged default image references, and
+  the legacy exact image references `localhost/agentbox-opencode:local` and
+  `localhost/agentbox-codex:local`.
+- A default runtime image candidate is skipped when any Podman container,
+  managed or unmanaged, currently uses that exact image reference.
+- When the current state file for a runtime points to an image that was deleted
+  successfully, the corresponding runtime image metadata file under
+  `$XDG_STATE_HOME/agentbox/runtime` is removed. If state points to a different
+  image that is still present or in use, it is preserved.
 - `clean` does not remove image names by prefix and does not call
   `podman system prune` or Podman build-cache cleanup.
 
@@ -384,12 +404,16 @@ Expected behavior:
 2. Read the stored runtime image metadata from
    `$XDG_STATE_HOME/agentbox/runtime/opencode.json` or
    `$XDG_STATE_HOME/agentbox/runtime/codex.json`, if it exists.
-3. If the selected local default image exists and the stored installed version
-   is already the latest npm version, skip the rebuild and record the latest
-   check time.
-4. Otherwise, rebuild the selected default image with the resolved npm version.
-5. Record the installed version, latest seen version, check time, image build
-   time, npm package name, install source, and image reference in agentbox state.
+3. Compute the selected runtime's current content-hash-tagged default image
+   reference from the embedded image build context.
+4. If the selected local default image exists and the stored installed version,
+   image reference, and image context hash already match the latest npm version
+   and current embedded context, skip the rebuild and record the latest check
+   time.
+5. Otherwise, rebuild the selected default image with the resolved npm version.
+6. Record the installed version, latest seen version, check time, image build
+   time, npm package name, install source, image reference, and image context
+   hash in agentbox state.
 
 Rules:
 
@@ -958,9 +982,11 @@ Valid lifecycle behavior:
 
 Default runtime image lifecycle is separate from managed sessions. When the
 runtime server exits or `agentbox stop` stops it, Podman removes the container
-but keeps the default runtime image. Runtime image updates happen through
-`agentbox runtime update <opencode|codex>`, and unused default images can be
-removed through `agentbox clean`; `stop` does not remove or rebuild images.
+but keeps the default runtime image. Current default runtime images are tagged
+by embedded build-context content hash. Runtime image package updates happen
+through `agentbox runtime update <opencode|codex>`, and unused current, old
+content-hash-tagged, or legacy `:local` default images can be removed through
+`agentbox clean`; `stop` does not remove or rebuild images.
 
 Named runtime cache volume lifecycle remains separate. `agentbox stop` leaves
 the workspace cache volume intact so later sessions can reuse it. Volume
