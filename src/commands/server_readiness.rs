@@ -142,29 +142,56 @@ impl EndpointProbe for HostTcpEndpointProbe {
 }
 
 fn endpoint_connection_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
-    if endpoint.scheme == "http" {
-        return http_endpoint_is_ready(endpoint, stream);
+    match endpoint.scheme.as_str() {
+        "http" => http_endpoint_is_ready(endpoint, stream),
+        "ws" => ws_endpoint_is_ready(endpoint, stream),
+        _ => true,
     }
-
-    true
 }
 
 fn http_endpoint_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
+    http_get_response_prefix(endpoint, stream, "/", 8)
+        .is_some_and(|prefix| prefix.starts_with(b"HTTP/1."))
+}
+
+fn ws_endpoint_is_ready(endpoint: &AttachEndpoint, stream: &mut TcpStream) -> bool {
+    http_get_response_prefix(endpoint, stream, "/readyz", 13).is_some_and(|prefix| {
+        prefix.len() >= 13
+            && prefix.starts_with(b"HTTP/1.")
+            && prefix[8] == b' '
+            && &prefix[9..12] == b"200"
+            && matches!(prefix[12], b' ' | b'\r')
+    })
+}
+
+fn http_get_response_prefix(
+    endpoint: &AttachEndpoint,
+    stream: &mut TcpStream,
+    path: &str,
+    prefix_len: usize,
+) -> Option<Vec<u8>> {
     let _ = stream.set_read_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
     let _ = stream.set_write_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
 
     let request = format!(
-        "GET / HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
-        endpoint.host_ip, endpoint.host_port
+        "GET {path} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
+        endpoint.host_ip, endpoint.host_port,
     );
     if stream.write_all(request.as_bytes()).is_err() {
-        return false;
+        return None;
     }
 
-    let mut response_prefix = [0_u8; 8];
-    stream
-        .read(&mut response_prefix)
-        .is_ok_and(|bytes_read| response_prefix[..bytes_read].starts_with(b"HTTP/1."))
+    let mut response_prefix = Vec::with_capacity(prefix_len);
+    while response_prefix.len() < prefix_len {
+        let mut buffer = [0_u8; 12];
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(bytes_read) => response_prefix.extend_from_slice(&buffer[..bytes_read]),
+            Err(_) => return None,
+        }
+    }
+    response_prefix.truncate(prefix_len);
+    Some(response_prefix)
 }
 
 #[cfg(test)]
@@ -203,9 +230,64 @@ mod tests {
         server.join().unwrap();
     }
 
+    #[test]
+    fn ws_probe_rejects_tcp_accept_without_http_response() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = local_ws_endpoint(&listener);
+        let server = thread::spawn(move || {
+            let _ = listener.accept().unwrap();
+        });
+
+        assert!(!HostTcpEndpointProbe.is_reachable(&endpoint));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn ws_probe_accepts_readyz_http_200() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = local_ws_endpoint(&listener);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 128];
+            let bytes_read = stream.read(&mut request).unwrap();
+            assert!(request[..bytes_read].starts_with(b"GET /readyz HTTP/1.1"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+        });
+
+        assert!(HostTcpEndpointProbe.is_reachable(&endpoint));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn ws_probe_rejects_non_200_readyz_response() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let endpoint = local_ws_endpoint(&listener);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 128];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+        });
+
+        assert!(!HostTcpEndpointProbe.is_reachable(&endpoint));
+        server.join().unwrap();
+    }
+
     fn local_http_endpoint(listener: &TcpListener) -> AttachEndpoint {
         AttachEndpoint {
             scheme: "http".to_string(),
+            host_ip: "127.0.0.1".to_string(),
+            host_port: listener.local_addr().unwrap().port(),
+        }
+    }
+
+    fn local_ws_endpoint(listener: &TcpListener) -> AttachEndpoint {
+        AttachEndpoint {
+            scheme: "ws".to_string(),
             host_ip: "127.0.0.1".to_string(),
             host_port: listener.local_addr().unwrap().port(),
         }

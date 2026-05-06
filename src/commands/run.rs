@@ -85,7 +85,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     })?;
 
     println!(
-        "managed session `{}` is running for `{}` at `{endpoint}`; use `agentbox attach {}` to connect",
+        "managed session `{}` for `{}` is ready at `{endpoint}`; use `agentbox attach {}` to connect",
         workspace.container_name, workspace.canonical_git_root, workspace.requested_target,
     );
     Ok(())

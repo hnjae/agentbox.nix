@@ -166,7 +166,11 @@ fn run_launches_codex_server_in_yolo_mode() {
     let mut command = harness.locked_agentbox_command(workspace);
     command.args(["run", "--runtime", "codex"]).arg(target);
 
-    command.assert().success();
+    let expected_endpoint = format!("ws://127.0.0.1:{}", endpoint.port());
+    command.assert().success().stdout(
+        predicate::str::contains(format!("is ready at `{expected_endpoint}`"))
+            .and(predicate::str::contains("use `agentbox attach")),
+    );
     endpoint.wait();
 
     let log = harness.read_log();

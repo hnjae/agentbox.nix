@@ -55,21 +55,19 @@ impl Drop for ReadyEndpoint {
     }
 }
 
-fn serve_one_ready_probe(listener: TcpListener, runtime: RuntimeKind) {
+fn serve_one_ready_probe(listener: TcpListener, _runtime: RuntimeKind) {
     let deadline = Instant::now() + ACCEPT_TIMEOUT;
 
     loop {
         match listener.accept() {
             Ok((mut stream, _)) => {
-                if runtime == RuntimeKind::Opencode {
-                    let _ = stream.set_read_timeout(Some(ACCEPT_TIMEOUT));
-                    let _ = stream.set_write_timeout(Some(ACCEPT_TIMEOUT));
-                    let mut request = [0_u8; 128];
-                    let _ = stream.read(&mut request);
-                    stream
-                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                        .unwrap();
-                }
+                let _ = stream.set_read_timeout(Some(ACCEPT_TIMEOUT));
+                let _ = stream.set_write_timeout(Some(ACCEPT_TIMEOUT));
+                let mut request = [0_u8; 128];
+                let _ = stream.read(&mut request);
+                stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                    .unwrap();
                 return;
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
