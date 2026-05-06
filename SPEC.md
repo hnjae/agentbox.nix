@@ -620,9 +620,12 @@ Endpoint rules:
 - The runtime server command must pass the configured listen address to
   runtimes whose default bind address would not be reachable through the
   published attach endpoint.
-- For `http` attach endpoints, `run` treats the endpoint as reachable only after
-  the host-published endpoint returns an HTTP response. A TCP accept followed by
-  a reset is not sufficient readiness.
+- For OpenCode `http` attach endpoints, `run` treats the endpoint as ready only
+  after `GET /global/health` on the same host-published endpoint returns
+  `HTTP 200` and a JSON response body whose `healthy` field is `true`. A TCP
+  connection, TCP accept followed by a reset, arbitrary HTTP response,
+  malformed JSON response, or health response with `healthy: false` is not
+  sufficient readiness.
 - For Codex `ws` attach endpoints, `run` treats the endpoint as ready only after
   `GET /readyz` on the same host-published endpoint returns `HTTP 200`. A TCP
   connection alone is not sufficient readiness.
