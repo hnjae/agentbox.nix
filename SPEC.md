@@ -350,6 +350,7 @@ Expected output fields:
 - canonical git root, or `unknown`
 - runtime, or `unknown`
 - status
+- endpoint, or `unknown`
 
 Status values:
 
@@ -375,11 +376,13 @@ Rules:
 - `ls --output json`, `ls --output=json`, and `ls -o json` print a compact
   single-line JSON array followed by a newline.
 - JSON rows contain stable keys: `id`, `canonical_git_root`, `runtime`,
-  `status`, and `container_name`.
+  `status`, `endpoint`, and `container_name`.
 - JSON keeps `container_name` for automation even though the table omits it.
-- JSON uses `null` for unrecoverable `id`, `canonical_git_root`, or `runtime`
-  values instead of the table's `unknown` placeholder.
+- JSON uses `null` for unrecoverable `id`, `canonical_git_root`, `runtime`, or
+  `endpoint` values instead of the table's `unknown` placeholder.
 - JSON rows use the same ordering as table rows.
+- Table output uses uppercase headers, no leading or trailing table padding, and
+  ends with a newline.
 
 ### `agentbox health [target]`
 
@@ -435,6 +438,8 @@ Rules:
 - JSON uses `null` for unrecoverable `id`, `canonical_git_root`, `runtime`, or
   `endpoint` values instead of the table's `unknown` placeholder.
 - JSON rows use the same ordering as table rows.
+- Table output uses uppercase headers, no leading or trailing table padding, and
+  ends with a newline.
 - A healthy row uses reason `ok`.
 - An unhealthy row uses a concise reason such as `unreachable`, `HTTP 503`,
   `malformed JSON`, or `healthy=false`.
