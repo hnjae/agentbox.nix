@@ -50,13 +50,12 @@ pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
     let mut lines = Vec::new();
     for session in live_roots(command)? {
         if let Some(value) = completion_candidate_value(command, &session) {
+            let display = session.display();
             lines.push(format!(
                 "{}\t{}\t{}\t{}",
                 value,
-                session
-                    .canonical_git_root()
-                    .map_or("unknown", |root| root.as_str()),
-                session.runtime().unwrap_or("unknown"),
+                display.canonical_git_root_or_unknown(),
+                display.runtime_or_unknown(),
                 session.status.as_str(),
             ));
         }
@@ -77,9 +76,11 @@ fn completion_candidate_value(
     command: CompletionRootCommand,
     session: &SessionRecord,
 ) -> Option<&str> {
+    let display = session.display();
+
     match command {
-        CompletionRootCommand::Attach => session.canonical_git_root().map(|root| root.as_str()),
-        CompletionRootCommand::Health | CompletionRootCommand::Stop => session.stable_id(),
+        CompletionRootCommand::Attach => display.canonical_git_root_str(),
+        CompletionRootCommand::Health | CompletionRootCommand::Stop => display.id(),
     }
 }
 

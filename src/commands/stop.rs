@@ -175,11 +175,10 @@ fn stop_prompt_candidate_matches(session: &SessionRecord) -> bool {
 }
 
 fn stop_prompt_candidate(session: &SessionRecord) -> Option<StopPromptCandidate> {
-    let id = session.stable_id()?;
-    let root = session
-        .canonical_git_root()
-        .map_or("unknown", |root| root.as_str());
-    let runtime = session.runtime().unwrap_or("unknown");
+    let display = session.display();
+    let id = display.id()?;
+    let root = display.canonical_git_root_or_unknown();
+    let runtime = display.runtime_or_unknown();
     let label = format!("{id} {root} {runtime} {}", session.status.as_str());
 
     Some(StopPromptCandidate::new(label, PathBuf::from(id)))

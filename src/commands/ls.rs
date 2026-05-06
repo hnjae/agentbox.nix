@@ -33,21 +33,13 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
     table.set_header(["ID", "CANONICAL GIT ROOT", "RUNTIME", "STATUS", "ENDPOINT"]);
 
     for session in sorted_session_refs_by_identity(sessions) {
+        let display = session.display();
         table.add_row([
-            Cell::new(session.stable_id().unwrap_or("unknown")),
-            Cell::new(
-                session
-                    .canonical_git_root()
-                    .map_or("unknown", |root| root.as_str()),
-            ),
-            Cell::new(session.runtime().unwrap_or("unknown")),
+            Cell::new(display.id_or_unknown()),
+            Cell::new(display.canonical_git_root_or_unknown()),
+            Cell::new(display.runtime_or_unknown()),
             Cell::new(session.status.as_str()),
-            Cell::new(
-                session
-                    .attach_endpoint
-                    .as_ref()
-                    .map_or_else(|| "unknown".to_string(), ToString::to_string),
-            ),
+            Cell::new(display.endpoint_or_unknown()),
         ]);
     }
 
@@ -75,13 +67,15 @@ struct LsJsonRow<'a> {
 
 impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
     fn from(session: &'a SessionRecord) -> Self {
+        let display = session.display();
+
         Self {
-            id: session.stable_id(),
-            canonical_git_root: session.canonical_git_root().map(|root| root.as_str()),
-            runtime: session.runtime(),
+            id: display.id(),
+            canonical_git_root: display.canonical_git_root_str(),
+            runtime: display.runtime(),
             status: session.status.as_str(),
-            endpoint: session.attach_endpoint.as_ref().map(ToString::to_string),
-            container_name: &session.container_name,
+            endpoint: display.endpoint().map(ToString::to_string),
+            container_name: display.container_name(),
         }
     }
 }

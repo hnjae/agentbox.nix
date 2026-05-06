@@ -30,6 +30,16 @@ pub struct SessionRecord {
 }
 
 impl SessionRecord {
+    pub(crate) fn display(&self) -> SessionDisplay<'_> {
+        SessionDisplay {
+            id: self.stable_id(),
+            canonical_git_root: self.canonical_git_root(),
+            runtime: self.runtime(),
+            endpoint: self.attach_endpoint.as_ref().map(ToString::to_string),
+            container_name: &self.container_name,
+        }
+    }
+
     pub fn canonical_git_root(&self) -> Option<&Utf8Path> {
         self.metadata.canonical_git_root()
     }
@@ -56,6 +66,57 @@ impl SessionRecord {
 
     pub fn container_running(&self) -> bool {
         self.container_running
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionDisplay<'a> {
+    id: Option<&'a str>,
+    canonical_git_root: Option<&'a Utf8Path>,
+    runtime: Option<&'a str>,
+    endpoint: Option<String>,
+    container_name: &'a str,
+}
+
+impl<'a> SessionDisplay<'a> {
+    pub(crate) fn id(&self) -> Option<&'a str> {
+        self.id
+    }
+
+    pub(crate) fn id_or_unknown(&self) -> &str {
+        self.id.unwrap_or("unknown")
+    }
+
+    pub(crate) fn canonical_git_root(&self) -> Option<&'a Utf8Path> {
+        self.canonical_git_root
+    }
+
+    pub(crate) fn canonical_git_root_str(&self) -> Option<&'a str> {
+        self.canonical_git_root.map(Utf8Path::as_str)
+    }
+
+    pub(crate) fn canonical_git_root_or_unknown(&self) -> &str {
+        self.canonical_git_root_str().unwrap_or("unknown")
+    }
+
+    pub(crate) fn runtime(&self) -> Option<&'a str> {
+        self.runtime
+    }
+
+    pub(crate) fn runtime_or_unknown(&self) -> &str {
+        self.runtime.unwrap_or("unknown")
+    }
+
+    pub(crate) fn endpoint(&self) -> Option<&str> {
+        self.endpoint.as_deref()
+    }
+
+    pub(crate) fn endpoint_or_unknown(&self) -> &str {
+        self.endpoint().unwrap_or("unknown")
+    }
+
+    pub(crate) fn container_name(&self) -> &'a str {
+        self.container_name
     }
 }
 

@@ -122,9 +122,13 @@ pub fn attach_prompt_candidates(sessions: &[SessionRecord]) -> Vec<AttachPromptC
 }
 
 fn attach_prompt_candidate(session: &SessionRecord) -> Option<AttachPromptCandidate> {
-    let root = session.canonical_git_root()?;
-    let runtime = session.runtime().unwrap_or("unknown");
-    let label = format!("{root} ({runtime})");
+    let display = session.display();
+    let root = display.canonical_git_root()?;
+    let label = format!(
+        "{} ({})",
+        display.canonical_git_root_or_unknown(),
+        display.runtime_or_unknown()
+    );
 
     Some(AttachPromptCandidate::new(
         label,

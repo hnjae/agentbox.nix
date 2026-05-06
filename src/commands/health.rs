@@ -136,13 +136,11 @@ fn health_rows(
 }
 
 fn health_row(session: &SessionRecord, probe: &impl RuntimeHealthProbe) -> HealthRow {
-    let id = session.stable_id().map(ToString::to_string);
-    let canonical_git_root = session.canonical_git_root().map(ToString::to_string);
-    let runtime = session
-        .runtime_kind()
-        .map(|runtime| runtime.as_str().to_string())
-        .or_else(|| session.runtime().map(ToString::to_string));
-    let endpoint = session.attach_endpoint.as_ref().map(ToString::to_string);
+    let display = session.display();
+    let id = display.id().map(ToString::to_string);
+    let canonical_git_root = display.canonical_git_root_str().map(ToString::to_string);
+    let runtime = display.runtime().map(ToString::to_string);
+    let endpoint = display.endpoint().map(ToString::to_string);
 
     let (health, reason) = match (session.runtime_kind(), session.attach_endpoint.as_ref()) {
         (Some(runtime), Some(endpoint)) => {
@@ -170,7 +168,7 @@ fn health_row(session: &SessionRecord, probe: &impl RuntimeHealthProbe) -> Healt
         health,
         reason,
         endpoint,
-        container_name: session.container_name.clone(),
+        container_name: display.container_name().to_string(),
     }
 }
 
