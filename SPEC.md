@@ -346,10 +346,10 @@ Rules:
 
 Expected output fields:
 
+- id, or `unknown`
 - canonical git root, or `unknown`
 - runtime, or `unknown`
 - status
-- concrete container name
 
 Status values:
 
@@ -366,32 +366,36 @@ Rules:
 
 - Containers not marked as managed by `agentbox` are ignored, even if their
   names resemble `agentbox` names.
+- The public session id is the stable 12-character value from the
+  `io.agentbox.git_root_hash` label. It is not the Podman container id.
 - For `failed` sessions, fields that cannot be recovered from live Podman state
-  are shown as `unknown`. The concrete container name must still be shown so the
-  user or operator can inspect or remove the broken container.
+  are shown as `unknown`.
 - By default, `ls` prints a compact borderless human-readable table.
 - `ls --output table` and `ls -o table` explicitly select the same table output.
 - `ls --output json`, `ls --output=json`, and `ls -o json` print a compact
   single-line JSON array followed by a newline.
-- JSON rows contain stable keys: `canonical_git_root`, `runtime`, `status`, and
-  `container_name`.
-- JSON uses `null` for unrecoverable `canonical_git_root` or `runtime` values
-  instead of the table's `unknown` placeholder.
+- JSON rows contain stable keys: `id`, `canonical_git_root`, `runtime`,
+  `status`, and `container_name`.
+- JSON keeps `container_name` for automation even though the table omits it.
+- JSON uses `null` for unrecoverable `id`, `canonical_git_root`, or `runtime`
+  values instead of the table's `unknown` placeholder.
 - JSON rows use the same ordering as table rows.
 
-### `agentbox health`
+### `agentbox health [target]`
 
 `health` reports runtime health for currently running managed workspace
-sessions from live Podman discovery.
+sessions from live Podman discovery. Without a target, it probes every running
+session. With a target, it probes one running session selected by stable id
+prefix.
 
 Expected output fields:
 
+- id
 - canonical git root
 - runtime
 - health
 - reason
 - endpoint
-- concrete container name
 
 Health values:
 
@@ -413,14 +417,22 @@ Rules:
 - `health` includes only sessions whose discovered session status is `running`.
 - Failed, stopped, orphaned, and duplicate sessions are not included.
 - `health` probes each running session once and does not wait for recovery.
+- `health <target>` treats `<target>` as a stable id prefix. Prefix matching is
+  case-insensitive.
+- If no session id matches the target prefix, `health <target>` fails clearly.
+- If the prefix matches more than one distinct id, `health <target>` fails and
+  asks for a longer prefix.
+- If the selected session is not `running`, `health <target>` fails clearly
+  instead of probing it.
 - By default, `health` prints a compact borderless human-readable table.
 - `health --output table` and `health -o table` explicitly select the same table
   output.
 - `health --output json`, `health --output=json`, and `health -o json` print a
   compact single-line JSON array followed by a newline.
-- JSON rows contain stable keys: `canonical_git_root`, `runtime`, `health`,
-  `reason`, `endpoint`, and `container_name`.
-- JSON uses `null` for unrecoverable `canonical_git_root`, `runtime`, or
+- JSON rows contain stable keys: `id`, `canonical_git_root`, `runtime`,
+  `health`, `reason`, `endpoint`, and `container_name`.
+- JSON keeps `container_name` for automation even though the table omits it.
+- JSON uses `null` for unrecoverable `id`, `canonical_git_root`, `runtime`, or
   `endpoint` values instead of the table's `unknown` placeholder.
 - JSON rows use the same ordering as table rows.
 - A healthy row uses reason `ok`.
@@ -431,25 +443,32 @@ Rules:
 - Unhealthy rows do not make the command fail; discovery or Podman failures
   remain command failures.
 
-### `agentbox stop <directory>`
+### `agentbox stop <target>`
 
-`stop` stops the workspace session for the resolved repository, including
-orphaned live containers. It is not a volume pruning command.
+`stop` stops the workspace session for the resolved repository, exact orphaned
+absolute path, or stable id prefix. It is not a volume pruning command.
 
 Expected behavior:
 
-1. If `<directory>` exists, resolve it to a canonical git root.
-2. If `<directory>` does not exist, require an exact absolute git-root path
-   string and match only a live orphaned session whose stored git-root path is
-   exactly that string.
-3. Ensure concurrent lifecycle operations for the same git root do not race.
-4. Stop the matching container if it is running.
-5. Treat an already-removed matching container as success after verifying it is
+1. If `<target>` names an existing path, resolve it to a canonical git root.
+1. If `<target>` is an absolute path that does not exist, require it to be an
+   exact absolute git-root path string and match only a live orphaned session
+   whose stored git-root path is exactly that string.
+1. If `<target>` is not resolved as a path, treat it as a stable id prefix.
+   Prefix matching is case-insensitive.
+1. If no session id matches the target prefix, fail clearly.
+1. If the prefix matches more than one distinct id, fail and ask for a longer
+   prefix.
+1. If all prefix matches have the same full id, treat them as duplicate sessions
+   for that id.
+1. Ensure concurrent lifecycle operations for the same git root do not race.
+1. Stop the matching container if it is running.
+1. Treat an already-removed matching container as success after verifying it is
    absent.
-6. If no matching managed session exists, report that no session exists for the
+1. If no matching managed session exists, report that no session exists for the
    resolved repository or exact orphan path and exit non-zero.
-7. Rely on Podman's `--rm` cleanup for container removal after the stop.
-8. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
+1. Rely on Podman's `--rm` cleanup for container removal after the stop.
+1. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed
    later by explicit Podman volume cleanup.
 
 Optional flag:
@@ -461,27 +480,31 @@ Safety rules:
 - Without `--force`, `stop` fails when more than one matching managed container
   is found.
 - With `--force`, `stop` stops all live managed containers that exactly claim
-  the resolved canonical git root or exact orphan path. It still does not stop
-  containers that cannot be matched to that identity.
+  the resolved canonical git root, exact orphan path, or selected stable id. It
+  still does not stop containers that cannot be matched to that identity.
+- Stable id matching includes failed sessions, but `stop` only locks and stops
+  a matched session when its git-root label is recoverable.
 - `stop` never deletes the user workspace.
 - `stop` never directly removes images or named cache volumes.
 
 ## Completion And Installed Assets
 
-Shell completion for `attach` and `stop` is dynamic.
+Shell completion for `attach`, `stop`, and `health` is dynamic.
 
 Required behavior:
 
 - Completion candidates come from live managed sessions, not from a static file.
-- Candidate values are canonical or stored git root paths when known. Sessions
-  with no recoverable git-root path are not completion candidates, but remain
-  visible through `agentbox ls` by concrete container name.
+- `attach` candidate values are canonical or stored git root paths when known.
+  Sessions with no recoverable git-root path are not attach completion
+  candidates, but remain visible through `agentbox ls`.
 - `attach` completion includes only attachable `running` sessions with valid
   endpoint metadata.
+- `stop` and `health` candidate values are stable ids.
 - `stop` completion includes running, orphaned, duplicate, and failed sessions
-  when a canonical or stored git-root path is known.
-- Candidate descriptions include runtime and status when the shell supports
-  descriptions.
+  when a stable id is known.
+- `health` completion includes sessions when a stable id is known.
+- Candidate descriptions include root, runtime, and status when the shell
+  supports descriptions.
 - Eligible live sessions are reflected immediately at tab completion time.
 - `fzf-tab`-style frontends work automatically because they consume normal shell
   completion results.
