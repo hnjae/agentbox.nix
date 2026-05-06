@@ -71,8 +71,8 @@ Conditionally required host tools:
 For `run` and `attach`, `<directory>` must resolve to an existing directory
 inside a git repository. A non-git target fails clearly; the MVP does not create
 ad-hoc non-git sessions. `stop` normally follows the same resolution rules, but
-it may also accept an exact absolute git-root path string for an orphaned
-session whose stored path no longer exists.
+it may also accept an exact stored git-root absolute path string for a
+recoverable session whose stored path no longer exists.
 
 Out of scope for the MVP:
 
@@ -551,8 +551,9 @@ Rules:
 
 ### `agentbox stop [target]...` / `agentbox stop --all`
 
-`stop` stops workspace sessions for the resolved repositories, exact orphaned
-absolute paths, or stable id prefixes. It is not a volume pruning command.
+`stop` stops workspace sessions for the resolved repositories, exact stored
+git-root absolute paths, or stable id prefixes. It is not a volume pruning
+command.
 With `--all`, `stop` stops every running managed `agentbox` container.
 
 Expected behavior:
@@ -562,8 +563,9 @@ Expected behavior:
 2. For each `<target>` that names an existing path, resolve it to a canonical
    git root.
 3. For each `<target>` that is an absolute path that does not exist, require it
-   to be an exact absolute git-root path string and match only a live orphaned
-   session whose stored git-root path is exactly that string.
+   to exactly match a live managed session's stored `io.agentbox.git_root`
+   absolute path string. This selector may match orphaned sessions and failed
+   sessions that still have a recoverable stored git-root path.
 4. For each `<target>` that is not resolved as a path, treat it as a stable id
    prefix. Prefix matching is case-insensitive.
 5. If no session id matches a target prefix, record a clear failure for that
@@ -577,7 +579,7 @@ Expected behavior:
 10. Treat an already-removed matching container as success after verifying it is
     absent.
 11. If no matching managed session exists for a target, record that no session
-    exists for the resolved repository or exact orphan path.
+    exists for the resolved repository or exact stored git-root path.
 12. After all explicit targets are processed, exit non-zero if any target failed
     or any cleanup verification failed, and include a summary of the failed
     targets.
@@ -622,8 +624,9 @@ Safety rules:
 - Without `--force`, `stop` fails when more than one matching managed container
   is found.
 - With `--force`, `stop` stops all live managed containers that exactly claim
-  the resolved canonical git root, exact orphan path, or selected stable id. It
-  still does not stop containers that cannot be matched to that identity.
+  the resolved canonical git root, exact stored git-root path, or selected
+  stable id. It still does not stop containers that cannot be matched to that
+  identity.
 - With multiple explicit targets, `stop` may stop sessions for successful
   targets even when other targets fail.
 - `--force` is not required with `--all`; `--all` already selects every running
@@ -939,7 +942,7 @@ Required drift behavior:
 - Duplicate containers for one git root: mark the session as `duplicate`, fail
   `run` and `attach`, and do not guess which container to use. `stop --force`
   may stop all duplicate managed containers that exactly claim the resolved
-  canonical git root or exact orphan path.
+  canonical git root or exact stored git-root path.
 - Missing or malformed managed-container metadata: mark the session as `failed`
   and require explicit cleanup or recreation before the session can be used
   again.
@@ -958,10 +961,11 @@ Required drift behavior:
 - Stop failure: report exactly which managed containers are still running or
   still inspectable.
 - A `failed` session is not attachable. If enough metadata remains to identify
-  it by git root or exact orphan path, `agentbox stop --force <directory>` may
-  stop it. If the session cannot be matched safely, `ls` reports the concrete
-  container name and the user must remove that container with Podman before
-  starting a new session for the affected workspace.
+  it by git root or exact stored git-root path,
+  `agentbox stop --force <directory>` may stop it. If the session cannot be
+  matched safely, `ls` reports the concrete container name and the user must
+  remove that container with Podman before starting a new session for the
+  affected workspace.
 
 ## Error Handling
 
