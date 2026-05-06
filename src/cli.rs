@@ -6,7 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
@@ -74,9 +74,9 @@ pub enum Command {
     /// Attach to a running managed session.
     Attach(DirectoryArgs),
     /// List managed sessions.
-    Ls,
+    Ls(LsArgs),
     /// Check running managed session runtime health.
-    Health,
+    Health(HealthArgs),
     /// Stop a managed session.
     Stop(StopArgs),
     /// Shell completion helpers.
@@ -113,6 +113,38 @@ pub enum CompletionRootCommand {
     Stop,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    Table,
+    Json,
+}
+
+impl OutputFormat {
+    fn variants() -> &'static [Self] {
+        &[Self::Table, Self::Json]
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Table => "table",
+            Self::Json => "json",
+        }
+    }
+
+    pub fn supported_values() -> Vec<&'static str> {
+        Self::variants()
+            .iter()
+            .map(|format| format.as_str())
+            .collect()
+    }
+}
+
+impl fmt::Display for OutputFormat {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RunArgs {
     /// Runtime to launch for this run.
@@ -146,6 +178,20 @@ pub struct RuntimeUpdateArgs {
 pub struct DirectoryArgs {
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct LsArgs {
+    /// Output format.
+    #[arg(short = 'o', long = "output", value_enum, default_value_t = OutputFormat::Table)]
+    pub output: OutputFormat,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct HealthArgs {
+    /// Output format.
+    #[arg(short = 'o', long = "output", value_enum, default_value_t = OutputFormat::Table)]
+    pub output: OutputFormat,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]

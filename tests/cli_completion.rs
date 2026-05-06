@@ -10,7 +10,7 @@ use std::fs;
 
 use assert_cmd::Command as AssertCommand;
 
-use agentbox::cli::CompletionShell;
+use agentbox::cli::{CompletionShell, OutputFormat};
 use agentbox::metadata::LABEL_ATTACH_SCHEME;
 use agentbox::runtime::RuntimeKind;
 
@@ -134,8 +134,31 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
 }
 
 #[test]
+fn completion_scripts_offer_ls_and_health_output_formats() {
+    let output_values = OutputFormat::supported_values().join(" ");
+
+    let bash = capture_completion_script_shell("bash");
+    assert!(bash.contains("ls|health"));
+    assert!(bash.contains("--output -o"));
+    assert!(bash.contains(&output_values));
+
+    let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("ls|health"));
+    assert!(zsh.contains("--output[select output format]"));
+    assert!(zsh.contains("-o[select output format]"));
+    assert!(zsh.contains(&output_values));
+
+    let fish = capture_completion_script_shell("fish");
+    assert!(fish.contains("__fish_seen_subcommand_from ls"));
+    assert!(fish.contains("__fish_seen_subcommand_from health"));
+    assert!(fish.contains("-s o -l output"));
+    assert!(fish.contains(&output_values));
+}
+
+#[test]
 fn completion_scripts_expand_shared_value_placeholders() {
     let runtime_values = RuntimeKind::supported_values().join(" ");
+    let output_values = OutputFormat::supported_values().join(" ");
     let shell_values = CompletionShell::supported_values().join(" ");
 
     for shell in CompletionShell::supported_values() {
@@ -143,6 +166,7 @@ fn completion_scripts_expand_shared_value_placeholders() {
 
         for placeholder in [
             "@RUNTIME_VALUES@",
+            "@OUTPUT_VALUES@",
             "@SHELL_VALUES@",
             "@SUBCOMMAND_NAMES@",
             "@ZSH_SUBCOMMAND_SPECS@",
@@ -154,6 +178,7 @@ fn completion_scripts_expand_shared_value_placeholders() {
         }
 
         assert!(script.contains(&runtime_values));
+        assert!(script.contains(&output_values));
         assert!(script.contains(&shell_values));
     }
 }

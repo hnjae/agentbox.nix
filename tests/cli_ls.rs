@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use agentbox::cli::{Cli, Command};
-use agentbox::commands::ls::render_table;
+use agentbox::cli::{Cli, Command, LsArgs, OutputFormat};
+use agentbox::commands::ls::{render_json, render_table};
 use agentbox::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
@@ -63,15 +63,66 @@ fn ls_renders_unknown_for_unrecoverable_failed_fields() {
 }
 
 #[test]
-fn ls_has_no_machine_readable_mode() {
+fn ls_renders_json_rows_in_stable_order() {
+    let sessions = vec![
+        session("/workspace/b", "beta", SessionStatus::failed_unknown()),
+        session("/workspace/a", "alpha-one", SessionStatus::Running),
+        session("/workspace/c", "gamma", SessionStatus::Orphaned),
+        session("/workspace/a", "alpha-two", SessionStatus::Duplicate),
+    ];
+
+    let json = render_json(&sessions).unwrap();
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+    let names = rows
+        .iter()
+        .map(|row| row["container_name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(names, ["alpha-one", "alpha-two", "beta", "gamma"]);
+    assert_eq!(rows[0]["canonical_git_root"], "/workspace/a");
+    assert_eq!(rows[0]["runtime"], "opencode");
+    assert_eq!(rows[0]["status"], "running");
+    assert_eq!(json.matches('\n').count(), 1);
+}
+
+#[test]
+fn ls_renders_null_for_unrecoverable_json_fields() {
+    let mut session = session(
+        "/workspace/broken",
+        "broken",
+        SessionStatus::failed_unknown(),
+    );
+    session.metadata = SessionMetadata::from_labels(&BTreeMap::from([
+        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
+        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
+    ]));
+
+    let json = render_json(&[session]).unwrap();
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0]["canonical_git_root"].is_null());
+    assert!(rows[0]["runtime"].is_null());
+    assert_eq!(rows[0]["status"], "failed");
+    assert_eq!(rows[0]["container_name"], "broken");
+}
+
+#[test]
+fn ls_rejects_legacy_json_flag() {
     let error = Cli::try_parse_from(["agentbox", "ls", "--json"]).unwrap_err();
 
     assert_eq!(error.exit_code(), 2);
     assert!(error.to_string().contains("unexpected argument '--json'"));
-    assert!(matches!(
+}
+
+#[test]
+fn ls_defaults_to_table_output() {
+    assert_eq!(
         Cli::try_parse_from(["agentbox", "ls"]).unwrap().command,
-        Command::Ls
-    ));
+        Command::Ls(LsArgs {
+            output: OutputFormat::Table,
+        })
+    );
 }
 
 fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {

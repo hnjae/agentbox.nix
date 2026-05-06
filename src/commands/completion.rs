@@ -1,7 +1,7 @@
 use clap::CommandFactory;
 use std::path::Path;
 
-use crate::cli::{Cli, CompletionRootCommand, CompletionShell};
+use crate::cli::{Cli, CompletionRootCommand, CompletionShell, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
@@ -113,6 +113,13 @@ _agentbox() {
                 COMPREPLY=( $(compgen -W "--runtime" -- "$cur") )
             fi
             ;;
+        ls|health)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--output" || "${COMP_WORDS[COMP_CWORD-1]}" == "-o" ]]; then
+                COMPREPLY=( $(compgen -W "@OUTPUT_VALUES@" -- "$cur") )
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--output -o" -- "$cur") )
+            fi
+            ;;
         runtime)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "update" -- "$cur") )
@@ -180,6 +187,13 @@ _agentbox() {
         _values 'option' '--runtime[select runtime]'
       fi
       ;;
+    ls|health)
+      if [[ $CURRENT -gt 2 && ( "$words[CURRENT-1]" == "--output" || "$words[CURRENT-1]" == "-o" ) ]]; then
+        _values 'output' @OUTPUT_VALUES@
+      else
+        _values 'option' '--output[select output format]' '-o[select output format]'
+      fi
+      ;;
     runtime)
       if (( CURRENT == 3 )); then
         _values 'runtime command' 'update[Update a default runtime image]'
@@ -219,6 +233,8 @@ end
 
 complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "@SUBCOMMAND_NAMES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots attach)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from ls" -s o -l output -r -a "@OUTPUT_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from health" -s o -l output -r -a "@OUTPUT_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate or failed exact matches"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots stop)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
@@ -232,12 +248,14 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from completion" -a "@SHELL_V
 fn completion_script(template: &str) -> String {
     let subcommands = completion_subcommands();
     let runtime_values = RuntimeKind::supported_values().join(" ");
+    let output_values = OutputFormat::supported_values().join(" ");
     let shell_values = CompletionShell::supported_values().join(" ");
     let subcommand_names = completion_subcommand_names(&subcommands);
     let zsh_subcommand_specs = zsh_subcommand_specs(&subcommands);
 
     template
         .replace("@RUNTIME_VALUES@", &runtime_values)
+        .replace("@OUTPUT_VALUES@", &output_values)
         .replace("@SHELL_VALUES@", &shell_values)
         .replace("@SUBCOMMAND_NAMES@", &subcommand_names)
         .replace("@ZSH_SUBCOMMAND_SPECS@", &zsh_subcommand_specs)

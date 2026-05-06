@@ -28,8 +28,8 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
         Command::Run(args) => run::run(args, verbose),
         Command::Runtime(args) => runtime::run(args, verbose),
         Command::Attach(args) => attach::run(args),
-        Command::Ls => ls::run(),
-        Command::Health => health::run(),
+        Command::Ls(args) => ls::run(args),
+        Command::Health(args) => health::run(args),
         Command::Stop(args) => stop::run(args),
         Command::Completion(args) => completion::run(args.shell),
         Command::CompletionRoots(args) => {

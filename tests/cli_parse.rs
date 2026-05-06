@@ -7,8 +7,8 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::cli::{
-    Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, RunArgs, RuntimeArgs,
-    RuntimeCommand, RuntimeUpdateArgs, StopArgs,
+    Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, HealthArgs, LsArgs, OutputFormat,
+    RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
@@ -70,8 +70,18 @@ fn core_commands_parse_into_expected_variants() {
             directory: "/tmp/workspace".into(),
         })
     );
-    assert_eq!(ls.command, Command::Ls);
-    assert_eq!(health.command, Command::Health);
+    assert_eq!(
+        ls.command,
+        Command::Ls(LsArgs {
+            output: OutputFormat::Table,
+        })
+    );
+    assert_eq!(
+        health.command,
+        Command::Health(HealthArgs {
+            output: OutputFormat::Table,
+        })
+    );
     assert_eq!(
         stop.command,
         Command::Stop(StopArgs {
@@ -131,6 +141,76 @@ fn stop_accepts_force_cleanup_flag() {
             directory: "/tmp/workspace".into(),
         })
     );
+}
+
+#[test]
+fn ls_accepts_output_format_selection() {
+    for args in [
+        vec!["agentbox", "ls", "--output", "json"],
+        vec!["agentbox", "ls", "--output=json"],
+        vec!["agentbox", "ls", "-o", "json"],
+    ] {
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Ls(LsArgs {
+                output: OutputFormat::Json,
+            })
+        );
+    }
+
+    let cli = Cli::try_parse_from(["agentbox", "ls", "--output", "table"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Ls(LsArgs {
+            output: OutputFormat::Table,
+        })
+    );
+}
+
+#[test]
+fn health_accepts_output_format_selection() {
+    for args in [
+        vec!["agentbox", "health", "--output", "json"],
+        vec!["agentbox", "health", "--output=json"],
+        vec!["agentbox", "health", "-o", "json"],
+    ] {
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Health(HealthArgs {
+                output: OutputFormat::Json,
+            })
+        );
+    }
+
+    let cli = Cli::try_parse_from(["agentbox", "health", "--output", "table"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Health(HealthArgs {
+            output: OutputFormat::Table,
+        })
+    );
+}
+
+#[test]
+fn output_format_rejects_unknown_values() {
+    for args in [
+        vec!["agentbox", "ls", "--output", "yaml"],
+        vec!["agentbox", "health", "-o", "yaml"],
+    ] {
+        let error = Cli::try_parse_from(args).unwrap_err();
+
+        assert_eq!(error.exit_code(), 2);
+        assert!(
+            error.to_string().contains("invalid value 'yaml'"),
+            "expected clap to reject the unsupported output format"
+        );
+    }
 }
 
 #[test]

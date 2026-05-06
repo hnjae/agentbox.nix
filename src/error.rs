@@ -17,6 +17,8 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
     Utf8(#[from] std::string::FromUtf8Error),
 }
 

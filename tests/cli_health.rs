@@ -125,6 +125,80 @@ fn health_reports_unhealthy_opencode_without_failing() {
 }
 
 #[test]
+fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
+    let healthy_fixture = support::temp_workspace("healthy");
+    let unhealthy_fixture = support::temp_workspace("unhealthy");
+    let healthy = &healthy_fixture.workspace;
+    let unhealthy = &unhealthy_fixture.workspace;
+    let healthy_endpoint = HealthEndpoint::opencode_healthy();
+    let unhealthy_endpoint = HealthEndpoint::opencode_unhealthy();
+    let healthy_port = healthy_endpoint.port();
+    let unhealthy_port = unhealthy_endpoint.port();
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![
+        workspace_ps_entry("healthy-id", healthy),
+        workspace_ps_entry("unhealthy-id", unhealthy),
+    ]));
+    harness.write_inspect(
+        "healthy-id",
+        &running_workspace_inspect_fixture_with_host_port(
+            healthy,
+            RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            healthy_port,
+        ),
+    );
+    harness.write_inspect(
+        "unhealthy-id",
+        &running_workspace_inspect_fixture_with_host_port(
+            unhealthy,
+            RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            unhealthy_port,
+        ),
+    );
+
+    let output = harness.agentbox_output(&["health", "--output=json"]);
+    healthy_endpoint.wait();
+    unhealthy_endpoint.wait();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    let roots = rows
+        .iter()
+        .map(|row| row["canonical_git_root"].as_str().unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(rows.len(), 2);
+    assert!(roots.windows(2).all(|window| window[0] <= window[1]));
+    assert_eq!(stdout.matches('\n').count(), 1);
+
+    let healthy_row = rows
+        .iter()
+        .find(|row| row["container_name"] == healthy.container_name)
+        .unwrap();
+    assert_eq!(healthy_row["runtime"], "opencode");
+    assert_eq!(healthy_row["health"], "healthy");
+    assert_eq!(healthy_row["reason"], "ok");
+    assert_eq!(
+        healthy_row["endpoint"],
+        format!("http://127.0.0.1:{healthy_port}")
+    );
+
+    let unhealthy_row = rows
+        .iter()
+        .find(|row| row["container_name"] == unhealthy.container_name)
+        .unwrap();
+    assert_eq!(unhealthy_row["health"], "unhealthy");
+    assert_eq!(unhealthy_row["reason"], "healthy=false");
+    assert_eq!(
+        unhealthy_row["endpoint"],
+        format!("http://127.0.0.1:{unhealthy_port}")
+    );
+}
+
+#[test]
 fn health_filters_non_running_session_statuses() {
     let running_fixture = support::temp_workspace("running");
     let stopped_fixture = support::temp_workspace("stopped");
@@ -195,6 +269,17 @@ fn health_with_no_running_sessions_prints_header_only_table() {
     assert!(!stdout.contains("opencode"));
     assert!(!stdout.contains("codex"));
     assert_no_box_drawing_borders(&stdout);
+}
+
+#[test]
+fn health_json_with_no_running_sessions_prints_empty_array() {
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(Vec::new()));
+
+    let output = harness.agentbox_output(&["health", "--output=json"]);
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "[]\n");
 }
 
 fn assert_no_box_drawing_borders(table: &str) {
