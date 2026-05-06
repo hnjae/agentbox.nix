@@ -45,6 +45,7 @@ RUN set -eux; \
 	python3 \
 	python3-json5 \
 	ripgrep \
+	tree \
 	tzdata \
 	unzip \
 	zsh
