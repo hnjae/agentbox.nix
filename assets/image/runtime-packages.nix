@@ -13,17 +13,14 @@ in
       # Devtools
       pkgs.gh
       pkgs.just
-      pkgs.git
-      pkgs.git-filter-repo
-      pkgs.git-lfs
 
       # Shell
       pkgs.devenv
       pkgs.direnv
       pkgs.nix-direnv
       pkgs.fzf
-      pkgs.ripgrep
       pkgs.ast-grep
+      pkgs.yq-go
 
       # Custom
       pkgsMine."comment-checker" # required by oh-my-openagent
