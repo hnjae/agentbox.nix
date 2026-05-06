@@ -49,13 +49,15 @@ pub fn live_roots(command: CompletionRootCommand) -> Result<Vec<SessionRecord>> 
 pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
     let mut lines = Vec::new();
     for session in live_roots(command)? {
-        if let Some(root) = session.canonical_git_root() {
+        if let Some(value) = completion_candidate_value(command, &session) {
             lines.push(format!(
                 "{}\t{}\t{}\t{}",
-                root,
+                value,
+                session
+                    .canonical_git_root()
+                    .map_or("unknown", |root| root.as_str()),
                 session.runtime().unwrap_or("unknown"),
                 session.status.as_str(),
-                session.container_name,
             ));
         }
     }
@@ -65,7 +67,19 @@ pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
 fn completion_candidate_matches(command: CompletionRootCommand, session: &SessionRecord) -> bool {
     match command {
         CompletionRootCommand::Attach => session.status == SessionStatus::Running,
-        CompletionRootCommand::Stop => session.canonical_git_root().is_some(),
+        CompletionRootCommand::Health | CompletionRootCommand::Stop => {
+            session.stable_id().is_some()
+        }
+    }
+}
+
+fn completion_candidate_value(
+    command: CompletionRootCommand,
+    session: &SessionRecord,
+) -> Option<&str> {
+    match command {
+        CompletionRootCommand::Attach => session.canonical_git_root().map(|root| root.as_str()),
+        CompletionRootCommand::Health | CompletionRootCommand::Stop => session.stable_id(),
     }
 }
 
@@ -113,11 +127,20 @@ _agentbox() {
                 COMPREPLY=( $(compgen -W "--runtime" -- "$cur") )
             fi
             ;;
-        ls|health)
+        ls)
             if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--output" || "${COMP_WORDS[COMP_CWORD-1]}" == "-o" ]]; then
                 COMPREPLY=( $(compgen -W "@OUTPUT_VALUES@" -- "$cur") )
             elif [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "--output -o" -- "$cur") )
+            fi
+            ;;
+        health)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--output" || "${COMP_WORDS[COMP_CWORD-1]}" == "-o" ]]; then
+                COMPREPLY=( $(compgen -W "@OUTPUT_VALUES@" -- "$cur") )
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--output -o" -- "$cur") )
+            else
+                _agentbox_completion_roots health
             fi
             ;;
         runtime)
@@ -147,12 +170,12 @@ fn zsh_script() -> String {
 _agentbox_completion_roots() {
   local command
   command="${1:?missing command}"
-  local line root runtime status container
+  local line value root runtime status
   local -a candidates descriptions
   for line in ${(f)"$({ agentbox __completion-roots "$command" 2>/dev/null; } || true)"}; do
-    IFS=$'\t' read -r root runtime status container <<< "$line"
-    candidates+=("$root")
-    descriptions+=("${runtime} ${status}")
+    IFS=$'\t' read -r value root runtime status <<< "$line"
+    candidates+=("$value")
+    descriptions+=("${root} ${runtime} ${status}")
   done
   compadd -d descriptions -- "${candidates[@]}"
 }
@@ -187,11 +210,19 @@ _agentbox() {
         _values 'option' '--runtime[select runtime]'
       fi
       ;;
-    ls|health)
+    ls)
       if [[ $CURRENT -gt 2 && ( "$words[CURRENT-1]" == "--output" || "$words[CURRENT-1]" == "-o" ) ]]; then
         _values 'output' @OUTPUT_VALUES@
       else
         _values 'option' '--output[select output format]' '-o[select output format]'
+      fi
+      ;;
+    health)
+      if [[ $CURRENT -gt 2 && ( "$words[CURRENT-1]" == "--output" || "$words[CURRENT-1]" == "-o" ) ]]; then
+        _values 'output' @OUTPUT_VALUES@
+      else
+        _values 'option' '--output[select output format]' '-o[select output format]'
+        _agentbox_completion_roots health
       fi
       ;;
     runtime)
@@ -226,8 +257,8 @@ fn fish_script() -> String {
 end
 
 function __agentbox_completion_roots --argument-names command
-    agentbox __completion-roots $command 2>/dev/null | while read -l root runtime status container
-        printf "%s\t%s %s\n" "$root" "$runtime" "$status"
+    agentbox __completion-roots $command 2>/dev/null | while read -l value root runtime status
+        printf "%s\t%s %s %s\n" "$value" "$root" "$runtime" "$status"
     end
 end
 
@@ -235,6 +266,7 @@ complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "@SUBCOMMAND_NAMES
 complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots attach)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from ls" -s o -l output -r -a "@OUTPUT_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from health" -s o -l output -r -a "@OUTPUT_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from health" -a "(__agentbox_completion_roots health)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate or failed exact matches"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots stop)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"

@@ -28,10 +28,11 @@ pub fn print_json(sessions: &[SessionRecord]) -> Result<()> {
 pub fn render_table(sessions: &[SessionRecord]) -> String {
     let mut table = Table::new();
     table.load_preset(NOTHING);
-    table.set_header(["canonical git root", "runtime", "status", "container name"]);
+    table.set_header(["id", "canonical git root", "runtime", "status"]);
 
     for session in sorted_sessions(sessions) {
         table.add_row([
+            Cell::new(session.stable_id().unwrap_or("unknown")),
             Cell::new(
                 session
                     .canonical_git_root()
@@ -39,7 +40,6 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
             ),
             Cell::new(session.runtime().unwrap_or("unknown")),
             Cell::new(session.status.as_str()),
-            Cell::new(&session.container_name),
         ]);
     }
 
@@ -68,6 +68,7 @@ fn sorted_sessions(sessions: &[SessionRecord]) -> Vec<&SessionRecord> {
 
 #[derive(Debug, Serialize)]
 struct LsJsonRow<'a> {
+    id: Option<&'a str>,
     canonical_git_root: Option<&'a str>,
     runtime: Option<&'a str>,
     status: &'static str,
@@ -77,6 +78,7 @@ struct LsJsonRow<'a> {
 impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
     fn from(session: &'a SessionRecord) -> Self {
         Self {
+            id: session.stable_id(),
             canonical_git_root: session.canonical_git_root().map(|root| root.as_str()),
             runtime: session.runtime(),
             status: session.status.as_str(),

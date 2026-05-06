@@ -18,29 +18,37 @@ fn ls_renders_all_status_rows_in_stable_order() {
         session("/workspace/a", "alpha-one", SessionStatus::Running),
         session("/workspace/c", "gamma", SessionStatus::Orphaned),
         session("/workspace/d", "delta", SessionStatus::failed_unknown()),
-        session("/workspace/a", "alpha-two", SessionStatus::Duplicate),
+        session(
+            "/workspace/a-duplicate",
+            "alpha-two",
+            SessionStatus::Duplicate,
+        ),
     ];
 
     let table = render_table(&sessions);
 
-    let alpha = line_index(&table, "alpha-one");
-    let beta = line_index(&table, "beta");
-    let gamma = line_index(&table, "gamma");
-    let delta = line_index(&table, "delta");
-    let alpha_dup = line_index(&table, "alpha-two");
+    let alpha = line_index(&table, "/workspace/a");
+    let alpha_dup = line_index(&table, "/workspace/a-duplicate");
+    let beta = line_index(&table, "/workspace/b");
+    let gamma = line_index(&table, "/workspace/c");
+    let delta = line_index(&table, "/workspace/d");
 
     assert!(
         alpha < alpha_dup,
-        "duplicate rows stay grouped by root then name"
+        "rows are sorted by root before container-name tie breaks"
     );
     assert!(
         alpha < beta && beta < gamma && gamma < delta,
         "roots sort lexicographically"
     );
+    assert!(table.lines().next().unwrap().trim_start().starts_with("id"));
+    assert!(table.contains("hash"));
     assert!(table.contains("running"));
     assert!(table.contains("orphaned"));
     assert!(table.contains("failed"));
     assert!(table.contains("duplicate"));
+    assert!(!table.contains("container name"));
+    assert!(!table.contains("alpha-one"));
     assert_no_box_drawing_borders(&table);
 }
 
@@ -59,7 +67,7 @@ fn ls_renders_unknown_for_unrecoverable_failed_fields() {
     let table = render_table(&[session]);
 
     assert!(table.contains("unknown"));
-    assert!(table.contains("broken"));
+    assert!(!table.contains("broken"));
 }
 
 #[test]
@@ -79,6 +87,7 @@ fn ls_renders_json_rows_in_stable_order() {
         .collect::<Vec<_>>();
 
     assert_eq!(names, ["alpha-one", "alpha-two", "beta", "gamma"]);
+    assert_eq!(rows[0]["id"], "hash");
     assert_eq!(rows[0]["canonical_git_root"], "/workspace/a");
     assert_eq!(rows[0]["runtime"], "opencode");
     assert_eq!(rows[0]["status"], "running");
@@ -101,6 +110,7 @@ fn ls_renders_null_for_unrecoverable_json_fields() {
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
 
     assert_eq!(rows.len(), 1);
+    assert!(rows[0]["id"].is_null());
     assert!(rows[0]["canonical_git_root"].is_null());
     assert!(rows[0]["runtime"].is_null());
     assert_eq!(rows[0]["status"], "failed");

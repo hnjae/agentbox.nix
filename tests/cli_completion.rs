@@ -84,6 +84,10 @@ fn helper_filters_attach_and_stop_candidates_by_command() {
         .unwrap();
     assert!(attach.status.success());
     let attach = String::from_utf8(attach.stdout).unwrap();
+    assert_eq!(
+        first_candidate_value(&attach),
+        running_workspace.canonical_git_root.as_str()
+    );
     assert!(attach.contains(running_workspace.canonical_git_root.as_str()));
     assert!(!attach.contains(failed_workspace.canonical_git_root.as_str()));
 
@@ -94,9 +98,23 @@ fn helper_filters_attach_and_stop_candidates_by_command() {
         .unwrap();
     assert!(stop.status.success());
     let stop = String::from_utf8(stop.stdout).unwrap();
+    assert_eq!(first_candidate_value(&stop), running_workspace.hash12);
+    assert!(stop.contains(&running_workspace.hash12));
     assert!(stop.contains(running_workspace.canonical_git_root.as_str()));
+    assert!(stop.contains(&failed_workspace.hash12));
     assert!(stop.contains(failed_workspace.canonical_git_root.as_str()));
     assert!(stop.contains("failed"));
+
+    let health = harness
+        .agentbox_command()
+        .args(["__completion-roots", "health"])
+        .output()
+        .unwrap();
+    assert!(health.status.success());
+    let health = String::from_utf8(health.stdout).unwrap();
+    assert_eq!(first_candidate_value(&health), running_workspace.hash12);
+    assert!(health.contains(&running_workspace.hash12));
+    assert!(health.contains(&failed_workspace.hash12));
 }
 
 #[test]
@@ -115,8 +133,10 @@ fn fish_completion_script_keeps_helper_metadata_available() {
 
     assert!(script.contains("agentbox __completion-roots $command 2>/dev/null"));
     assert!(script.contains("__fish_seen_subcommand_from attach"));
+    assert!(script.contains("__fish_seen_subcommand_from health"));
     assert!(script.contains("__fish_seen_subcommand_from stop"));
     assert!(script.contains("(__agentbox_completion_roots attach)"));
+    assert!(script.contains("(__agentbox_completion_roots health)"));
     assert!(script.contains("(__agentbox_completion_roots stop)"));
 }
 
@@ -138,12 +158,14 @@ fn completion_scripts_offer_ls_and_health_output_formats() {
     let output_values = OutputFormat::supported_values().join(" ");
 
     let bash = capture_completion_script_shell("bash");
-    assert!(bash.contains("ls|health"));
+    assert!(bash.contains("ls)"));
+    assert!(bash.contains("health)"));
     assert!(bash.contains("--output -o"));
     assert!(bash.contains(&output_values));
 
     let zsh = capture_completion_script_shell("zsh");
-    assert!(zsh.contains("ls|health"));
+    assert!(zsh.contains("ls)"));
+    assert!(zsh.contains("health)"));
     assert!(zsh.contains("--output[select output format]"));
     assert!(zsh.contains("-o[select output format]"));
     assert!(zsh.contains(&output_values));
@@ -274,4 +296,8 @@ fn capture_installed_manpage() -> String {
         .unwrap();
     assert!(output.status.success());
     String::from_utf8(output.stdout).unwrap()
+}
+
+fn first_candidate_value(output: &str) -> &str {
+    output.lines().next().unwrap().split('\t').next().unwrap()
 }

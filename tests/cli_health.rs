@@ -17,7 +17,8 @@ use agentbox::runtime::RuntimeKind;
 mod support;
 
 use support::{
-    CliHarness as Harness, opencode_workspace_inspect_fixture, ps_fixture,
+    CliHarness as Harness, managed_inspect_fixture, managed_ps_entry, opencode_managed_labels,
+    opencode_workspace_inspect_fixture, ps_fixture,
     running_workspace_inspect_fixture_with_host_port, workspace_ps_entry,
 };
 
@@ -51,11 +52,13 @@ fn health_reports_running_opencode_session_as_healthy() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(workspace.canonical_git_root.as_str()));
+    assert!(stdout.contains(&workspace.hash12));
     assert!(stdout.contains("opencode"));
     assert!(stdout.contains("healthy"));
     assert!(stdout.contains("ok"));
     assert!(stdout.contains(&format!("http://127.0.0.1:{port}")));
-    assert!(stdout.contains(&workspace.container_name));
+    assert!(!stdout.contains("container name"));
+    assert!(!stdout.contains(&workspace.container_name));
     assert_no_box_drawing_borders(&stdout);
 }
 
@@ -86,11 +89,12 @@ fn health_reports_running_codex_session_as_healthy() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(workspace.canonical_git_root.as_str()));
+    assert!(stdout.contains(&workspace.hash12));
     assert!(stdout.contains("codex"));
     assert!(stdout.contains("healthy"));
     assert!(stdout.contains("ok"));
     assert!(stdout.contains(&format!("ws://127.0.0.1:{port}")));
-    assert!(stdout.contains(&workspace.container_name));
+    assert!(!stdout.contains(&workspace.container_name));
 }
 
 #[test]
@@ -121,7 +125,8 @@ fn health_reports_unhealthy_opencode_without_failing() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("unhealthy"));
     assert!(stdout.contains("healthy=false"));
-    assert!(stdout.contains(&workspace.container_name));
+    assert!(stdout.contains(&workspace.hash12));
+    assert!(!stdout.contains(&workspace.container_name));
 }
 
 #[test]
@@ -178,6 +183,7 @@ fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
         .iter()
         .find(|row| row["container_name"] == healthy.container_name)
         .unwrap();
+    assert_eq!(healthy_row["id"], healthy.hash12);
     assert_eq!(healthy_row["runtime"], "opencode");
     assert_eq!(healthy_row["health"], "healthy");
     assert_eq!(healthy_row["reason"], "ok");
@@ -190,6 +196,7 @@ fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
         .iter()
         .find(|row| row["container_name"] == unhealthy.container_name)
         .unwrap();
+    assert_eq!(unhealthy_row["id"], unhealthy.hash12);
     assert_eq!(unhealthy_row["health"], "unhealthy");
     assert_eq!(unhealthy_row["reason"], "healthy=false");
     assert_eq!(
@@ -245,10 +252,139 @@ fn health_filters_non_running_session_statuses() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains(&running.container_name));
-    assert!(!stdout.contains(&stopped.container_name));
-    assert!(!stdout.contains(&failed.container_name));
-    assert!(!stdout.contains(&orphan.container_name));
+    assert!(stdout.contains(&running.hash12));
+    assert!(!stdout.contains(&stopped.hash12));
+    assert!(!stdout.contains(&failed.hash12));
+    assert!(!stdout.contains(&orphan.hash12));
+}
+
+#[test]
+fn health_target_probes_only_matching_stable_id_prefix() {
+    let selected_fixture = support::temp_workspace("selected");
+    let other_fixture = support::temp_workspace("other");
+    let selected = &selected_fixture.workspace;
+    let other = &other_fixture.workspace;
+    let endpoint = HealthEndpoint::opencode_healthy();
+    let selected_port = endpoint.port();
+    let other_port = unused_port();
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![
+        workspace_ps_entry("selected-id", selected),
+        workspace_ps_entry("other-id", other),
+    ]));
+    harness.write_inspect(
+        "selected-id",
+        &running_workspace_inspect_fixture_with_host_port(
+            selected,
+            RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            selected_port,
+        ),
+    );
+    harness.write_inspect(
+        "other-id",
+        &running_workspace_inspect_fixture_with_host_port(
+            other,
+            RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            other_port,
+        ),
+    );
+
+    let output = harness.agentbox_output(&["health", &selected.hash12[..6]]);
+    endpoint.wait();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains(&selected.hash12));
+    assert!(stdout.contains(selected.canonical_git_root.as_str()));
+    assert!(!stdout.contains(&other.hash12));
+    assert!(!stdout.contains(other.canonical_git_root.as_str()));
+}
+
+#[test]
+fn health_target_fails_for_non_running_session() {
+    let fixture = support::temp_workspace("stopped");
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "stopped-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "stopped-id",
+        &opencode_workspace_inspect_fixture(workspace, false, true),
+    );
+
+    harness
+        .agentbox_assert(&["health", &workspace.hash12[..6]])
+        .failure()
+        .stderr(predicates::str::contains(
+            "health only probes running sessions",
+        ))
+        .stderr(predicates::str::contains(&workspace.hash12));
+}
+
+#[test]
+fn health_target_fails_when_stable_id_prefix_has_no_match() {
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(Vec::new()));
+
+    harness
+        .agentbox_assert(&["health", "deadbeef"])
+        .failure()
+        .stderr(predicates::str::contains(
+            "no managed session id matches prefix `deadbeef`",
+        ));
+}
+
+#[test]
+fn health_target_fails_when_stable_id_prefix_is_ambiguous() {
+    let first_fixture = support::temp_workspace("first");
+    let second_fixture = support::temp_workspace("second");
+    let first = &first_fixture.workspace;
+    let second = &second_fixture.workspace;
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![
+        managed_ps_entry("first-id", "first-session", "abcdef111111"),
+        managed_ps_entry("second-id", "second-session", "abcdef222222"),
+    ]));
+    harness.write_inspect(
+        "first-id",
+        &managed_inspect_fixture(
+            "first-session",
+            first.canonical_git_root.as_str(),
+            true,
+            true,
+            opencode_managed_labels(
+                first.canonical_git_root.as_str(),
+                "abcdef111111",
+                "first-session",
+            ),
+        ),
+    );
+    harness.write_inspect(
+        "second-id",
+        &managed_inspect_fixture(
+            "second-session",
+            second.canonical_git_root.as_str(),
+            true,
+            true,
+            opencode_managed_labels(
+                second.canonical_git_root.as_str(),
+                "abcdef222222",
+                "second-session",
+            ),
+        ),
+    );
+
+    harness
+        .agentbox_assert(&["health", "abcdef"])
+        .failure()
+        .stderr(predicates::str::contains(
+            "stable id prefix `abcdef` matches multiple ids",
+        ))
+        .stderr(predicates::str::contains("use a longer prefix"));
 }
 
 #[test]
@@ -260,12 +396,13 @@ fn health_with_no_running_sessions_prints_header_only_table() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("id"));
     assert!(stdout.contains("canonical git root"));
     assert!(stdout.contains("runtime"));
     assert!(stdout.contains("health"));
     assert!(stdout.contains("reason"));
     assert!(stdout.contains("endpoint"));
-    assert!(stdout.contains("container name"));
+    assert!(!stdout.contains("container name"));
     assert!(!stdout.contains("opencode"));
     assert!(!stdout.contains("codex"));
     assert_no_box_drawing_borders(&stdout);
@@ -287,6 +424,14 @@ fn assert_no_box_drawing_borders(table: &str) {
         .chars()
         .find(|character| ('\u{2500}'..='\u{257f}').contains(character));
     assert!(border.is_none(), "table contains a border: {table}");
+}
+
+fn unused_port() -> u16 {
+    TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 struct HealthEndpoint {

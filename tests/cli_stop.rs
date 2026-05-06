@@ -246,6 +246,194 @@ fn stop_allows_exact_missing_path_match_for_orphaned_root_identity() {
     );
 }
 
+#[test]
+fn stop_accepts_case_insensitive_stable_id_prefix() {
+    let fixture = support::temp_workspace("nested");
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "session-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "session-id",
+        &opencode_workspace_inspect_fixture(workspace, true, true),
+    );
+    let prefix = workspace.hash12[..6].to_ascii_uppercase();
+
+    run_command(&harness, Path::new(&prefix), &[]).success();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
+}
+
+#[test]
+fn stop_stable_id_prefix_reports_no_match() {
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+
+    run_command(&harness, Path::new("deadbeef"), &[])
+        .failure()
+        .stderr(predicates::str::contains(
+            "no managed session id matches prefix `deadbeef`",
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps"]);
+}
+
+#[test]
+fn stop_stable_id_prefix_reports_ambiguous_distinct_ids() {
+    let first_fixture = support::temp_workspace("first");
+    let second_fixture = support::temp_workspace("second");
+    let first = &first_fixture.workspace;
+    let second = &second_fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![
+        managed_ps_entry("first-id", "first-session", "abcdef111111"),
+        managed_ps_entry("second-id", "second-session", "abcdef222222"),
+    ]));
+    harness.write_inspect(
+        "first-id",
+        &managed_inspect_fixture(
+            "first-session",
+            first.canonical_git_root.as_str(),
+            true,
+            managed_labels(
+                first.canonical_git_root.as_str(),
+                "abcdef111111",
+                "first-session",
+            ),
+        ),
+    );
+    harness.write_inspect(
+        "second-id",
+        &managed_inspect_fixture(
+            "second-session",
+            second.canonical_git_root.as_str(),
+            true,
+            managed_labels(
+                second.canonical_git_root.as_str(),
+                "abcdef222222",
+                "second-session",
+            ),
+        ),
+    );
+
+    run_command(&harness, Path::new("abcdef"), &[])
+        .failure()
+        .stderr(predicates::str::contains(
+            "stable id prefix `abcdef` matches multiple ids",
+        ))
+        .stderr(predicates::str::contains("use a longer prefix"));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "inspect"]);
+}
+
+#[test]
+fn stop_stable_id_duplicate_requires_force_before_cleanup() {
+    let fixture = support::temp_workspace("nested");
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![
+        managed_ps_entry("dup-a-id", "dup-a", &workspace.hash12),
+        managed_ps_entry("dup-b-id", "dup-b", &workspace.hash12),
+    ]));
+    harness.write_inspect(
+        "dup-a-id",
+        &managed_inspect_fixture(
+            "dup-a",
+            workspace.canonical_git_root.as_str(),
+            true,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "dup-a",
+            ),
+        ),
+    );
+    harness.write_inspect(
+        "dup-b-id",
+        &managed_inspect_fixture(
+            "dup-b",
+            workspace.canonical_git_root.as_str(),
+            true,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "dup-b",
+            ),
+        ),
+    );
+
+    run_command(&harness, Path::new(&workspace.hash12[..6]), &[])
+        .failure()
+        .stderr(predicates::str::contains(
+            "duplicate managed sessions exist for stable id",
+        ))
+        .stderr(predicates::str::contains("agentbox stop --force"));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "inspect"]);
+}
+
+#[test]
+fn stop_force_removes_all_duplicate_stable_id_matches() {
+    let fixture = support::temp_workspace("nested");
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![
+        managed_ps_entry("dup-a-id", "dup-a", &workspace.hash12),
+        managed_ps_entry("dup-b-id", "dup-b", &workspace.hash12),
+    ]));
+    harness.write_inspect(
+        "dup-a-id",
+        &managed_inspect_fixture(
+            "dup-a",
+            workspace.canonical_git_root.as_str(),
+            true,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "dup-a",
+            ),
+        ),
+    );
+    harness.write_inspect(
+        "dup-b-id",
+        &managed_inspect_fixture(
+            "dup-b",
+            workspace.canonical_git_root.as_str(),
+            true,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "dup-b",
+            ),
+        ),
+    );
+
+    run_command(&harness, Path::new(&workspace.hash12[..6]), &["--force"]).success();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "inspect",
+            "inspect",
+            "stop",
+            "container-exists",
+            "stop",
+            "container-exists"
+        ]
+    );
+}
+
 fn install_harness() -> Harness {
     Harness::new()
 }

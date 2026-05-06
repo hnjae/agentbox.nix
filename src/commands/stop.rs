@@ -6,21 +6,33 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::cli::StopArgs;
 use crate::podman::Podman;
-use crate::session::SessionRecord;
+use crate::session::{SessionRecord, discover_managed_sessions, select_stable_id_prefix};
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
 use super::workspace_flow::with_locked_git_root;
 
 pub fn run(args: StopArgs) -> Result<()> {
-    let git_root = resolve_stop_git_root(&args.directory)?;
-    let failures = with_locked_git_root(git_root.as_ref(), |locked| {
+    match resolve_stop_target(&args.target)? {
+        StopTarget::GitRoot(git_root) => stop_git_root(&git_root, args.force, &args.target),
+        StopTarget::StableId(prefix) => stop_stable_id(&prefix, args.force, &args.target),
+    }
+}
+
+enum StopTarget {
+    GitRoot(Utf8PathBuf),
+    StableId(String),
+}
+
+fn stop_git_root(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> {
+    let failures = with_locked_git_root(git_root, |locked| {
         let sessions = exact_full_root_matches(locked.discover_sessions()?, locked.git_root());
 
         if sessions.is_empty() {
@@ -29,10 +41,10 @@ pub fn run(args: StopArgs) -> Result<()> {
             )));
         }
 
-        if sessions.len() > 1 && !args.force {
+        if sessions.len() > 1 && !force {
             return Err(Error::msg(format!(
                 "duplicate managed sessions exist for `{git_root}`; rerun `agentbox stop --force {}` to remove all exact matches",
-                args.directory.display()
+                target.display()
             )));
         }
 
@@ -44,30 +56,48 @@ pub fn run(args: StopArgs) -> Result<()> {
         Ok(failures)
     })?;
 
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::msg(render_cleanup_failures(
-            git_root.as_ref(),
-            &failures,
-        )))
-    }
+    finish_cleanup(git_root.as_str(), &failures)
 }
 
-fn resolve_stop_git_root(directory: &Path) -> Result<Utf8PathBuf> {
-    if directory.exists() {
-        return resolve_workspace_identity(directory).map(|workspace| workspace.canonical_git_root);
-    }
+fn stop_stable_id(prefix: &str, force: bool, target: &Path) -> Result<()> {
+    let podman = Podman::new();
+    let sessions = discover_managed_sessions(&podman)?;
+    let selection = select_stable_id_prefix(&sessions, prefix)?;
+    let id = selection.id().to_string();
 
-    if !directory.is_absolute() {
+    if selection.sessions().len() > 1 && !force {
         return Err(Error::msg(format!(
-            "failed to resolve missing path `{}`; pass the exact absolute orphaned git-root path instead",
-            directory.display()
+            "duplicate managed sessions exist for stable id `{id}`; rerun `agentbox stop --force {}` to remove all exact matches",
+            target.display()
         )));
     }
 
-    Utf8PathBuf::from_path_buf(directory.to_path_buf())
-        .map_err(|path| Error::msg(format!("non-utf8 path: {path:?}")))
+    let sessions = lockable_stable_id_matches(selection.into_sessions(), &id)?;
+    let failures = cleanup_stable_id_matches(sessions)?;
+
+    finish_cleanup(&format!("id {id}"), &failures)
+}
+
+fn resolve_stop_target(target: &Path) -> Result<StopTarget> {
+    if target.exists() {
+        return resolve_workspace_identity(target)
+            .map(|workspace| StopTarget::GitRoot(workspace.canonical_git_root));
+    }
+
+    if target.is_absolute() {
+        let git_root = Utf8PathBuf::from_path_buf(target.to_path_buf())
+            .map_err(|path| Error::msg(format!("non-utf8 path: {path:?}")))?;
+        return Ok(StopTarget::GitRoot(git_root));
+    }
+
+    let prefix = target.to_str().ok_or_else(|| {
+        Error::msg(format!(
+            "non-utf8 target `{}` cannot be used as a stable id prefix",
+            target.display()
+        ))
+    })?;
+
+    Ok(StopTarget::StableId(prefix.to_string()))
 }
 
 fn exact_full_root_matches(
@@ -78,6 +108,55 @@ fn exact_full_root_matches(
         .into_iter()
         .filter(|session| session.canonical_git_root() == Some(git_root))
         .collect()
+}
+
+fn lockable_stable_id_matches(
+    sessions: Vec<&SessionRecord>,
+    id: &str,
+) -> Result<Vec<SessionRecord>> {
+    let selected_count = sessions.len();
+    let lockable = sessions
+        .into_iter()
+        .filter(|session| session.canonical_git_root().is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if lockable.is_empty() {
+        return Err(Error::msg(format!(
+            "managed session id `{id}` cannot be stopped safely because no matched session has a recoverable git-root label"
+        )));
+    }
+
+    if lockable.len() != selected_count {
+        return Err(Error::msg(format!(
+            "managed session id `{id}` includes matched containers without a recoverable git-root label; cannot stop them safely"
+        )));
+    }
+
+    Ok(lockable)
+}
+
+fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<CleanupFailure>> {
+    let mut groups = BTreeMap::<Utf8PathBuf, Vec<SessionRecord>>::new();
+
+    for session in sessions {
+        if let Some(root) = session.canonical_git_root() {
+            groups.entry(root.to_path_buf()).or_default().push(session);
+        }
+    }
+
+    let mut failures = Vec::new();
+    for (git_root, sessions) in groups {
+        let mut group_failures = with_locked_git_root(&git_root, |locked| {
+            Ok(sessions
+                .iter()
+                .filter_map(|session| cleanup_managed_container(locked.podman(), session))
+                .collect::<Vec<_>>())
+        })?;
+        failures.append(&mut group_failures);
+    }
+
+    Ok(failures)
 }
 
 fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
@@ -99,7 +178,15 @@ fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option
     }
 }
 
-fn render_cleanup_failures(git_root: &Utf8Path, failures: &[CleanupFailure]) -> String {
+fn finish_cleanup(identity: &str, failures: &[CleanupFailure]) -> Result<()> {
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::msg(render_cleanup_failures(identity, failures)))
+    }
+}
+
+fn render_cleanup_failures(identity: &str, failures: &[CleanupFailure]) -> String {
     let details = failures
         .iter()
         .map(CleanupFailure::render)
@@ -107,7 +194,7 @@ fn render_cleanup_failures(git_root: &Utf8Path, failures: &[CleanupFailure]) -> 
         .join("; ");
 
     format!(
-        "partial stop failed for `{git_root}`; remaining managed containers: {details}. podman-owned image cleanup and cache volumes are left untouched"
+        "partial stop failed for `{identity}`; remaining managed containers: {details}. podman-owned image cleanup and cache volumes are left untouched"
     )
 }
 

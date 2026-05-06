@@ -110,6 +110,7 @@ pub struct GenerateManpagesArgs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum CompletionRootCommand {
     Attach,
+    Health,
     Stop,
 }
 
@@ -192,6 +193,10 @@ pub struct HealthArgs {
     /// Output format.
     #[arg(short = 'o', long = "output", value_enum, default_value_t = OutputFormat::Table)]
     pub output: OutputFormat,
+
+    /// Stable session id prefix to probe.
+    #[arg(value_name = "TARGET")]
+    pub target: Option<String>,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -200,6 +205,7 @@ pub struct StopArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Workspace directory inside a git repository.
-    pub directory: PathBuf,
+    /// Workspace directory, exact orphan path, or stable session id prefix.
+    #[arg(value_name = "TARGET")]
+    pub target: PathBuf,
 }

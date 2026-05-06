@@ -37,6 +37,10 @@ impl SessionRecord {
         self.metadata.git_root_hash()
     }
 
+    pub fn stable_id(&self) -> Option<&str> {
+        self.git_root_hash()
+    }
+
     pub fn runtime(&self) -> Option<&str> {
         self.metadata.runtime()
     }

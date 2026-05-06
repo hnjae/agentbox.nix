@@ -24,7 +24,7 @@ pub use discovery::{
 };
 pub use endpoint::discover_attach_endpoint_from_inspect;
 pub use record::{SessionGroup, SessionMetadata, SessionRecord};
-pub(crate) use selection::{run_command_hint, select_single_session};
+pub(crate) use selection::{run_command_hint, select_single_session, select_stable_id_prefix};
 
 pub use status::{
     SessionFailure, SessionStatus, failed_session_requires_action_error,

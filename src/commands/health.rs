@@ -1,17 +1,21 @@
 use comfy_table::{Cell, Table, presets::NOTHING};
 use serde::Serialize;
 
+use crate::Error;
 use crate::cli::{HealthArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
-use crate::session::{SessionRecord, SessionStatus, discover_managed_sessions};
+use crate::session::{
+    SessionRecord, SessionStatus, discover_managed_sessions, select_stable_id_prefix,
+};
 
 use super::runtime_health::{HostRuntimeHealthProbe, RuntimeHealthProbe};
 
 pub fn run(args: HealthArgs) -> Result<()> {
     let podman = Podman::new();
     let sessions = discover_managed_sessions(&podman)?;
-    let rows = health_rows(&sessions, &HostRuntimeHealthProbe);
+    let sessions = selected_health_sessions(&sessions, args.target.as_deref())?;
+    let rows = health_rows(sessions, &HostRuntimeHealthProbe);
     match args.output {
         OutputFormat::Table => print_table(&rows),
         OutputFormat::Json => print_json(&rows)?,
@@ -32,22 +36,22 @@ pub fn render_table(rows: &[HealthRow]) -> String {
     let mut table = Table::new();
     table.load_preset(NOTHING);
     table.set_header([
+        "id",
         "canonical git root",
         "runtime",
         "health",
         "reason",
         "endpoint",
-        "container name",
     ]);
 
     for row in rows {
         table.add_row([
+            Cell::new(row.id.as_deref().unwrap_or("unknown")),
             Cell::new(row.canonical_git_root.as_deref().unwrap_or("unknown")),
             Cell::new(row.runtime.as_deref().unwrap_or("unknown")),
             Cell::new(row.health.as_str()),
             Cell::new(&row.reason),
             Cell::new(row.endpoint.as_deref().unwrap_or("unknown")),
-            Cell::new(&row.container_name),
         ]);
     }
 
@@ -62,6 +66,7 @@ pub fn render_json(rows: &[HealthRow]) -> Result<String> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HealthRow {
+    id: Option<String>,
     canonical_git_root: Option<String>,
     runtime: Option<String>,
     health: HealthStatus,
@@ -85,12 +90,41 @@ impl HealthStatus {
     }
 }
 
-fn health_rows(sessions: &[SessionRecord], probe: &impl RuntimeHealthProbe) -> Vec<HealthRow> {
-    let mut sessions = sessions
-        .iter()
-        .filter(|session| session.status == SessionStatus::Running)
-        .collect::<Vec<_>>();
+fn selected_health_sessions<'a>(
+    sessions: &'a [SessionRecord],
+    target: Option<&str>,
+) -> Result<Vec<&'a SessionRecord>> {
+    let Some(target) = target else {
+        return Ok(sessions
+            .iter()
+            .filter(|session| session.status == SessionStatus::Running)
+            .collect());
+    };
 
+    let selection = select_stable_id_prefix(sessions, target)?;
+    if selection.sessions().len() != 1 {
+        return Err(Error::msg(format!(
+            "stable id `{}` matches multiple managed sessions; health requires a single running session",
+            selection.id()
+        )));
+    }
+
+    let session = selection.into_sessions().remove(0);
+    if session.status != SessionStatus::Running {
+        return Err(Error::msg(format!(
+            "managed session `{}` is `{}`; health only probes running sessions",
+            session.stable_id().unwrap_or(target),
+            session.status.as_str()
+        )));
+    }
+
+    Ok(vec![session])
+}
+
+fn health_rows(
+    mut sessions: Vec<&SessionRecord>,
+    probe: &impl RuntimeHealthProbe,
+) -> Vec<HealthRow> {
     sessions.sort_by(|left, right| {
         left.canonical_git_root()
             .map(|root| root.as_str())
@@ -105,6 +139,7 @@ fn health_rows(sessions: &[SessionRecord], probe: &impl RuntimeHealthProbe) -> V
 }
 
 fn health_row(session: &SessionRecord, probe: &impl RuntimeHealthProbe) -> HealthRow {
+    let id = session.stable_id().map(ToString::to_string);
     let canonical_git_root = session.canonical_git_root().map(ToString::to_string);
     let runtime = session
         .runtime_kind()
@@ -132,6 +167,7 @@ fn health_row(session: &SessionRecord, probe: &impl RuntimeHealthProbe) -> Healt
     };
 
     HealthRow {
+        id,
         canonical_git_root,
         runtime,
         health,
@@ -143,6 +179,7 @@ fn health_row(session: &SessionRecord, probe: &impl RuntimeHealthProbe) -> Healt
 
 #[derive(Debug, Serialize)]
 struct HealthJsonRow<'a> {
+    id: Option<&'a str>,
     canonical_git_root: Option<&'a str>,
     runtime: Option<&'a str>,
     health: &'static str,
@@ -154,6 +191,7 @@ struct HealthJsonRow<'a> {
 impl<'a> From<&'a HealthRow> for HealthJsonRow<'a> {
     fn from(row: &'a HealthRow) -> Self {
         Self {
+            id: row.id.as_deref(),
             canonical_git_root: row.canonical_git_root.as_deref(),
             runtime: row.runtime.as_deref(),
             health: row.health.as_str(),

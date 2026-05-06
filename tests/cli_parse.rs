@@ -80,13 +80,14 @@ fn core_commands_parse_into_expected_variants() {
         health.command,
         Command::Health(HealthArgs {
             output: OutputFormat::Table,
+            target: None,
         })
     );
     assert_eq!(
         stop.command,
         Command::Stop(StopArgs {
             force: false,
-            directory: "/tmp/workspace".into(),
+            target: "/tmp/workspace".into(),
         })
     );
     assert_eq!(
@@ -138,7 +139,7 @@ fn stop_accepts_force_cleanup_flag() {
         cli.command,
         Command::Stop(StopArgs {
             force: true,
-            directory: "/tmp/workspace".into(),
+            target: "/tmp/workspace".into(),
         })
     );
 }
@@ -183,6 +184,7 @@ fn health_accepts_output_format_selection() {
             cli.command,
             Command::Health(HealthArgs {
                 output: OutputFormat::Json,
+                target: None,
             })
         );
     }
@@ -193,6 +195,20 @@ fn health_accepts_output_format_selection() {
         cli.command,
         Command::Health(HealthArgs {
             output: OutputFormat::Table,
+            target: None,
+        })
+    );
+}
+
+#[test]
+fn health_accepts_stable_id_target_with_output_selection() {
+    let cli = Cli::try_parse_from(["agentbox", "health", "--output", "json", "abc123"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Health(HealthArgs {
+            output: OutputFormat::Json,
+            target: Some("abc123".to_string()),
         })
     );
 }
