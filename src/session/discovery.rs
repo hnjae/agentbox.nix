@@ -6,9 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
-
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 
 use crate::git::Git;
 use crate::metadata::{
@@ -21,7 +19,7 @@ use crate::{Error, Result};
 
 use super::endpoint::derive_attach_endpoint;
 use super::labels::SessionLabelReport;
-use super::record::{SessionGroup, SessionMetadata, SessionRecord};
+use super::record::{SessionMetadata, SessionRecord};
 use super::status::{SessionStatusInput, derive_status, mark_duplicate_sessions};
 
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
@@ -70,27 +68,6 @@ fn discover_scoped_sessions_from_ps(
 ) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
     discover_sessions_from_ps_with_git(containers, scope, inspect_container, &git)
-}
-
-pub fn group_sessions_by_git_root(sessions: &[SessionRecord]) -> Vec<SessionGroup> {
-    let mut groups = BTreeMap::<Utf8PathBuf, Vec<SessionRecord>>::new();
-
-    for session in sessions {
-        if let Some(root) = session.canonical_git_root() {
-            groups
-                .entry(root.to_path_buf())
-                .or_default()
-                .push(session.clone());
-        }
-    }
-
-    groups
-        .into_iter()
-        .map(|(canonical_git_root, sessions)| SessionGroup {
-            canonical_git_root,
-            sessions,
-        })
-        .collect()
 }
 
 enum SessionDiscoveryScope<'a> {

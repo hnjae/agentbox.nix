@@ -6,7 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +15,8 @@ use crate::cli::StopArgs;
 use crate::podman::Podman;
 use crate::prompt;
 use crate::session::{
-    SessionRecord, SessionStatus, discover_managed_sessions, select_stable_id_prefix,
+    SessionRecord, SessionStatus, discover_managed_sessions, exact_git_root_matches,
+    partition_sessions_by_git_root, select_stable_id_prefix,
 };
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
@@ -193,7 +193,7 @@ enum StopTarget {
 
 fn stop_git_root(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> {
     let failures = with_locked_git_root(git_root, |locked| {
-        let sessions = exact_full_root_matches(locked.discover_sessions()?, locked.git_root());
+        let sessions = exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
 
         if sessions.is_empty() {
             return Err(Error::msg(format!(
@@ -222,7 +222,7 @@ fn stop_git_root(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> 
 fn stop_exact_stored_git_root_path(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> {
     let failures = with_locked_git_root(git_root, |locked| {
         let sessions =
-            exact_full_root_matches(discover_managed_sessions(locked.podman())?, git_root);
+            exact_git_root_matches(discover_managed_sessions(locked.podman())?, git_root);
 
         if sessions.is_empty() {
             return Err(Error::msg(format!(
@@ -300,16 +300,6 @@ fn resolve_stop_target(target: &Path) -> Result<StopTarget> {
     Ok(StopTarget::StableId(prefix.to_string()))
 }
 
-fn exact_full_root_matches(
-    sessions: Vec<SessionRecord>,
-    git_root: &Utf8Path,
-) -> Vec<SessionRecord> {
-    sessions
-        .into_iter()
-        .filter(|session| session.canonical_git_root() == Some(git_root))
-        .collect()
-}
-
 fn lockable_stable_id_matches(
     sessions: Vec<&SessionRecord>,
     id: &str,
@@ -337,16 +327,12 @@ fn lockable_stable_id_matches(
 }
 
 fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<CleanupFailure>> {
-    let mut groups = BTreeMap::<Utf8PathBuf, Vec<SessionRecord>>::new();
-
-    for session in sessions {
-        if let Some(root) = session.canonical_git_root() {
-            groups.entry(root.to_path_buf()).or_default().push(session);
-        }
-    }
+    let partition = partition_sessions_by_git_root(sessions);
 
     let mut failures = Vec::new();
-    for (git_root, sessions) in groups {
+    for group in partition.rooted {
+        let git_root = group.canonical_git_root;
+        let sessions = group.sessions;
         let mut group_failures = with_locked_git_root(&git_root, |locked| {
             Ok(sessions
                 .iter()
@@ -360,22 +346,14 @@ fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<Cleanup
 }
 
 fn cleanup_all_running_matches(sessions: Vec<SessionRecord>) -> Result<Vec<CleanupFailure>> {
-    let mut groups = BTreeMap::<Utf8PathBuf, Vec<SessionRecord>>::new();
-    let mut unrooted = Vec::new();
-
-    for session in sessions {
-        if let Some(root) = session.canonical_git_root() {
-            groups.entry(root.to_path_buf()).or_default().push(session);
-        } else {
-            unrooted.push(session);
-        }
-    }
+    let partition = partition_sessions_by_git_root(sessions);
 
     let mut failures = Vec::new();
-    for (git_root, _) in groups {
+    for group in partition.rooted {
+        let git_root = group.canonical_git_root;
         let mut group_failures = with_locked_git_root(&git_root, |locked| {
             Ok(
-                exact_full_root_matches(locked.discover_sessions()?, locked.git_root())
+                exact_git_root_matches(locked.discover_sessions()?, locked.git_root())
                     .iter()
                     .filter(|session| session.container_running())
                     .filter_map(|session| cleanup_managed_container(locked.podman(), session))
@@ -385,10 +363,11 @@ fn cleanup_all_running_matches(sessions: Vec<SessionRecord>) -> Result<Vec<Clean
         failures.append(&mut group_failures);
     }
 
-    if !unrooted.is_empty() {
+    if !partition.unrooted.is_empty() {
         let podman = Podman::new();
         failures.extend(
-            unrooted
+            partition
+                .unrooted
                 .iter()
                 .filter_map(|session| cleanup_managed_container(&podman, session)),
         );

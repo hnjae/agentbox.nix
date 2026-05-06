@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::podman::Podman;
 use crate::session::{
     SessionRecord, SessionStatus, discover_managed_sessions, select_stable_id_prefix,
+    sort_session_refs_by_identity,
 };
 
 use super::runtime_health::{HostRuntimeHealthProbe, RuntimeHealthProbe};
@@ -126,12 +127,7 @@ fn health_rows(
     mut sessions: Vec<&SessionRecord>,
     probe: &impl RuntimeHealthProbe,
 ) -> Vec<HealthRow> {
-    sessions.sort_by(|left, right| {
-        left.canonical_git_root()
-            .map(|root| root.as_str())
-            .cmp(&right.canonical_git_root().map(|root| root.as_str()))
-            .then_with(|| left.container_name.cmp(&right.container_name))
-    });
+    sort_session_refs_by_identity(&mut sessions);
 
     sessions
         .into_iter()

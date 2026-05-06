@@ -4,7 +4,7 @@ use serde::Serialize;
 use crate::cli::{LsArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
-use crate::session::{SessionRecord, discover_managed_sessions};
+use crate::session::{SessionRecord, discover_managed_sessions, sorted_session_refs_by_identity};
 
 use super::table;
 
@@ -32,7 +32,7 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
     table.load_preset(NOTHING);
     table.set_header(["ID", "CANONICAL GIT ROOT", "RUNTIME", "STATUS", "ENDPOINT"]);
 
-    for session in sorted_sessions(sessions) {
+    for session in sorted_session_refs_by_identity(sessions) {
         table.add_row([
             Cell::new(session.stable_id().unwrap_or("unknown")),
             Cell::new(
@@ -55,23 +55,12 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
 }
 
 pub fn render_json(sessions: &[SessionRecord]) -> Result<String> {
-    let rows = sorted_sessions(sessions)
+    let rows = sorted_session_refs_by_identity(sessions)
         .into_iter()
         .map(LsJsonRow::from)
         .collect::<Vec<_>>();
 
     Ok(format!("{}\n", serde_json::to_string(&rows)?))
-}
-
-fn sorted_sessions(sessions: &[SessionRecord]) -> Vec<&SessionRecord> {
-    let mut rows = sessions.iter().collect::<Vec<_>>();
-    rows.sort_by(|left, right| {
-        left.canonical_git_root()
-            .map(|root| root.as_str())
-            .cmp(&right.canonical_git_root().map(|root| root.as_str()))
-            .then_with(|| left.container_name.cmp(&right.container_name))
-    });
-    rows
 }
 
 #[derive(Debug, Serialize)]
