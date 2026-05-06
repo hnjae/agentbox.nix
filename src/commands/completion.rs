@@ -143,6 +143,11 @@ _agentbox() {
                 _agentbox_completion_roots health
             fi
             ;;
+        clean)
+            if [[ "$cur" == --* ]]; then
+                COMPREPLY=( $(compgen -W "--dry-run --yes --images --volumes" -- "$cur") )
+            fi
+            ;;
         runtime)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "update" -- "$cur") )
@@ -225,6 +230,13 @@ _agentbox() {
         _agentbox_completion_roots health
       fi
       ;;
+    clean)
+      _values 'option' \
+        '--dry-run[print cleanup candidates without deleting]' \
+        '--yes[delete cleanup candidates without prompting]' \
+        '--images[consider default runtime images]' \
+        '--volumes[consider workspace cache volumes]'
+      ;;
     runtime)
       if (( CURRENT == 3 )); then
         _values 'runtime command' 'update[Update a default runtime image]'
@@ -270,6 +282,10 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from health" -a "(__agentbox_
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate or failed exact matches"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l all -d "Stop every running managed session"
 complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -a "(__agentbox_completion_roots stop)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l dry-run -d "Print cleanup candidates without deleting"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l yes -d "Delete cleanup candidates without prompting"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l images -d "Consider default runtime images"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l volumes -d "Consider workspace cache volumes"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from runtime" -a "update"
 complete -c agentbox -f -n "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update" -a "@RUNTIME_VALUES@"

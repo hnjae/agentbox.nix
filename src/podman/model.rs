@@ -41,6 +41,24 @@ pub struct PodmanPsContainer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct PodmanVolume {
+    pub name: String,
+    #[serde(default)]
+    pub driver: Option<String>,
+    #[serde(default)]
+    pub mountpoint: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub labels: BTreeMap<String, String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub options: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PodmanPsPort {
     #[serde(default)]

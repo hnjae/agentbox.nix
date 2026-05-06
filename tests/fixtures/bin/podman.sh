@@ -120,8 +120,30 @@ case "$cmd" in
                 fi
                 exit 1
                 ;;
+            rm)
+                maybe_fail image-rm
+                printf 'removed image\n'
+                ;;
             *)
                 printf 'unexpected podman image invocation: %s %s\n' "$subcommand" "$*" >&2
+                exit 97
+                ;;
+        esac
+        ;;
+    volume)
+        record volume "$@"
+        subcommand=${1:-}
+        shift || true
+        case "$subcommand" in
+            ls)
+                cat "$fixtures/volumes.json"
+                ;;
+            rm)
+                maybe_fail volume-rm
+                printf 'removed volume\n'
+                ;;
+            *)
+                printf 'unexpected podman volume invocation: %s %s\n' "$subcommand" "$*" >&2
                 exit 97
                 ;;
         esac

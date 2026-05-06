@@ -90,6 +90,15 @@ pub(super) fn write_runtime_image_state(
     Ok(())
 }
 
+pub(super) fn remove_runtime_image_state(runtime: RuntimeKind) -> Result<()> {
+    let path = runtime_image_state_path(runtime)?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn runtime_image_state_path(runtime: RuntimeKind) -> Result<PathBuf> {
     Ok(AgentboxStateRoot::from_xdg()?
         .join("runtime")

@@ -145,7 +145,7 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(script.contains("run runtime attach ls health stop completion help"));
+    assert!(script.contains("run runtime attach ls health stop clean completion help"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -191,6 +191,23 @@ fn completion_scripts_offer_stop_all() {
 }
 
 #[test]
+fn completion_scripts_offer_clean_flags() {
+    let bash = capture_completion_script_shell("bash");
+    assert!(bash.contains("clean)"));
+    assert!(bash.contains("--dry-run --yes --images --volumes"));
+
+    let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("clean)"));
+    assert!(zsh.contains("--dry-run[print cleanup candidates without deleting]"));
+    assert!(zsh.contains("--volumes[consider workspace cache volumes]"));
+
+    let fish = capture_completion_script_shell("fish");
+    assert!(fish.contains("__fish_seen_subcommand_from clean"));
+    assert!(fish.contains("-l dry-run"));
+    assert!(fish.contains("-l volumes"));
+}
+
+#[test]
 fn completion_scripts_expand_shared_value_placeholders() {
     let runtime_values = RuntimeKind::supported_values().join(" ");
     let output_values = OutputFormat::supported_values().join(" ");
@@ -225,6 +242,7 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
     assert!(manpage.contains(".TH agentbox 1"));
     assert!(manpage.contains("agentbox\\-run(1)"));
     assert!(manpage.contains("agentbox\\-health(1)"));
+    assert!(manpage.contains("agentbox\\-clean(1)"));
     assert!(!manpage.contains("agentbox\\-help(1)"));
     assert!(manpage.contains("Shell completion helpers"));
     assert!(!manpage.contains("__completion-roots"));
@@ -256,6 +274,7 @@ fn installed_manpages_include_referenced_subcommands() {
         "agentbox-ls.1",
         "agentbox-health.1",
         "agentbox-stop.1",
+        "agentbox-clean.1",
         "agentbox-completion.1",
     ] {
         assert!(
@@ -268,6 +287,7 @@ fn installed_manpages_include_referenced_subcommands() {
     let agentbox = fs::read_to_string(directory.path().join("agentbox.1")).unwrap();
     assert!(agentbox.contains("agentbox\\-run(1)"));
     assert!(agentbox.contains("agentbox\\-health(1)"));
+    assert!(agentbox.contains("agentbox\\-clean(1)"));
     assert!(!agentbox.contains("agentbox\\-help(1)"));
 
     let run = fs::read_to_string(directory.path().join("agentbox-run.1")).unwrap();

@@ -42,6 +42,7 @@ impl CliHarness {
         fs::create_dir(home.path().join(".codex")).unwrap();
         fs::write(fixtures.path().join("image.exists"), "present\n").unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
+        fs::write(fixtures.path().join("volumes.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("git"), fake_git_script());
         write_executable(fake_bin.path().join("direnv"), fake_direnv_script());
         write_executable(fake_bin.path().join("podman"), fake_podman_script());
@@ -72,6 +73,10 @@ impl CliHarness {
 
     pub fn write_ps(&self, json: &str) {
         fs::write(self.fixtures.path().join("ps.json"), json).unwrap();
+    }
+
+    pub fn write_volumes(&self, json: &str) {
+        fs::write(self.fixtures.path().join("volumes.json"), json).unwrap();
     }
 
     pub fn write_inspect(&self, name: &str, json: &str) {

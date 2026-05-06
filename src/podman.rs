@@ -27,7 +27,7 @@ use model::parse_json;
 pub use model::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
     PodmanHealth, PodmanHostConfig, PodmanNamespaces, PodmanNetworkEndpoint, PodmanNetworkSettings,
-    PodmanPortBinding, PodmanPsContainer, PodmanPsPort,
+    PodmanPortBinding, PodmanPsContainer, PodmanPsPort, PodmanVolume,
 };
 
 const PODMAN_PROGRAM: &str = "podman";
@@ -65,6 +65,22 @@ impl Podman {
         parse_json("`podman ps --all --format json`", &output.stdout)
     }
 
+    pub fn ps_all(&self) -> Result<Vec<PodmanPsContainer>> {
+        let output = self.run_podman_quiet(|command| {
+            command.args(["ps", "--all", "--format", "json"]);
+        })?;
+
+        parse_json("`podman ps --all --format json`", &output.stdout)
+    }
+
+    pub fn volumes(&self) -> Result<Vec<PodmanVolume>> {
+        let output = self.run_podman_quiet(|command| {
+            command.args(["volume", "ls", "--format", "json"]);
+        })?;
+
+        parse_json("`podman volume ls --format json`", &output.stdout)
+    }
+
     pub fn inspect(&self, name: &str) -> Result<Vec<PodmanContainerInspect>> {
         let output = self.run_podman_quiet(|command| {
             command.args(["inspect", name]);
@@ -88,6 +104,20 @@ impl Podman {
         self.exists_status(|command| {
             command.args(["image", "exists", image]);
         })
+    }
+
+    pub fn remove_image(&self, image: &str) -> Result<()> {
+        self.run_podman_quiet(|command| {
+            command.args(["image", "rm", image]);
+        })
+        .map(|_| ())
+    }
+
+    pub fn remove_volume(&self, volume: &str) -> Result<()> {
+        self.run_podman_quiet(|command| {
+            command.args(["volume", "rm", volume]);
+        })
+        .map(|_| ())
     }
 
     pub fn container_exists(&self, container_name: &str) -> Result<bool> {

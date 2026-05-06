@@ -79,6 +79,8 @@ pub enum Command {
     Health(HealthArgs),
     /// Stop a managed session.
     Stop(StopArgs),
+    /// Remove unused agentbox-owned Podman resources.
+    Clean(CleanArgs),
     /// Shell completion helpers.
     Completion(CompletionArgs),
 
@@ -212,4 +214,23 @@ pub struct StopArgs {
     /// Workspace directory, exact orphan path, or stable session id prefix.
     #[arg(value_name = "TARGET", required_unless_present = "all")]
     pub target: Option<PathBuf>,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct CleanArgs {
+    /// Print cleanup candidates without deleting anything.
+    #[arg(long, conflicts_with = "yes")]
+    pub dry_run: bool,
+
+    /// Delete cleanup candidates without prompting.
+    #[arg(long)]
+    pub yes: bool,
+
+    /// Consider unused default runtime images.
+    #[arg(long)]
+    pub images: bool,
+
+    /// Consider unused workspace cache volumes.
+    #[arg(long)]
+    pub volumes: bool,
 }

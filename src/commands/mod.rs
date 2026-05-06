@@ -10,6 +10,7 @@ use crate::cli::Command;
 use crate::error::Result;
 
 pub mod attach;
+pub mod clean;
 pub mod completion;
 pub mod health;
 pub mod ls;
@@ -32,6 +33,7 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
         Command::Ls(args) => ls::run(args),
         Command::Health(args) => health::run(args),
         Command::Stop(args) => stop::run(args),
+        Command::Clean(args) => clean::run(args),
         Command::Completion(args) => completion::run(args.shell),
         Command::CompletionRoots(args) => {
             print!("{}", completion::live_roots_output(args.command)?);

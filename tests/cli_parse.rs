@@ -7,8 +7,8 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::cli::{
-    Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, HealthArgs, LsArgs, OutputFormat,
-    RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StopArgs,
+    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, HealthArgs, LsArgs,
+    OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
@@ -28,6 +28,7 @@ fn help_lists_core_commands() {
             .and(predicate::str::contains("ls"))
             .and(predicate::str::contains("health"))
             .and(predicate::str::contains("stop"))
+            .and(predicate::str::contains("clean"))
             .and(predicate::str::contains("completion"))
             .and(predicate::str::contains("detached runtime server")),
     );
@@ -54,6 +55,7 @@ fn core_commands_parse_into_expected_variants() {
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
     let health = Cli::try_parse_from(["agentbox", "health"]).unwrap();
     let stop = Cli::try_parse_from(["agentbox", "stop", "/tmp/workspace"]).unwrap();
+    let clean = Cli::try_parse_from(["agentbox", "clean"]).unwrap();
     let runtime = Cli::try_parse_from(["agentbox", "runtime", "update", "codex"]).unwrap();
     let completion = Cli::try_parse_from(["agentbox", "completion", "bash"]).unwrap();
 
@@ -92,6 +94,15 @@ fn core_commands_parse_into_expected_variants() {
         })
     );
     assert_eq!(
+        clean.command,
+        Command::Clean(CleanArgs {
+            dry_run: false,
+            yes: false,
+            images: false,
+            volumes: false,
+        })
+    );
+    assert_eq!(
         runtime.command,
         Command::Runtime(RuntimeArgs {
             command: RuntimeCommand::Update(RuntimeUpdateArgs {
@@ -105,6 +116,59 @@ fn core_commands_parse_into_expected_variants() {
             shell: CompletionShell::Bash,
         })
     );
+}
+
+#[test]
+fn clean_accepts_cleanup_flags() {
+    for (args, expected) in [
+        (
+            vec!["agentbox", "clean", "--dry-run"],
+            CleanArgs {
+                dry_run: true,
+                yes: false,
+                images: false,
+                volumes: false,
+            },
+        ),
+        (
+            vec!["agentbox", "clean", "--yes"],
+            CleanArgs {
+                dry_run: false,
+                yes: true,
+                images: false,
+                volumes: false,
+            },
+        ),
+        (
+            vec!["agentbox", "clean", "--images"],
+            CleanArgs {
+                dry_run: false,
+                yes: false,
+                images: true,
+                volumes: false,
+            },
+        ),
+        (
+            vec!["agentbox", "clean", "--volumes"],
+            CleanArgs {
+                dry_run: false,
+                yes: false,
+                images: false,
+                volumes: true,
+            },
+        ),
+    ] {
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        assert_eq!(cli.command, Command::Clean(expected));
+    }
+}
+
+#[test]
+fn clean_rejects_dry_run_with_yes() {
+    let error = Cli::try_parse_from(["agentbox", "clean", "--dry-run", "--yes"]).unwrap_err();
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
 }
 
 #[test]

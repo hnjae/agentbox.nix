@@ -19,7 +19,10 @@ use crate::{Error, Result};
 
 mod image_state;
 
-use image_state::{RuntimeImageState, read_runtime_image_state, write_runtime_image_state};
+use image_state::{
+    RuntimeImageState, read_runtime_image_state, remove_runtime_image_state,
+    write_runtime_image_state,
+};
 
 pub fn run(args: RuntimeArgs, verbose: bool) -> Result<()> {
     match args.command {
@@ -46,6 +49,10 @@ pub(super) fn ensure_default_runtime_image(
             workspace_root,
         ))
     })
+}
+
+pub(super) fn remove_default_runtime_image_state(runtime: RuntimeKind) -> Result<()> {
+    remove_runtime_image_state(runtime)
 }
 
 fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
