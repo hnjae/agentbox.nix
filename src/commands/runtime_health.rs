@@ -276,183 +276,144 @@ mod tests {
 
     #[test]
     fn opencode_probe_accepts_global_health_http_200_with_healthy_true() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let endpoint = local_http_endpoint(&listener);
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 128];
-            let bytes_read = stream.read(&mut request).unwrap();
-            assert!(request[..bytes_read].starts_with(b"GET /global/health HTTP/1.1"));
-            stream
-                .write_all(&http_response(
-                    "200 OK",
-                    r#"{"healthy":true,"version":"0.0.0-test"}"#,
-                ))
-                .unwrap();
-        });
-
-        assert_eq!(
-            HostRuntimeHealthProbe.check(RuntimeKind::Opencode, &endpoint),
-            RuntimeHealth::healthy()
+        assert_probe_result(
+            RuntimeKind::Opencode,
+            http_response("200 OK", r#"{"healthy":true,"version":"0.0.0-test"}"#),
+            RuntimeHealth::healthy(),
         );
-        server.join().unwrap();
     }
 
     #[test]
     fn opencode_probe_rejects_tcp_accept_without_http_response() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let endpoint = local_http_endpoint(&listener);
-        let server = thread::spawn(move || {
-            let _ = listener.accept().unwrap();
-        });
-
-        assert_eq!(
-            HostRuntimeHealthProbe.check(RuntimeKind::Opencode, &endpoint),
-            RuntimeHealth::unhealthy("unreachable")
+        assert_probe_result(
+            RuntimeKind::Opencode,
+            ProbeResponse::CloseWithoutResponse,
+            RuntimeHealth::unhealthy("unreachable"),
         );
-        server.join().unwrap();
     }
 
     #[test]
     fn opencode_probe_rejects_non_200_global_health_response() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let endpoint = local_http_endpoint(&listener);
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 128];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(&http_response(
-                    "503 Service Unavailable",
-                    r#"{"healthy":true}"#,
-                ))
-                .unwrap();
-        });
-
-        assert_eq!(
-            HostRuntimeHealthProbe.check(RuntimeKind::Opencode, &endpoint),
-            RuntimeHealth::unhealthy("HTTP 503")
+        assert_probe_result(
+            RuntimeKind::Opencode,
+            http_response("503 Service Unavailable", r#"{"healthy":true}"#),
+            RuntimeHealth::unhealthy("HTTP 503"),
         );
-        server.join().unwrap();
     }
 
     #[test]
     fn opencode_probe_rejects_malformed_global_health_json() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let endpoint = local_http_endpoint(&listener);
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 128];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(&http_response("200 OK", "not-json"))
-                .unwrap();
-        });
-
-        assert_eq!(
-            HostRuntimeHealthProbe.check(RuntimeKind::Opencode, &endpoint),
-            RuntimeHealth::unhealthy("malformed JSON")
+        assert_probe_result(
+            RuntimeKind::Opencode,
+            http_response("200 OK", "not-json"),
+            RuntimeHealth::unhealthy("malformed JSON"),
         );
-        server.join().unwrap();
     }
 
     #[test]
     fn opencode_probe_rejects_unhealthy_global_health_json() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let endpoint = local_http_endpoint(&listener);
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 128];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(&http_response("200 OK", r#"{"healthy":false}"#))
-                .unwrap();
-        });
-
-        assert_eq!(
-            HostRuntimeHealthProbe.check(RuntimeKind::Opencode, &endpoint),
-            RuntimeHealth::unhealthy("healthy=false")
+        assert_probe_result(
+            RuntimeKind::Opencode,
+            http_response("200 OK", r#"{"healthy":false}"#),
+            RuntimeHealth::unhealthy("healthy=false"),
         );
-        server.join().unwrap();
     }
 
     #[test]
     fn codex_probe_accepts_readyz_http_200() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let endpoint = local_ws_endpoint(&listener);
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 128];
-            let bytes_read = stream.read(&mut request).unwrap();
-            assert!(request[..bytes_read].starts_with(b"GET /readyz HTTP/1.1"));
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                .unwrap();
-        });
-
-        assert_eq!(
-            HostRuntimeHealthProbe.check(RuntimeKind::Codex, &endpoint),
-            RuntimeHealth::healthy()
+        assert_probe_result(
+            RuntimeKind::Codex,
+            http_response("200 OK", ""),
+            RuntimeHealth::healthy(),
         );
-        server.join().unwrap();
     }
 
     #[test]
     fn codex_probe_rejects_non_200_readyz_response() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let endpoint = local_ws_endpoint(&listener);
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 128];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
-                .unwrap();
-        });
-
-        assert_eq!(
-            HostRuntimeHealthProbe.check(RuntimeKind::Codex, &endpoint),
-            RuntimeHealth::unhealthy("HTTP 503")
+        assert_probe_result(
+            RuntimeKind::Codex,
+            http_response("503 Service Unavailable", ""),
+            RuntimeHealth::unhealthy("HTTP 503"),
         );
-        server.join().unwrap();
     }
 
     #[test]
     fn codex_probe_rejects_tcp_accept_without_http_response() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let endpoint = local_ws_endpoint(&listener);
-        let server = thread::spawn(move || {
-            let _ = listener.accept().unwrap();
-        });
-
-        assert_eq!(
-            HostRuntimeHealthProbe.check(RuntimeKind::Codex, &endpoint),
-            RuntimeHealth::unhealthy("unreachable")
+        assert_probe_result(
+            RuntimeKind::Codex,
+            ProbeResponse::CloseWithoutResponse,
+            RuntimeHealth::unhealthy("unreachable"),
         );
-        server.join().unwrap();
     }
 
-    fn http_response(status: &str, body: &str) -> Vec<u8> {
-        format!(
-            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-            body.len()
+    fn assert_probe_result(runtime: RuntimeKind, response: ProbeResponse, expected: RuntimeHealth) {
+        let server = ProbeServer::start(runtime, response);
+        assert_eq!(
+            HostRuntimeHealthProbe.check(runtime, server.endpoint()),
+            expected
+        );
+        server.join();
+    }
+
+    struct ProbeServer {
+        endpoint: AttachEndpoint,
+        handle: thread::JoinHandle<()>,
+    }
+
+    impl ProbeServer {
+        fn start(runtime: RuntimeKind, response: ProbeResponse) -> Self {
+            let (scheme, expected_path) = runtime_probe_contract(runtime);
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let endpoint = AttachEndpoint {
+                scheme: scheme.to_string(),
+                host_ip: "127.0.0.1".to_string(),
+                host_port: listener.local_addr().unwrap().port(),
+            };
+            let handle = thread::spawn(move || serve_probe(listener, expected_path, response));
+
+            Self { endpoint, handle }
+        }
+
+        fn endpoint(&self) -> &AttachEndpoint {
+            &self.endpoint
+        }
+
+        fn join(self) {
+            self.handle.join().unwrap();
+        }
+    }
+
+    enum ProbeResponse {
+        Bytes(Vec<u8>),
+        CloseWithoutResponse,
+    }
+
+    fn serve_probe(listener: TcpListener, expected_path: &'static str, response: ProbeResponse) {
+        let (mut stream, _) = listener.accept().unwrap();
+
+        if let ProbeResponse::Bytes(response) = response {
+            let mut request = [0_u8; 128];
+            let bytes_read = stream.read(&mut request).unwrap();
+            let expected_request = format!("GET {expected_path} HTTP/1.1");
+            assert!(request[..bytes_read].starts_with(expected_request.as_bytes()));
+            stream.write_all(&response).unwrap();
+        }
+    }
+
+    fn runtime_probe_contract(runtime: RuntimeKind) -> (&'static str, &'static str) {
+        match runtime {
+            RuntimeKind::Opencode => ("http", "/global/health"),
+            RuntimeKind::Codex => ("ws", "/readyz"),
+        }
+    }
+
+    fn http_response(status: &str, body: &str) -> ProbeResponse {
+        ProbeResponse::Bytes(
+            format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .into_bytes(),
         )
-        .into_bytes()
-    }
-
-    fn local_http_endpoint(listener: &TcpListener) -> AttachEndpoint {
-        AttachEndpoint {
-            scheme: "http".to_string(),
-            host_ip: "127.0.0.1".to_string(),
-            host_port: listener.local_addr().unwrap().port(),
-        }
-    }
-
-    fn local_ws_endpoint(listener: &TcpListener) -> AttachEndpoint {
-        AttachEndpoint {
-            scheme: "ws".to_string(),
-            host_ip: "127.0.0.1".to_string(),
-            host_port: listener.local_addr().unwrap().port(),
-        }
     }
 }

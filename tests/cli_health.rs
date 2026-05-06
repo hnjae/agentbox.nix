@@ -6,10 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
 
 use agentbox::runtime::RuntimeKind;
 
@@ -17,19 +14,16 @@ use agentbox::runtime::RuntimeKind;
 mod support;
 
 use support::{
-    CliHarness as Harness, managed_inspect_fixture, managed_ps_entry, opencode_managed_labels,
-    opencode_workspace_inspect_fixture, ps_fixture,
+    CliHarness as Harness, ReadyEndpoint, managed_inspect_fixture, managed_ps_entry,
+    opencode_managed_labels, opencode_workspace_inspect_fixture, ps_fixture,
     running_workspace_inspect_fixture_with_host_port, workspace_ps_entry,
 };
-
-const ACCEPT_TIMEOUT: Duration = Duration::from_secs(10);
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 #[test]
 fn health_reports_running_opencode_session_as_healthy() {
     let fixture = support::temp_workspace("opencode");
     let workspace = &fixture.workspace;
-    let endpoint = HealthEndpoint::opencode_healthy();
+    let endpoint = ReadyEndpoint::opencode_healthy();
     let port = endpoint.port();
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
@@ -68,7 +62,7 @@ fn health_reports_running_opencode_session_as_healthy() {
 fn health_reports_running_codex_session_as_healthy() {
     let fixture = support::temp_workspace("codex");
     let workspace = &fixture.workspace;
-    let endpoint = HealthEndpoint::codex_ready();
+    let endpoint = ReadyEndpoint::codex_ready();
     let port = endpoint.port();
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
@@ -103,7 +97,7 @@ fn health_reports_running_codex_session_as_healthy() {
 fn health_reports_unhealthy_opencode_without_failing() {
     let fixture = support::temp_workspace("unhealthy");
     let workspace = &fixture.workspace;
-    let endpoint = HealthEndpoint::opencode_unhealthy();
+    let endpoint = ReadyEndpoint::opencode_unhealthy();
     let port = endpoint.port();
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
@@ -137,8 +131,8 @@ fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
     let unhealthy_fixture = support::temp_workspace("unhealthy");
     let healthy = &healthy_fixture.workspace;
     let unhealthy = &unhealthy_fixture.workspace;
-    let healthy_endpoint = HealthEndpoint::opencode_healthy();
-    let unhealthy_endpoint = HealthEndpoint::opencode_unhealthy();
+    let healthy_endpoint = ReadyEndpoint::opencode_healthy();
+    let unhealthy_endpoint = ReadyEndpoint::opencode_unhealthy();
     let healthy_port = healthy_endpoint.port();
     let unhealthy_port = unhealthy_endpoint.port();
     let harness = Harness::new();
@@ -217,7 +211,7 @@ fn health_filters_non_running_session_statuses() {
     let stopped = &stopped_fixture.workspace;
     let failed = &failed_fixture.workspace;
     let orphan = &orphan_fixture.workspace;
-    let endpoint = HealthEndpoint::opencode_healthy();
+    let endpoint = ReadyEndpoint::opencode_healthy();
     let port = endpoint.port();
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(vec![
@@ -266,7 +260,7 @@ fn health_target_probes_only_matching_stable_id_prefix() {
     let other_fixture = support::temp_workspace("other");
     let selected = &selected_fixture.workspace;
     let other = &other_fixture.workspace;
-    let endpoint = HealthEndpoint::opencode_healthy();
+    let endpoint = ReadyEndpoint::opencode_healthy();
     let selected_port = endpoint.port();
     let other_port = unused_port();
     let harness = Harness::new();
@@ -435,97 +429,4 @@ fn unused_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
-}
-
-struct HealthEndpoint {
-    port: u16,
-    handle: Option<JoinHandle<()>>,
-}
-
-impl HealthEndpoint {
-    fn opencode_healthy() -> Self {
-        Self::start(
-            "/global/health",
-            http_response("200 OK", r#"{"healthy":true,"version":"0.0.0-test"}"#),
-        )
-    }
-
-    fn opencode_unhealthy() -> Self {
-        Self::start(
-            "/global/health",
-            http_response("200 OK", r#"{"healthy":false}"#),
-        )
-    }
-
-    fn codex_ready() -> Self {
-        Self::start(
-            "/readyz",
-            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_string(),
-        )
-    }
-
-    fn start(expected_path: &'static str, response: String) -> Self {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let handle = thread::spawn(move || serve_one_probe(listener, expected_path, response));
-
-        Self {
-            port,
-            handle: Some(handle),
-        }
-    }
-
-    fn port(&self) -> u16 {
-        self.port
-    }
-
-    fn wait(mut self) {
-        self.join();
-    }
-
-    fn join(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            handle.join().unwrap();
-        }
-    }
-}
-
-impl Drop for HealthEndpoint {
-    fn drop(&mut self) {
-        self.join();
-    }
-}
-
-fn serve_one_probe(listener: TcpListener, expected_path: &'static str, response: String) {
-    let deadline = Instant::now() + ACCEPT_TIMEOUT;
-
-    loop {
-        match listener.accept() {
-            Ok((mut stream, _)) => {
-                let _ = stream.set_read_timeout(Some(ACCEPT_TIMEOUT));
-                let _ = stream.set_write_timeout(Some(ACCEPT_TIMEOUT));
-                let mut request = [0_u8; 256];
-                let bytes_read = stream.read(&mut request).unwrap();
-                let expected_request = format!("GET {expected_path} HTTP/1.1");
-                assert!(request[..bytes_read].starts_with(expected_request.as_bytes()));
-                stream.write_all(response.as_bytes()).unwrap();
-                return;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                if Instant::now() >= deadline {
-                    return;
-                }
-                thread::sleep(POLL_INTERVAL);
-            }
-            Err(_) => return,
-        }
-    }
-}
-
-fn http_response(status: &str, body: &str) -> String {
-    format!(
-        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-        body.len()
-    )
 }

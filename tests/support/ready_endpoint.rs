@@ -23,10 +23,38 @@ pub struct ReadyEndpoint {
 
 impl ReadyEndpoint {
     pub fn start(runtime: RuntimeKind) -> Self {
+        match runtime {
+            RuntimeKind::Opencode => Self::opencode_healthy(),
+            RuntimeKind::Codex => Self::codex_ready(),
+        }
+    }
+
+    pub fn opencode_healthy() -> Self {
+        Self::respond(
+            "/global/health",
+            http_response("200 OK", r#"{"healthy":true,"version":"0.0.0-test"}"#),
+        )
+    }
+
+    pub fn opencode_unhealthy() -> Self {
+        Self::respond(
+            "/global/health",
+            http_response("200 OK", r#"{"healthy":false}"#),
+        )
+    }
+
+    pub fn codex_ready() -> Self {
+        Self::respond(
+            "/readyz",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec(),
+        )
+    }
+
+    fn respond(expected_path: &'static str, response: Vec<u8>) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
         let port = listener.local_addr().unwrap().port();
-        let handle = thread::spawn(move || serve_one_ready_probe(listener, runtime));
+        let handle = thread::spawn(move || serve_one_probe(listener, expected_path, response));
 
         Self {
             port,
@@ -55,7 +83,7 @@ impl Drop for ReadyEndpoint {
     }
 }
 
-fn serve_one_ready_probe(listener: TcpListener, runtime: RuntimeKind) {
+fn serve_one_probe(listener: TcpListener, expected_path: &'static str, response: Vec<u8>) {
     let deadline = Instant::now() + ACCEPT_TIMEOUT;
 
     loop {
@@ -63,23 +91,11 @@ fn serve_one_ready_probe(listener: TcpListener, runtime: RuntimeKind) {
             Ok((mut stream, _)) => {
                 let _ = stream.set_read_timeout(Some(ACCEPT_TIMEOUT));
                 let _ = stream.set_write_timeout(Some(ACCEPT_TIMEOUT));
-                let mut request = [0_u8; 128];
+                let mut request = [0_u8; 256];
                 let bytes_read = stream.read(&mut request).unwrap();
-                match runtime {
-                    RuntimeKind::Opencode => {
-                        assert!(request[..bytes_read].starts_with(b"GET /global/health HTTP/1.1"));
-                        let body = r#"{"healthy":true,"version":"0.0.0-test"}"#;
-                        stream
-                            .write_all(http_response("200 OK", body).as_bytes())
-                            .unwrap();
-                    }
-                    RuntimeKind::Codex => {
-                        assert!(request[..bytes_read].starts_with(b"GET /readyz HTTP/1.1"));
-                        stream
-                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                            .unwrap();
-                    }
-                }
+                let expected_request = format!("GET {expected_path} HTTP/1.1");
+                assert!(request[..bytes_read].starts_with(expected_request.as_bytes()));
+                stream.write_all(&response).unwrap();
                 return;
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -93,9 +109,10 @@ fn serve_one_ready_probe(listener: TcpListener, runtime: RuntimeKind) {
     }
 }
 
-fn http_response(status: &str, body: &str) -> String {
+fn http_response(status: &str, body: &str) -> Vec<u8> {
     format!(
         "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     )
+    .into_bytes()
 }
