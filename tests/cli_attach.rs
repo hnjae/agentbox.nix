@@ -8,17 +8,19 @@
 
 use std::fs;
 
-use agentbox::metadata::LABEL_LAUNCH_DIRECTORY;
+use agentbox::commands::attach::attach_prompt_candidates;
+use agentbox::metadata::{LABEL_ATTACH_SCHEME, LABEL_LAUNCH_DIRECTORY};
 use agentbox::runtime::RuntimeKind;
+use agentbox::session::discover_managed_sessions_from_ps;
 use agentbox::workspace::resolve_workspace_identity;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
-    CliHarness as Harness, managed_inspect_fixture, managed_ps_entry,
-    opencode_managed_labels as managed_labels, opencode_workspace_labels, operation_names,
-    ps_fixture, running_workspace_inspect_fixture, workspace_ps_entry,
+    CliHarness as Harness, inspect_models_by_id, managed_container_models, managed_inspect_fixture,
+    managed_ps_entry, opencode_managed_labels as managed_labels, opencode_workspace_labels,
+    operation_names, ps_fixture, running_workspace_inspect_fixture, workspace_ps_entry,
 };
 
 #[test]
@@ -59,6 +61,62 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
     assert!(log[2].contains(&format!("cwd={}", workspace.canonical_target)));
     assert!(!log.iter().any(|line| line.starts_with("create ")));
     assert!(!log.iter().any(|line| line.starts_with("attach ")));
+}
+
+#[test]
+fn attach_without_target_requires_tty_for_selection() {
+    let harness = Harness::new();
+    let mut command = harness.agentbox_command();
+    command.arg("attach");
+
+    command.assert().failure().stderr(predicates::str::contains(
+        "agentbox attach requires a target when stdin or stderr is not a TTY",
+    ));
+
+    assert!(harness.read_log().is_empty());
+}
+
+#[test]
+fn attach_prompt_candidates_include_only_attachable_running_sessions() {
+    let running_fixture = support::temp_workspace("running");
+    let stopped_fixture = support::temp_workspace("stopped");
+    let failed_fixture = support::temp_workspace("failed");
+    let running = &running_fixture.workspace;
+    let stopped = &stopped_fixture.workspace;
+    let failed = &failed_fixture.workspace;
+    let (running_ps, running_inspect) = managed_container_models(
+        &running.container_name,
+        running.canonical_git_root.as_ref(),
+        true,
+        true,
+    );
+    let (stopped_ps, stopped_inspect) = managed_container_models(
+        &stopped.container_name,
+        stopped.canonical_git_root.as_ref(),
+        false,
+        true,
+    );
+    let (failed_ps, mut failed_inspect) = managed_container_models(
+        &failed.container_name,
+        failed.canonical_git_root.as_ref(),
+        true,
+        true,
+    );
+    failed_inspect.config.labels.remove(LABEL_ATTACH_SCHEME);
+
+    let sessions = discover_managed_sessions_from_ps(
+        vec![running_ps, stopped_ps, failed_ps],
+        inspect_models_by_id(vec![running_inspect, stopped_inspect, failed_inspect]),
+    )
+    .unwrap();
+
+    let candidates = attach_prompt_candidates(&sessions);
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(
+        candidates[0].directory(),
+        running.canonical_git_root.as_std_path()
+    );
 }
 
 #[test]

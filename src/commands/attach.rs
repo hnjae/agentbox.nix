@@ -6,12 +6,17 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::fmt;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use camino::Utf8Path;
 
-use crate::cli::DirectoryArgs;
+use crate::cli::AttachArgs;
+use crate::podman::Podman;
 use crate::process::{ProcessRunner, format_status, run_command_status};
+use crate::prompt;
+use crate::session::{SessionRecord, SessionStatus, discover_managed_sessions};
 use crate::session::{prepare_attach_session, run_command_hint, select_single_session};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
@@ -19,8 +24,39 @@ use crate::{Error, Result};
 use super::runtime_command::{RuntimeInvocation, host_client_runtime_command};
 use super::workspace_flow::with_locked_workspace;
 
-pub fn run(args: DirectoryArgs) -> Result<()> {
-    with_locked_workspace(&args.directory, false, |locked| {
+pub fn run(args: AttachArgs) -> Result<()> {
+    let directory = selected_attach_directory(args.directory)?;
+    attach_directory(&directory)
+}
+
+fn selected_attach_directory(directory: Option<PathBuf>) -> Result<PathBuf> {
+    match directory {
+        Some(directory) => Ok(directory),
+        None => select_attach_directory(),
+    }
+}
+
+fn select_attach_directory() -> Result<PathBuf> {
+    prompt::require_interactive_terminal(
+        "agentbox attach requires a target when stdin or stderr is not a TTY",
+    )?;
+    let podman = Podman::new();
+    let candidates = attach_prompt_candidates(&discover_managed_sessions(&podman)?);
+
+    if candidates.is_empty() {
+        return Err(Error::msg("no attachable managed sessions exist"));
+    }
+
+    let selected = prompt::select_one(
+        "Select session",
+        candidates,
+        "agentbox attach requires a target when stdin or stderr is not a TTY",
+    )?;
+    Ok(selected.directory)
+}
+
+fn attach_directory(directory: &Path) -> Result<()> {
+    with_locked_workspace(directory, false, |locked| {
         let workspace = locked.workspace();
         let sessions = locked.discover_sessions()?;
         let Some(session) = select_single_session(&sessions, workspace)? else {
@@ -50,6 +86,50 @@ pub fn run(args: DirectoryArgs) -> Result<()> {
     })?;
 
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachPromptCandidate {
+    label: String,
+    directory: PathBuf,
+}
+
+impl AttachPromptCandidate {
+    fn new(label: String, directory: PathBuf) -> Self {
+        Self { label, directory }
+    }
+
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+}
+
+impl fmt::Display for AttachPromptCandidate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.label)
+    }
+}
+
+pub fn attach_prompt_candidates(sessions: &[SessionRecord]) -> Vec<AttachPromptCandidate> {
+    let mut candidates = sessions
+        .iter()
+        .filter(|session| session.status == SessionStatus::Running)
+        .filter(|session| session.attach_endpoint.is_some())
+        .filter_map(attach_prompt_candidate)
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.label.cmp(&right.label));
+    candidates
+}
+
+fn attach_prompt_candidate(session: &SessionRecord) -> Option<AttachPromptCandidate> {
+    let root = session.canonical_git_root()?;
+    let runtime = session.runtime().unwrap_or("unknown");
+    let label = format!("{root} ({runtime})");
+
+    Some(AttachPromptCandidate::new(
+        label,
+        root.as_std_path().to_path_buf(),
+    ))
 }
 
 fn no_session_error(workspace: &WorkspaceIdentity) -> Error {

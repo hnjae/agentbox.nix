@@ -7,7 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::cli::{
-    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, DirectoryArgs, HealthArgs, LsArgs,
+    AttachArgs, CleanArgs, Cli, Command, CompletionArgs, CompletionShell, HealthArgs, LsArgs,
     OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
@@ -68,8 +68,8 @@ fn core_commands_parse_into_expected_variants() {
     );
     assert_eq!(
         attach.command,
-        Command::Attach(DirectoryArgs {
-            directory: "/tmp/workspace".into(),
+        Command::Attach(AttachArgs {
+            directory: Some("/tmp/workspace".into()),
         })
     );
     assert_eq!(
@@ -387,6 +387,13 @@ fn run_accepts_missing_runtime_for_prompting() {
             directory: "/tmp/workspace".into(),
         })
     );
+}
+
+#[test]
+fn attach_accepts_missing_directory_for_prompting() {
+    let cli = Cli::try_parse_from(["agentbox", "attach"]).unwrap();
+
+    assert_eq!(cli.command, Command::Attach(AttachArgs { directory: None }));
 }
 
 #[test]

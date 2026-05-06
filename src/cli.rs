@@ -72,7 +72,7 @@ pub enum Command {
     /// Manage default runtime images.
     Runtime(RuntimeArgs),
     /// Attach to a running managed session.
-    Attach(DirectoryArgs),
+    Attach(AttachArgs),
     /// List managed sessions.
     Ls(LsArgs),
     /// Check running managed session runtime health.
@@ -178,9 +178,9 @@ pub struct RuntimeUpdateArgs {
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
-pub struct DirectoryArgs {
+pub struct AttachArgs {
     /// Workspace directory inside a git repository.
-    pub directory: PathBuf,
+    pub directory: Option<PathBuf>,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
