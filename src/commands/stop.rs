@@ -22,9 +22,9 @@ use crate::session::{
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
-use super::container_cleanup::{ContainerCleanupFailure, ManagedContainerCleanup};
+use super::container_cleanup::{ContainerCleanupFailure, cleanup_managed_containers};
 use super::session_targets::SessionTargetKind;
-use super::workspace_flow::with_locked_git_root;
+use super::workspace_flow::{LockedGitRoot, with_locked_git_root};
 
 pub fn run(args: StopArgs) -> Result<()> {
     if args.all {
@@ -207,7 +207,7 @@ fn stop_exact_git_root_matches(
             )));
         }
 
-        Ok(cleanup_sessions(locked.podman(), sessions.iter()))
+        RootedSessionCleanupMode::SelectedSessions.cleanup(&locked, &sessions)
     })?;
 
     finish_cleanup(git_root.as_str(), &failures)
@@ -293,9 +293,7 @@ fn lockable_stable_id_matches(
 fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<ContainerCleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
-    cleanup_rooted_session_groups(partition.rooted, |locked, sessions| {
-        Ok(cleanup_sessions(locked.podman(), sessions.iter()))
-    })
+    cleanup_rooted_session_groups(partition.rooted, RootedSessionCleanupMode::SelectedSessions)
 }
 
 fn cleanup_all_running_matches(
@@ -303,30 +301,55 @@ fn cleanup_all_running_matches(
 ) -> Result<Vec<ContainerCleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
-    let mut failures = cleanup_rooted_session_groups(partition.rooted, |locked, _sessions| {
-        let sessions = exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
-        Ok(cleanup_sessions(
-            locked.podman(),
-            sessions
-                .iter()
-                .filter(|session| session.container_running()),
-        ))
-    })?;
+    let mut failures = cleanup_rooted_session_groups(
+        partition.rooted,
+        RootedSessionCleanupMode::RunningExactMatches,
+    )?;
 
     if !partition.unrooted.is_empty() {
         let podman = Podman::new();
-        failures.extend(cleanup_sessions(&podman, partition.unrooted.iter()));
+        failures.extend(cleanup_managed_containers(
+            &podman,
+            partition.unrooted.iter(),
+        ));
     }
 
     Ok(failures)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RootedSessionCleanupMode {
+    SelectedSessions,
+    RunningExactMatches,
+}
+
+impl RootedSessionCleanupMode {
+    fn cleanup(
+        self,
+        locked: &LockedGitRoot<'_>,
+        sessions: &[SessionRecord],
+    ) -> Result<Vec<ContainerCleanupFailure>> {
+        match self {
+            Self::SelectedSessions => {
+                Ok(cleanup_managed_containers(locked.podman(), sessions.iter()))
+            }
+            Self::RunningExactMatches => {
+                let sessions =
+                    exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
+                Ok(cleanup_managed_containers(
+                    locked.podman(),
+                    sessions
+                        .iter()
+                        .filter(|session| session.container_running()),
+                ))
+            }
+        }
+    }
+}
+
 fn cleanup_rooted_session_groups(
     groups: Vec<SessionGroup>,
-    mut cleanup_group: impl FnMut(
-        &super::workspace_flow::LockedGitRoot<'_>,
-        &[SessionRecord],
-    ) -> Result<Vec<ContainerCleanupFailure>>,
+    mode: RootedSessionCleanupMode,
 ) -> Result<Vec<ContainerCleanupFailure>> {
     let mut failures = Vec::new();
 
@@ -334,29 +357,11 @@ fn cleanup_rooted_session_groups(
         let git_root = group.canonical_git_root;
         let sessions = group.sessions;
         let mut group_failures =
-            with_locked_git_root(&git_root, |locked| cleanup_group(&locked, &sessions))?;
+            with_locked_git_root(&git_root, |locked| mode.cleanup(&locked, &sessions))?;
         failures.append(&mut group_failures);
     }
 
     Ok(failures)
-}
-
-fn cleanup_sessions<'a>(
-    podman: &Podman,
-    sessions: impl IntoIterator<Item = &'a SessionRecord>,
-) -> Vec<ContainerCleanupFailure> {
-    sessions
-        .into_iter()
-        .filter_map(|session| cleanup_managed_container(podman, session))
-        .collect()
-}
-
-fn cleanup_managed_container(
-    podman: &Podman,
-    session: &SessionRecord,
-) -> Option<ContainerCleanupFailure> {
-    let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &session.container_name);
-    cleanup.remaining_failure(&session.container_name)
 }
 
 fn finish_cleanup(identity: &str, failures: &[ContainerCleanupFailure]) -> Result<()> {

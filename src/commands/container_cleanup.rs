@@ -7,6 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::podman::Podman;
+use crate::session::SessionRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ManagedContainerCleanup {
@@ -107,6 +108,24 @@ impl ManagedContainerCleanup {
             }
         }
     }
+}
+
+pub(super) fn cleanup_managed_containers<'a>(
+    podman: &Podman,
+    sessions: impl IntoIterator<Item = &'a SessionRecord>,
+) -> Vec<ContainerCleanupFailure> {
+    sessions
+        .into_iter()
+        .filter_map(|session| cleanup_managed_container(podman, session))
+        .collect()
+}
+
+fn cleanup_managed_container(
+    podman: &Podman,
+    session: &SessionRecord,
+) -> Option<ContainerCleanupFailure> {
+    let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &session.container_name);
+    cleanup.remaining_failure(&session.container_name)
 }
 
 impl ContainerCleanupFailure {
