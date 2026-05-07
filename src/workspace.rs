@@ -16,6 +16,7 @@ use crate::git::Git;
 use crate::paths::{absolute_utf8_path, canonicalize_utf8_path, path_is_or_descendant};
 
 const CONTAINER_PREFIX: &str = "agentbox-";
+const GIT_ROOT_HASH_LEN: usize = 12;
 const MAX_CONTAINER_NAME_LEN: usize = 63;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +91,7 @@ fn digest64_for_bytes(bytes: &[u8]) -> String {
 }
 
 fn hash12_from_digest64(digest64: &str) -> String {
-    digest64.chars().take(12).collect()
+    digest64.chars().take(GIT_ROOT_HASH_LEN).collect()
 }
 
 pub fn container_name_from_canonical_root(root: impl AsRef<str>) -> String {
@@ -108,6 +109,17 @@ pub fn container_name_from_canonical_root(root: impl AsRef<str>) -> String {
     format!("{CONTAINER_PREFIX}{suffix}-{hash}")
 }
 
+pub(crate) fn is_agentbox_workspace_resource_name(name: &str) -> bool {
+    let Some((prefix, suffix)) = name.rsplit_once('-') else {
+        return false;
+    };
+
+    prefix.starts_with(CONTAINER_PREFIX)
+        && prefix.len() > CONTAINER_PREFIX.len()
+        && suffix.len() == GIT_ROOT_HASH_LEN
+        && suffix.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
 fn git_root_for(directory: &Utf8Path, git: &Git) -> Result<Utf8PathBuf> {
     match git.resolve_toplevel(directory) {
         Ok(root) => Ok(root),
@@ -123,4 +135,32 @@ fn escape_root(path: &str) -> String {
             _ => '-',
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agentbox_workspace_resource_name_filter_matches_generated_name_shape() {
+        assert!(is_agentbox_workspace_resource_name(
+            "agentbox-project-abcdef123456"
+        ));
+        assert!(is_agentbox_workspace_resource_name(
+            "agentbox-project-ABCDEF123456"
+        ));
+
+        for name in [
+            "agentbox-data",
+            "agentbox-short-abc123",
+            "other-agentbox-abcdef123456",
+            "agentbox-used-xyzxyzxyzxyz",
+            "agentbox--abcdef123456",
+        ] {
+            assert!(
+                !is_agentbox_workspace_resource_name(name),
+                "`{name}` should not be treated as an agentbox workspace resource",
+            );
+        }
+    }
 }

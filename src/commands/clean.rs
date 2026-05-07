@@ -14,12 +14,10 @@ use crate::metadata::{DefaultRuntimeImageMetadata, default_runtime_image_label_f
 use crate::podman::{Podman, PodmanContainerInspect, PodmanImage, PodmanVolume};
 use crate::prompt;
 use crate::runtime::{RuntimeKind, default_image};
+use crate::workspace::is_agentbox_workspace_resource_name;
 use crate::{Error, Result};
 
 use super::runtime::remove_default_runtime_image_state_if_image;
-
-const CACHE_VOLUME_PREFIX: &str = "agentbox-";
-const CACHE_VOLUME_HASH_LEN: usize = 12;
 
 pub fn run(args: CleanArgs) -> Result<()> {
     let podman = Podman::new();
@@ -338,7 +336,7 @@ fn add_cache_volume_candidates(
     plan: &mut CleanPlan,
 ) {
     for volume in volumes {
-        if is_agentbox_cache_volume_name(&volume.name) {
+        if is_agentbox_workspace_resource_name(&volume.name) {
             add_cache_volume_candidate(volume.name.clone(), usage, plan);
         }
     }
@@ -377,17 +375,6 @@ fn inspect_all_containers(podman: &Podman) -> Result<Vec<PodmanContainerInspect>
         .into_iter()
         .map(|container| podman.inspect_one(&container.id))
         .collect()
-}
-
-fn is_agentbox_cache_volume_name(name: &str) -> bool {
-    let Some((prefix, suffix)) = name.rsplit_once('-') else {
-        return false;
-    };
-
-    prefix.starts_with(CACHE_VOLUME_PREFIX)
-        && prefix.len() > CACHE_VOLUME_PREFIX.len()
-        && suffix.len() == CACHE_VOLUME_HASH_LEN
-        && suffix.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 fn render_plan(plan: &CleanPlan) -> String {
@@ -615,24 +602,6 @@ mod tests {
                 CleanResource::image(image)
             )]
         );
-    }
-
-    #[test]
-    fn cache_volume_name_filter_requires_agentbox_prefix_and_hash_suffix() {
-        assert!(is_agentbox_cache_volume_name(UNUSED_VOLUME));
-
-        for name in [
-            "agentbox-data",
-            "agentbox-short-abc123",
-            "other-agentbox-abcdef123456",
-            "agentbox-used-xyzxyzxyzxyz",
-            "agentbox--abcdef123456",
-        ] {
-            assert!(
-                !is_agentbox_cache_volume_name(name),
-                "`{name}` should not be treated as an agentbox cache volume",
-            );
-        }
     }
 
     fn inspect_container(
