@@ -111,6 +111,27 @@ resolve_runtime_paths() {
     export HOME XDG_CACHE_HOME XDG_STATE_HOME NIX_PROFILE_PATH
 }
 
+prepare_runtime_home() {
+    if ! mkdir -p \
+        "$HOME/.cache/nix" \
+        "$HOME/.config/direnv" \
+        "$HOME/.config/zsh" \
+        "$HOME/.local/bin" \
+        "$HOME/.local/share" \
+        "$HOME/.local/state" >/dev/null 2>&1; then
+        die "Unusable runtime home path: $HOME. Ensure HOME points to a writable location."
+    fi
+
+    if [ ! -e "$HOME/.config/direnv/direnv.toml" ]; then
+        if ! {
+            printf '%s\n' '[whitelist]'
+            printf '%s\n' 'prefix = ["/"]'
+        } >"$HOME/.config/direnv/direnv.toml"; then
+            die "Unusable direnv configuration path: $HOME/.config/direnv/direnv.toml. Ensure HOME points to a writable location."
+        fi
+    fi
+}
+
 resolve_runtime_manifest_path() {
     NIX_RUNTIME_PACKAGES_FILE="$(_script_dir)/runtime-packages.nix"
     export NIX_RUNTIME_PACKAGES_FILE
@@ -172,6 +193,7 @@ activate_runtime_base_env() {
     validate_runtime_config
     validate_runtime_trust
     resolve_runtime_paths
+    prepare_runtime_home
     activate_ca_bundle_env
 }
 

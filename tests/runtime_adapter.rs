@@ -117,7 +117,7 @@ fn opencode_create_spec_matches_mvp_contract() {
 
     assert_eq!(spec.mounts[1].kind, RuntimeMountKind::Volume);
     assert_eq!(spec.mounts[1].source, workspace.container_name);
-    assert_eq!(spec.mounts[1].destination, "/home/user/.cache/nix");
+    assert_eq!(spec.mounts[1].destination, "/home/user");
     assert!(!spec.mounts[1].read_only);
 
     let host_mounts = &spec.mounts[2..6];

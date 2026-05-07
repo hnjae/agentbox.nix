@@ -118,7 +118,7 @@ fn run_creates_starts_serves_waits_and_suggests_connect_for_a_new_session() {
         harness.home_path().join(".local/share/opencode").display()
     )));
     assert!(log[4].contains("type=volume"));
-    assert!(log[4].contains("dst=/home/user/.cache/nix,U"));
+    assert!(log[4].contains("dst=/home/user,U"));
     assert!(!log[4].contains("direnv exec ."));
     assert!(!log[4].contains("sleep infinity"));
     assert!(!log.iter().any(|line| line.starts_with("stop ")));

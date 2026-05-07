@@ -40,7 +40,6 @@ set -- \
     -e XDG_CONFIG_HOME="$container_home"/.config \
     -e XDG_DATA_HOME="$container_home"/.local/share \
     -e ZDOTDIR="$container_home"/.config/zsh \
-    --mount "$home_mount" \
     --mount "$cache_mount" \
     -v "$repo_root:/workspace" \
     -v /nix:/nix:ro \

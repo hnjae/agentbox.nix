@@ -27,8 +27,8 @@ conditional resolution detail, not a universal required mount.
 
 Initial container startup runs the image in bootstrap mode. That one-time path
 checks the host-attached prerequisites, uses the Podman-volume-backed
-`/home/user/.cache/nix` mount for cache and eval artifacts, materializes the
-active `runtime` profile under `/home/user/.local/state/nix/profile` with
+`/home/user` mount for cache and eval artifacts, materializes the active
+`runtime` profile under `/home/user/.local/state/nix/profile` with
 `nix profile add`, and then hands off to `/entrypoint` for the final command.
 
 The `agentbox` CLI tags default runtime images with a content hash for the

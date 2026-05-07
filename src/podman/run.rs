@@ -90,7 +90,7 @@ mod tests {
             ]),
             mounts: vec![
                 RuntimeMount::read_only_bind("/workspace", "/workspace"),
-                RuntimeMount::volume("agentbox-cache", "/home/user/.cache/nix"),
+                RuntimeMount::volume("agentbox-cache", "/home/user"),
             ],
             command: strings([
                 "opencode",
@@ -131,7 +131,7 @@ mod tests {
                 "--mount",
                 "type=bind,src=/workspace,dst=/workspace,ro",
                 "--mount",
-                "type=volume,src=agentbox-cache,dst=/home/user/.cache/nix,U",
+                "type=volume,src=agentbox-cache,dst=/home/user,U",
                 "--env",
                 "NIX_CONFIG=sandbox = false",
                 "--network=none",

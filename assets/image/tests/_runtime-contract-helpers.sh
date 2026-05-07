@@ -4,8 +4,7 @@
 # Runtime contract matrix (frozen from README + current test behavior):
 # - Required host mounts: /nix, host nix in PATH, /etc/nix
 # - Optional host mounts: /etc/static/nix
-# - Required ephemeral writable home mount: tmpfs at /home/user
-# - Required Podman-managed mount: anonymous volume at /home/user/.cache/nix
+# - Required Podman-managed mount: anonymous volume at /home/user
 # - Supported later-exec path: /entrypoint <cmd>
 # - Startup/bootstrap contract remains owned by the caller test script
 
@@ -54,8 +53,7 @@ runtime_contract_resolve_nix_client() {
 }
 
 runtime_contract_prepare_cache_volume_mount() {
-    home_mount="type=tmpfs,dst=/home/user,tmpfs-mode=1777"
-    cache_mount="type=volume,dst=/home/user/.cache/nix,U"
+    cache_mount="type=volume,dst=/home/user,U"
 }
 
 runtime_contract_prepare_user_args() {
