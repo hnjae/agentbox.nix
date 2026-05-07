@@ -104,13 +104,13 @@ struct SkippedResource {
     reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct CleanResource {
     kind: ResourceKind,
     name: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ResourceKind {
     Image,
     Volume,
@@ -211,8 +211,7 @@ impl CleanInventory {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ResourceUsage {
-    image_users: BTreeMap<String, String>,
-    volume_users: BTreeMap<String, String>,
+    users: BTreeMap<CleanResource, String>,
 }
 
 impl ResourceUsage {
@@ -220,28 +219,24 @@ impl ResourceUsage {
         let mut usage = Self::default();
 
         for container in containers {
-            usage
-                .image_users
-                .entry(container.image_name.clone())
-                .or_insert_with(|| container.id.clone());
+            usage.mark_used(CleanResource::image(&container.image_name), &container.id);
 
             for mount in &container.mounts {
-                usage
-                    .volume_users
-                    .entry(mount.source.clone())
-                    .or_insert_with(|| container.id.clone());
+                usage.mark_used(CleanResource::volume(&mount.source), &container.id);
             }
         }
 
         usage
     }
 
-    fn image_user(&self, image: &str) -> Option<&str> {
-        self.image_users.get(image).map(String::as_str)
+    fn mark_used(&mut self, resource: CleanResource, container_id: &str) {
+        self.users
+            .entry(resource)
+            .or_insert_with(|| container_id.to_string());
     }
 
-    fn volume_user(&self, volume: &str) -> Option<&str> {
-        self.volume_users.get(volume).map(String::as_str)
+    fn user(&self, resource: &CleanResource) -> Option<&str> {
+        self.users.get(resource).map(String::as_str)
     }
 }
 
@@ -328,16 +323,13 @@ fn add_default_runtime_image_candidate(
     usage: &ResourceUsage,
     plan: &mut CleanPlan,
 ) {
-    let resource = CleanResource::image(image);
-    if let Some(container_id) = usage.image_user(resource.name()) {
-        plan.skipped.push(SkippedResource {
-            resource,
-            reason: format!("used by container `{container_id}`"),
-        });
-    } else {
-        plan.candidates
-            .push(CleanCandidate::default_runtime_image(runtime, resource));
-    }
+    add_candidate_or_skip(
+        CleanResource::image(image),
+        usage,
+        "used",
+        |resource| CleanCandidate::default_runtime_image(runtime, resource),
+        plan,
+    );
 }
 
 fn add_cache_volume_candidates(
@@ -353,14 +345,29 @@ fn add_cache_volume_candidates(
 }
 
 fn add_cache_volume_candidate(name: String, usage: &ResourceUsage, plan: &mut CleanPlan) {
-    let resource = CleanResource::volume(name);
-    if let Some(container_id) = usage.volume_user(resource.name()) {
+    add_candidate_or_skip(
+        CleanResource::volume(name),
+        usage,
+        "mounted",
+        CleanCandidate::cache_volume,
+        plan,
+    );
+}
+
+fn add_candidate_or_skip(
+    resource: CleanResource,
+    usage: &ResourceUsage,
+    used_action: &str,
+    candidate: impl FnOnce(CleanResource) -> CleanCandidate,
+    plan: &mut CleanPlan,
+) {
+    if let Some(container_id) = usage.user(&resource) {
         plan.skipped.push(SkippedResource {
             resource,
-            reason: format!("mounted by container `{container_id}`"),
+            reason: format!("{used_action} by container `{container_id}`"),
         });
     } else {
-        plan.candidates.push(CleanCandidate::cache_volume(resource));
+        plan.candidates.push(candidate(resource));
     }
 }
 
@@ -506,9 +513,18 @@ mod tests {
 
         let usage = ResourceUsage::from_containers(&containers);
 
-        assert_eq!(usage.image_user("shared-image"), Some("first"));
-        assert_eq!(usage.volume_user(USED_VOLUME), Some("first"));
-        assert_eq!(usage.volume_user(UNUSED_VOLUME), Some("second"));
+        assert_eq!(
+            usage.user(&CleanResource::image("shared-image")),
+            Some("first")
+        );
+        assert_eq!(
+            usage.user(&CleanResource::volume(USED_VOLUME)),
+            Some("first")
+        );
+        assert_eq!(
+            usage.user(&CleanResource::volume(UNUSED_VOLUME)),
+            Some("second")
+        );
     }
 
     #[test]
