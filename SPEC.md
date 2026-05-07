@@ -812,31 +812,32 @@ Rules:
 
 ### Runtime Cache Volume
 
-Each workspace session has a writable runtime home at `/home/user`, but only
-`/home/user/.cache/nix` is backed by a Podman-managed named volume.
+Each workspace session has a writable runtime home at `/home/user`, backed by
+the Podman-managed named runtime cache volume.
 
 Rules:
 
 - The runtime user home inside the container is `/home/user`.
-- `/home/user` itself is writable for runtime state creation, but it is not
-  required to persist across container recreation.
+- `/home/user` is mounted as the runtime cache volume and persists across later
+  sessions for the same canonical git root.
 - Standard XDG parent directories under `/home/user`, including `.config`,
   `.cache`, `.local`, and `.local/state`, are writable by the runtime user.
-- Runtime state outside `/home/user/.cache/nix` is ephemeral unless a runtime
-  explicitly defines a host passthrough mount. Users should not expect runtime
-  configuration, login state, shell history, or files written elsewhere under
-  `/home/user` to survive container recreation unless those files are also
-  stored in the workspace bind mount or a documented runtime passthrough mount.
+- Runtime state written under `/home/user` survives container recreation unless
+  a documented runtime passthrough mount or workspace bind mount shadows that
+  subpath.
 - The runtime cache volume name is identical to the container name for the same
   workspace session.
-- The mounted runtime cache volume stores Nix cache and evaluation artifacts
-  that should survive later sessions for the same canonical git root.
-- A bind mount at `/home/user/.cache/nix` does not satisfy the runtime cache
+- The mounted runtime cache volume stores Nix cache, evaluation artifacts, the
+  active runtime profile, and other runtime home state that should survive later
+  sessions for the same canonical git root.
+- A bind mount at `/home/user` does not satisfy the runtime cache
   volume requirement; the mount must be a Podman-managed named volume.
 - The mounted runtime cache volume is owned or remapped so the runtime user can
-  create cache files in it, including when a prior session created the volume
-  under a different rootless Podman user namespace mapping.
-- The active runtime profile does not live under the cache volume.
+  create home and cache files in it, including when a prior session created the
+  volume under a different rootless Podman user namespace mapping.
+- Existing named volumes are reused as-is. `agentbox` does not migrate or
+  restructure volumes created by older releases that mounted only
+  `/home/user/.cache/nix`.
 - The runtime profile default path is `$XDG_STATE_HOME/nix/profile`.
 - If `XDG_STATE_HOME` is unset and `HOME` is set, the runtime falls back to
   `$HOME/.local/state/nix/profile`.
@@ -1106,7 +1107,7 @@ MVP isolation expectations:
   a read-write passthrough mount
 - OpenCode sessions receive the invoking host user's OpenCode configuration and
   data directories as read-write passthrough mounts
-- one writable Podman-managed named cache volume at `/home/user/.cache/nix`
+- one writable Podman-managed named cache volume at `/home/user`
 - minimal privileges
 - networking enabled only as needed for the runtime server and its local-only
   published attach endpoint
@@ -1121,8 +1122,8 @@ Runtime user and bind-mount rules:
 - The invoking host user's supplemental groups are preserved for bind-mount
   permission checks using Podman's `keep-groups` behavior.
 - The workspace bind mount is read-write by default.
-- The Podman-managed runtime cache volume at `/home/user/.cache/nix` is writable
-  by the runtime user.
+- The Podman-managed runtime cache volume at `/home/user` is writable by the
+  runtime user.
 - Host ownership and permission bits remain authoritative.
 - `agentbox` must not `chown`, `chmod`, remount, or elevate privileges to force
   access.
