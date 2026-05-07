@@ -13,14 +13,13 @@ use camino::Utf8Path;
 use crate::cli::ConnectArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
-use crate::process::ProcessRunner;
 use crate::prompt;
 use crate::session::{SessionRecord, discover_managed_sessions};
 use crate::session::{prepare_connect_session, run_command_hint, select_single_session};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::runtime_command::{host_client_runtime_command, run_host_client};
+use super::runtime_command::run_host_runtime_client;
 use super::session_targets::SessionTargetKind;
 use super::workspace_flow::with_locked_workspace;
 
@@ -63,18 +62,16 @@ fn connect_directory(directory: &Path) -> Result<()> {
             return Err(no_session_error(workspace));
         };
         let connect_session = prepare_connect_session(workspace, session)?;
-
-        let process_runner = ProcessRunner::new();
-        let client = host_client_runtime_command(
-            connect_session.runtime(),
-            connect_session.endpoint(),
-            connect_session.launch_directory(),
-        );
         let retry_run_command =
             run_command_hint(Some(connect_session.runtime().as_str()), workspace);
         report_launch_directory_notice(workspace, connect_session.launch_directory());
 
-        run_host_client(&process_runner, &client).map_err(|error| {
+        run_host_runtime_client(
+            connect_session.runtime(),
+            connect_session.endpoint(),
+            connect_session.launch_directory(),
+        )
+        .map_err(|error| {
             Error::msg(format!(
                 "failed to connect to managed session `{}` for `{}`: {error}. If the session already exited, rerun `{}` or remove the leftover container with `agentbox stop {}`.",
                 connect_session.session().container_name,

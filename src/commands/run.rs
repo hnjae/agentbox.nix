@@ -11,7 +11,6 @@ use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites_for_runtime;
-use crate::process::ProcessRunner;
 use crate::prompt;
 use crate::runtime::RuntimeCreateSpec;
 use crate::runtime::RuntimeKind;
@@ -22,9 +21,7 @@ use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::runtime::ensure_default_runtime_image;
-use super::runtime_command::{
-    host_client_runtime_command, run_host_client, server_runtime_command,
-};
+use super::runtime_command::{run_host_runtime_client, server_runtime_command};
 use super::server_readiness::{ServerEndpointWait, wait_for_server_endpoint};
 use super::workspace_flow::with_locked_workspace;
 
@@ -115,21 +112,16 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
                 "managed session `{}` for `{}` is ready at `{endpoint}`; connecting",
                 workspace.container_name, workspace.canonical_git_root,
             ));
-            let process_runner = ProcessRunner::new();
-            let client = host_client_runtime_command(
-                runtime,
-                &endpoint,
-                workspace.canonical_target.as_ref(),
-            );
-            run_host_client(&process_runner, &client).map_err(|error| {
-                Error::msg(format!(
-                    "failed to connect to newly created managed session `{}` for `{}`: {error}. The session remains running; retry with `agentbox connect {}` or stop it with `agentbox stop {}`.",
-                    workspace.container_name,
-                    workspace.canonical_git_root,
-                    workspace.requested_target,
-                    workspace.requested_target,
-                ))
-            })?;
+            run_host_runtime_client(runtime, &endpoint, workspace.canonical_target.as_ref())
+                .map_err(|error| {
+                    Error::msg(format!(
+                        "failed to connect to newly created managed session `{}` for `{}`: {error}. The session remains running; retry with `agentbox connect {}` or stop it with `agentbox stop {}`.",
+                        workspace.container_name,
+                        workspace.canonical_git_root,
+                        workspace.requested_target,
+                        workspace.requested_target,
+                    ))
+                })?;
         } else {
             diagnostic::info(format!(
                 "managed session `{}` for `{}` is ready at `{endpoint}`; use `agentbox connect {}` to connect",

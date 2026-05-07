@@ -24,7 +24,7 @@ pub(crate) fn server_runtime_command(
     }
 }
 
-pub(crate) fn host_client_runtime_command(
+fn host_client_runtime_command(
     runtime: RuntimeKind,
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
@@ -35,10 +35,18 @@ pub(crate) fn host_client_runtime_command(
     }
 }
 
-pub(crate) fn run_host_client(
-    process_runner: &ProcessRunner,
-    client: &RuntimeInvocation,
+pub(crate) fn run_host_runtime_client(
+    runtime: RuntimeKind,
+    endpoint: &AttachEndpoint,
+    launch_directory: &Utf8Path,
 ) -> Result<()> {
+    let process_runner = ProcessRunner::new();
+    let client = host_client_runtime_command(runtime, endpoint, launch_directory);
+
+    run_host_client(&process_runner, &client)
+}
+
+fn run_host_client(process_runner: &ProcessRunner, client: &RuntimeInvocation) -> Result<()> {
     let argv = &client.argv;
     let Some((program, args)) = argv.split_first() else {
         return Err(Error::msg("runtime host client command is empty"));
