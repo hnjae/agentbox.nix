@@ -59,7 +59,7 @@ impl Podman {
     }
 
     pub fn ps(&self) -> Result<Vec<PodmanPsContainer>> {
-        self.run_podman_json("`podman ps --all --format json`", |command| {
+        self.run_podman_json(|command| {
             command.args(["ps", "--all", "--filter"]);
             command.arg(managed_label_filter());
             command.args(["--format", "json"]);
@@ -67,28 +67,25 @@ impl Podman {
     }
 
     pub fn ps_all(&self) -> Result<Vec<PodmanPsContainer>> {
-        self.run_podman_json("`podman ps --all --format json`", |command| {
+        self.run_podman_json(|command| {
             command.args(["ps", "--all", "--format", "json"]);
         })
     }
 
     pub fn volumes(&self) -> Result<Vec<PodmanVolume>> {
-        self.run_podman_json("`podman volume ls --format json`", |command| {
+        self.run_podman_json(|command| {
             command.args(["volume", "ls", "--format", "json"]);
         })
     }
 
     pub fn images_with_label(&self, label_filter: &str) -> Result<Vec<PodmanImage>> {
-        self.run_podman_json(
-            "`podman image ls --filter label --format json`",
-            |command| {
-                command.args(["image", "ls", "--filter", label_filter, "--format", "json"]);
-            },
-        )
+        self.run_podman_json(|command| {
+            command.args(["image", "ls", "--filter", label_filter, "--format", "json"]);
+        })
     }
 
     pub fn inspect(&self, name: &str) -> Result<Vec<PodmanContainerInspect>> {
-        self.run_podman_json("`podman inspect`", |command| {
+        self.run_podman_json(|command| {
             command.args(["inspect", name]);
         })
     }
@@ -223,11 +220,12 @@ impl Podman {
 
     fn run_podman_json<T: DeserializeOwned>(
         &self,
-        context: &str,
         configure: impl FnOnce(&mut Command),
     ) -> Result<T> {
-        let output = self.run_podman_quiet(configure)?;
-        parse_json(context, &output.stdout)
+        let mut command = self.podman_command(configure)?;
+        let context = format!("`{}`", describe_command(&command));
+        let output = self.run_quiet(&mut command)?;
+        parse_json(&context, &output.stdout)
     }
 
     fn run_podman_forwarding_output_when_verbose(
@@ -281,4 +279,30 @@ fn emit_stream(text: &str) {
     }
 
     diagnostic::debug(text);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn json_parse_errors_describe_the_configured_command() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let fake_podman = sandbox.path().join(PODMAN_PROGRAM);
+        fs::write(&fake_podman, "#!/bin/sh\nprintf 'not json\\n'\n").unwrap();
+        fs::set_permissions(&fake_podman, fs::Permissions::from_mode(0o700)).unwrap();
+
+        let runner = ProcessRunner::new().with_path_prepend(sandbox.path());
+        let error = Podman::with_runner(runner).ps().unwrap_err();
+
+        assert!(error.to_string().contains(
+            "failed to parse `podman ps --all --filter label=io.agentbox.managed=true --format json`"
+        ));
+    }
 }
