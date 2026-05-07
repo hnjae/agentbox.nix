@@ -79,10 +79,6 @@ impl SessionRecord {
     pub(crate) fn is_attachable_candidate(&self) -> bool {
         self.is_running() && self.attach_endpoint.is_some() && self.canonical_git_root().is_some()
     }
-
-    pub(crate) fn is_stop_target_candidate(&self) -> bool {
-        self.has_stable_id() && self.status.is_stop_target_candidate()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

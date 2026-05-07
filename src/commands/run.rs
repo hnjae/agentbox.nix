@@ -32,17 +32,17 @@ const RUN_FAILURE_LOG_TAIL_LINES: usize = 80;
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let runtime = selected_runtime(args.runtime)?;
-    let diagnostics = RunDiagnostics::new(verbose);
+
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
-        diagnostics.phase("checking workspace prerequisites");
+        diagnostic::info("checking workspace prerequisites");
         let preflight = check_host_prerequisites_for_runtime(
             runtime,
             Some(workspace.canonical_target.as_ref()),
             Some(workspace.canonical_git_root.as_ref()),
         )?;
 
-        diagnostics.phase("checking existing managed sessions");
+        diagnostic::info("checking existing managed sessions");
         let podman = locked.podman();
         let sessions = locked.discover_sessions()?;
         if let Some(session) = select_single_session(&sessions, workspace)? {
@@ -53,7 +53,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             podman,
             runtime,
             workspace.canonical_git_root.as_ref(),
-            |message| diagnostics.phase(message),
+            diagnostic::info,
         )?;
         let server_run = server_runtime_command(
             runtime,
@@ -75,7 +75,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;
         let interrupt = RunInterrupt::install()?;
 
-        diagnostics.phase(format!(
+        diagnostic::info(format!(
             "starting container `{}` for `{}`",
             workspace.container_name, runtime
         ));
@@ -106,7 +106,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             }
         }
 
-        diagnostics.phase(format!("waiting for `{runtime}` runtime server"));
+        diagnostic::info(format!("waiting for `{runtime}` runtime server"));
         let endpoint = match wait_for_server_endpoint(podman, workspace, runtime, || {
             interrupt.interrupted()
         }) {
@@ -155,19 +155,6 @@ fn selected_runtime(runtime: Option<RuntimeKind>) -> Result<RuntimeKind> {
             RuntimeKind::variants().to_vec(),
             "agentbox run requires --runtime when stdin or stderr is not a TTY",
         ),
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct RunDiagnostics;
-
-impl RunDiagnostics {
-    fn new(_verbose: bool) -> Self {
-        Self
-    }
-
-    fn phase(&self, message: impl AsRef<str>) {
-        diagnostic::info(message.as_ref());
     }
 }
 

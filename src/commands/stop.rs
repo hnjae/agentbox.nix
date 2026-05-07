@@ -138,15 +138,11 @@ pub type StopPromptCandidate = prompt::Choice<PathBuf>;
 pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandidate> {
     let mut candidates = sessions
         .iter()
-        .filter(|session| stop_prompt_candidate_matches(session))
+        .filter(|session| session.has_stable_id())
         .filter_map(stop_prompt_candidate)
         .collect::<Vec<_>>();
     prompt::sort_choices_by_label(&mut candidates);
     candidates
-}
-
-fn stop_prompt_candidate_matches(session: &SessionRecord) -> bool {
-    session.is_stop_target_candidate()
 }
 
 fn stop_prompt_candidate(session: &SessionRecord) -> Option<StopPromptCandidate> {
