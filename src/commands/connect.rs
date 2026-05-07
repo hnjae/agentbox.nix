@@ -7,21 +7,20 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 
 use camino::Utf8Path;
 
 use crate::cli::ConnectArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
-use crate::process::{ProcessRunner, format_status, run_command_status};
+use crate::process::ProcessRunner;
 use crate::prompt;
 use crate::session::{SessionRecord, discover_managed_sessions};
 use crate::session::{prepare_connect_session, run_command_hint, select_single_session};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::runtime_command::{RuntimeInvocation, host_client_runtime_command};
+use super::runtime_command::{host_client_runtime_command, run_host_client};
 use super::session_targets::SessionTargetKind;
 use super::workspace_flow::with_locked_workspace;
 
@@ -116,32 +115,4 @@ fn report_launch_directory_notice(workspace: &WorkspaceIdentity, launch_director
         "agentbox connect: `{}` identified the workspace; using stored launch directory `{}`",
         workspace.canonical_target, launch_directory,
     ));
-}
-
-pub(super) fn run_host_client(
-    process_runner: &ProcessRunner,
-    client: &RuntimeInvocation,
-) -> Result<()> {
-    let argv = &client.argv;
-    let Some((program, args)) = argv.split_first() else {
-        return Err(Error::msg("runtime host client command is empty"));
-    };
-
-    let mut command = process_runner.command(program)?;
-    command.args(args);
-    command.current_dir(client.workdir.as_std_path());
-    command.stdin(Stdio::inherit());
-    command.stdout(Stdio::inherit());
-    command.stderr(Stdio::inherit());
-
-    let status = run_command_status(&mut command)?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Error::msg(format!(
-            "`{}` exited with {}",
-            argv.join(" "),
-            format_status(status)
-        )))
-    }
 }
