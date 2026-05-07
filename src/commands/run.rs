@@ -12,8 +12,8 @@ use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites_for_runtime;
 use crate::prompt;
-use crate::runtime::RuntimeCreateSpec;
 use crate::runtime::RuntimeKind;
+use crate::runtime::RuntimeRunSpec;
 use crate::session::{
     classify_create_error_or_else, existing_session_error, select_single_session,
 };
@@ -61,14 +61,15 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             workspace.canonical_target.as_ref(),
             workspace.canonical_git_root.as_ref(),
         );
-        let mut run_spec = runtime.create_spec(
+        let mut run_spec = runtime.run_spec(
             workspace,
             &preflight.host_nix_mounts,
             &preflight.runtime_mounts,
-            server_run.argv,
+            server_run,
         );
         if let Some(version) = runtime_version {
             run_spec
+                .create_mut()
                 .labels
                 .insert(runtime_package_version_label(runtime), version);
         }
@@ -82,11 +83,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             "starting container `{}` for `{}`",
             workspace.container_name, runtime
         ));
-        if let Err(error) = podman.run_detached(
-            &workspace.container_name,
-            &run_spec,
-            Some(server_run.workdir.as_str()),
-        ) {
+        if let Err(error) = podman.run_detached(&workspace.container_name, &run_spec) {
             cleanup.check_interrupted(&interrupt)?;
             return Err(classify_run_create_error(
                 podman, workspace, &run_spec, error,
@@ -148,7 +145,7 @@ fn selected_runtime(runtime: Option<RuntimeKind>) -> Result<RuntimeKind> {
 fn classify_run_create_error(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
-    create_spec: &RuntimeCreateSpec,
+    run_spec: &RuntimeRunSpec,
     original_error: Error,
 ) -> Error {
     let wrapped = Error::runtime_command_failed(
@@ -157,7 +154,7 @@ fn classify_run_create_error(
         "run the runtime server command",
         &original_error.to_string(),
     );
-    classify_create_error_or_else(podman, workspace, create_spec, wrapped, |error| {
+    classify_create_error_or_else(podman, workspace, run_spec.create(), wrapped, |error| {
         error_with_container_logs(podman, workspace, error)
     })
 }

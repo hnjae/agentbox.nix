@@ -17,7 +17,7 @@ use crate::metadata::managed_label_filter;
 use crate::process::{
     ProcessOutput, ProcessRunner, describe_command, format_status, run_command, run_command_status,
 };
-use crate::runtime::RuntimeCreateSpec;
+use crate::runtime::RuntimeRunSpec;
 use crate::{Error, Result};
 
 mod args;
@@ -189,20 +189,10 @@ impl Podman {
         })
     }
 
-    pub fn run_detached(
-        &self,
-        container_name: &str,
-        spec: &RuntimeCreateSpec,
-        workdir: Option<&str>,
-    ) -> Result<()> {
+    pub fn run_detached(&self, container_name: &str, spec: &RuntimeRunSpec) -> Result<()> {
         let host_gid = run::current_primary_gid();
         self.run_podman_forwarding_output_when_verbose(|command| {
-            command.args(run::run_detached_args(
-                container_name,
-                spec,
-                workdir,
-                host_gid,
-            ));
+            command.args(run::run_detached_args(container_name, spec, host_gid));
         })
         .map(|_| ())
     }

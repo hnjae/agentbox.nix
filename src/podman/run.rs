@@ -6,14 +6,13 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use crate::runtime::{RuntimeCreateSpec, RuntimeMount};
+use crate::runtime::{RuntimeMount, RuntimeRunSpec};
 
 use super::args::PodmanArgs;
 
 pub(super) fn run_detached_args(
     container_name: &str,
-    spec: &RuntimeCreateSpec,
-    workdir: Option<&str>,
+    spec: &RuntimeRunSpec,
     host_gid: libc::gid_t,
 ) -> Vec<String> {
     let mut args = PodmanArgs::from(["run", "--detach", "--rm"]);
@@ -22,33 +21,32 @@ pub(super) fn run_detached_args(
     args.option("--userns", format!("keep-id:uid=1000,gid={gid}"));
     args.option("--user", format!("user:{gid}"));
     args.option("--group-add", "keep-groups");
+    args.option("--workdir", spec.workdir().as_str());
 
-    if let Some(workdir) = workdir {
-        args.option("--workdir", workdir);
-    }
+    let create = spec.create();
 
-    for (name, value) in &spec.labels {
+    for (name, value) in &create.labels {
         args.key_value_option("--label", name, value);
     }
 
-    for mount in &spec.mounts {
+    for mount in &create.mounts {
         args.option("--mount", render_mount(mount));
     }
 
-    for (name, value) in &spec.default_env {
+    for (name, value) in &create.default_env {
         args.key_value_option("--env", name, value);
     }
 
-    if !spec.network_enabled {
+    if !create.network_enabled {
         args.flag("--network=none");
     }
 
-    for port in &spec.published_ports {
+    for port in &create.published_ports {
         args.option("--publish", port);
     }
 
-    args.flag(spec.image.as_str());
-    args.extend(spec.command.iter().map(String::as_str));
+    args.flag(create.image.as_str());
+    args.extend(create.command.iter().map(String::as_str));
     args.into_vec()
 }
 
@@ -78,38 +76,41 @@ mod tests {
 
     use super::*;
     use crate::podman::args::strings;
-    use crate::runtime::RuntimeMount;
+    use crate::runtime::{RuntimeCreateSpec, RuntimeMount};
 
     #[test]
     fn run_detached_args_are_stable_and_complete() {
-        let spec = RuntimeCreateSpec {
-            image: "localhost/agentbox-opencode:ctx-0123456789abcdef".to_string(),
-            labels: BTreeMap::from([
-                ("io.agentbox.managed".to_string(), "true".to_string()),
-                ("io.agentbox.runtime".to_string(), "opencode".to_string()),
-            ]),
-            mounts: vec![
-                RuntimeMount::read_only_bind("/workspace", "/workspace"),
-                RuntimeMount::volume("agentbox-cache", "/home/user"),
-            ],
-            command: strings([
-                "opencode",
-                "serve",
-                "--hostname",
-                "0.0.0.0",
-                "--port",
-                "4096",
-            ]),
-            default_env: BTreeMap::from([(
-                "NIX_CONFIG".to_string(),
-                "sandbox = false".to_string(),
-            )]),
-            network_enabled: false,
-            published_ports: vec!["127.0.0.1::4096".to_string()],
-        };
+        let spec = RuntimeRunSpec::new(
+            RuntimeCreateSpec {
+                image: "localhost/agentbox-opencode:ctx-0123456789abcdef".to_string(),
+                labels: BTreeMap::from([
+                    ("io.agentbox.managed".to_string(), "true".to_string()),
+                    ("io.agentbox.runtime".to_string(), "opencode".to_string()),
+                ]),
+                mounts: vec![
+                    RuntimeMount::read_only_bind("/workspace", "/workspace"),
+                    RuntimeMount::volume("agentbox-cache", "/home/user"),
+                ],
+                command: strings([
+                    "opencode",
+                    "serve",
+                    "--hostname",
+                    "0.0.0.0",
+                    "--port",
+                    "4096",
+                ]),
+                default_env: BTreeMap::from([(
+                    "NIX_CONFIG".to_string(),
+                    "sandbox = false".to_string(),
+                )]),
+                network_enabled: false,
+                published_ports: vec!["127.0.0.1::4096".to_string()],
+            },
+            "/workspace",
+        );
 
         assert_eq!(
-            run_detached_args("agentbox-demo", &spec, Some("/workspace"), 1234),
+            run_detached_args("agentbox-demo", &spec, 1234),
             strings([
                 "run",
                 "--detach",

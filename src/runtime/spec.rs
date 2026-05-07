@@ -9,6 +9,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use camino::{Utf8Path, Utf8PathBuf};
+
 use crate::metadata::{ManagedSessionLabelInput, managed_session_labels};
 use crate::preflight::NIX_CACHE_DESTINATION;
 use crate::workspace::WorkspaceIdentity;
@@ -74,6 +76,33 @@ pub struct RuntimeCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeInvocation {
+    argv: Vec<String>,
+    workdir: Utf8PathBuf,
+}
+
+impl RuntimeInvocation {
+    pub fn new(argv: impl Into<Vec<String>>, workdir: impl Into<Utf8PathBuf>) -> Self {
+        Self {
+            argv: argv.into(),
+            workdir: workdir.into(),
+        }
+    }
+
+    pub(crate) fn argv(&self) -> &[String] {
+        &self.argv
+    }
+
+    pub(crate) fn into_parts(self) -> (Vec<String>, Utf8PathBuf) {
+        (self.argv, self.workdir)
+    }
+
+    pub(crate) fn workdir(&self) -> &Utf8Path {
+        &self.workdir
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeCreateSpec {
     pub image: String,
     pub labels: BTreeMap<String, String>,
@@ -82,6 +111,36 @@ pub struct RuntimeCreateSpec {
     pub default_env: BTreeMap<String, String>,
     pub network_enabled: bool,
     pub published_ports: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeRunSpec {
+    create: RuntimeCreateSpec,
+    workdir: Utf8PathBuf,
+}
+
+impl RuntimeRunSpec {
+    pub(crate) fn new(
+        create: RuntimeCreateSpec,
+        workdir: impl Into<Utf8PathBuf>,
+    ) -> RuntimeRunSpec {
+        Self {
+            create,
+            workdir: workdir.into(),
+        }
+    }
+
+    pub fn create(&self) -> &RuntimeCreateSpec {
+        &self.create
+    }
+
+    pub(crate) fn create_mut(&mut self) -> &mut RuntimeCreateSpec {
+        &mut self.create
+    }
+
+    pub(crate) fn workdir(&self) -> &Utf8Path {
+        &self.workdir
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +193,21 @@ impl RuntimeAttachSpec {
 }
 
 impl RuntimeKind {
-    pub fn create_spec(
+    pub fn run_spec(
+        self,
+        workspace: &WorkspaceIdentity,
+        host_nix_mounts: &[RuntimeMount],
+        runtime_mounts: &[RuntimeMount],
+        invocation: RuntimeInvocation,
+    ) -> RuntimeRunSpec {
+        let (command, workdir) = invocation.into_parts();
+        RuntimeRunSpec::new(
+            self.create_spec(workspace, host_nix_mounts, runtime_mounts, command),
+            workdir,
+        )
+    }
+
+    fn create_spec(
         self,
         workspace: &WorkspaceIdentity,
         host_nix_mounts: &[RuntimeMount],

@@ -20,7 +20,7 @@ use agentbox::preflight::{
 use agentbox::runtime::default_image::{
     default_image_context_hash, embedded_default_image_paths, materialize_default_image_context,
 };
-use agentbox::runtime::{AttachEndpoint, RuntimeKind, RuntimeMountKind};
+use agentbox::runtime::{AttachEndpoint, RuntimeInvocation, RuntimeKind, RuntimeMountKind};
 use std::fs;
 use std::path::Path;
 
@@ -43,12 +43,16 @@ fn opencode_create_spec_matches_mvp_contract() {
 
     let runtime = RuntimeKind::Opencode;
     let default_image = runtime.default_image();
-    let spec = runtime.create_spec(
+    let run_spec = runtime.run_spec(
         &workspace,
         &preflight.host_nix_mounts,
         &preflight.runtime_mounts,
-        runtime.server_command().argv,
+        RuntimeInvocation::new(
+            runtime.server_command().argv,
+            workspace.canonical_target.clone(),
+        ),
     );
+    let spec = run_spec.create();
 
     assert_eq!(spec.image.as_str(), default_image.as_str());
     assert_eq!(
@@ -271,12 +275,16 @@ fn codex_create_spec_includes_host_codex_config_mount() {
     )
     .unwrap();
 
-    let spec = RuntimeKind::Codex.create_spec(
+    let run_spec = RuntimeKind::Codex.run_spec(
         &workspace,
         &preflight.host_nix_mounts,
         &preflight.runtime_mounts,
-        RuntimeKind::Codex.server_command().argv,
+        RuntimeInvocation::new(
+            RuntimeKind::Codex.server_command().argv,
+            workspace.canonical_target.clone(),
+        ),
     );
+    let spec = run_spec.create();
     let codex_mount = spec
         .mounts
         .iter()
