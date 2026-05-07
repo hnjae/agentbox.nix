@@ -141,18 +141,18 @@ impl SessionLabelReport {
     }
 
     pub(super) fn attach_failure(&self) -> Option<SessionFailure> {
-        self.attach
-            .as_ref()
-            .err()
-            .map(AttachLabelError::session_failure)
+        self.attach_labels().err()
     }
 
-    pub(super) fn attach_labels(&self) -> Option<AttachLabels> {
-        self.attach.as_ref().ok().copied()
+    pub(super) fn attach_labels(&self) -> SessionLabelResult<AttachLabels> {
+        self.attach
+            .as_ref()
+            .copied()
+            .map_err(|error| error.session_failure())
     }
 
     pub(super) fn runtime_kind(&self) -> Option<RuntimeKind> {
-        self.attach_labels().map(AttachLabels::runtime)
+        self.attach_labels().ok().map(AttachLabels::runtime)
     }
 }
 

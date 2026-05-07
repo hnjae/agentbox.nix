@@ -11,7 +11,36 @@ use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP};
 use crate::{Error, Result};
 
 use super::labels::AttachLabels;
+use super::labels::SessionLabelReport;
 use super::record::SessionMetadata;
+use super::status::SessionFailure;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct AttachEndpointReport {
+    endpoint: std::result::Result<AttachEndpoint, SessionFailure>,
+}
+
+impl AttachEndpointReport {
+    pub(super) fn from_label_report_and_inspect(
+        label_report: &SessionLabelReport,
+        inspect: &PodmanContainerInspect,
+    ) -> Self {
+        let endpoint = label_report.attach_labels().and_then(|attach_labels| {
+            derive_attach_endpoint(attach_labels, inspect)
+                .map_err(|_| SessionFailure::MissingPublishedAttachPort)
+        });
+
+        Self { endpoint }
+    }
+
+    pub(super) fn failure(&self) -> Option<SessionFailure> {
+        self.endpoint.as_ref().err().copied()
+    }
+
+    pub(super) fn into_endpoint(self) -> Option<AttachEndpoint> {
+        self.endpoint.ok()
+    }
+}
 
 pub fn discover_attach_endpoint_from_inspect(
     inspect: &PodmanContainerInspect,

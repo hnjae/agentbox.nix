@@ -13,11 +13,10 @@ use crate::metadata::{
     LABEL_GIT_ROOT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE, required_label_value,
 };
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
-use crate::runtime::AttachEndpoint;
 use crate::workspace::git_root_hash12;
 use crate::{Error, Result};
 
-use super::endpoint::derive_attach_endpoint;
+use super::endpoint::AttachEndpointReport;
 use super::labels::SessionLabelReport;
 use super::record::{SessionMetadata, SessionRecord};
 use super::status::{SessionStatusInput, derive_status, mark_duplicate_sessions};
@@ -212,7 +211,7 @@ struct InspectedManagedContainer {
     container_name: String,
     metadata: SessionMetadata,
     label_report: SessionLabelReport,
-    attach_endpoint: Option<AttachEndpoint>,
+    attach_endpoint: AttachEndpointReport,
     running: bool,
     mounts: Vec<PodmanContainerMount>,
 }
@@ -228,9 +227,8 @@ impl InspectedManagedContainer {
             .unwrap_or_else(|| container.id.clone());
         let metadata = SessionMetadata::from_labels(labels);
         let label_report = SessionLabelReport::from_metadata(&metadata);
-        let attach_endpoint = label_report
-            .attach_labels()
-            .and_then(|attach_labels| derive_attach_endpoint(attach_labels, &inspect).ok());
+        let attach_endpoint =
+            AttachEndpointReport::from_label_report_and_inspect(&label_report, &inspect);
         let running = inspect.state.running;
         let mounts = inspect.mounts;
 
@@ -248,18 +246,19 @@ impl InspectedManagedContainer {
     fn into_session_record(self, git: &Git) -> SessionRecord {
         let status = derive_status(SessionStatusInput {
             label_report: &self.label_report,
-            attach_endpoint: self.attach_endpoint.as_ref(),
+            attach_endpoint: &self.attach_endpoint,
             running: self.running,
             mounts: &self.mounts,
             git,
         });
+        let attach_endpoint = self.attach_endpoint.into_endpoint();
 
         SessionRecord {
             container_id: self.container_id,
             container_name: self.container_name,
             metadata: self.metadata,
             runtime_kind: self.label_report.runtime_kind(),
-            attach_endpoint: self.attach_endpoint,
+            attach_endpoint,
             container_running: self.running,
             status,
         }

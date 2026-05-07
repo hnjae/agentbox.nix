@@ -170,6 +170,30 @@ fn missing_published_attach_port_records_specific_failure() {
 }
 
 #[test]
+fn malformed_published_attach_port_records_specific_failure() {
+    let repo = support::temp_git_repo();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let (ps, mut inspect) = managed_container("malformed-port", root, true, true);
+    let bindings = inspect
+        .network_settings
+        .ports
+        .values_mut()
+        .next()
+        .and_then(Option::as_mut)
+        .expect("fixture should publish an attach port");
+    bindings[0].host_port = Some("not-a-port".to_string());
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert_eq!(
+        sessions[0].status.failure(),
+        Some(SessionFailure::MissingPublishedAttachPort)
+    );
+    assert_eq!(sessions[0].attach_endpoint, None);
+}
+
+#[test]
 fn non_running_containers_are_failed_in_the_live_session_model() {
     let running_repo = support::temp_git_repo();
     let stopped_repo = support::temp_git_repo();

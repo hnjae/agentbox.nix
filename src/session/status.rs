@@ -15,8 +15,8 @@ use crate::Error;
 use crate::git::Git;
 use crate::paths::canonicalize_utf8_path;
 use crate::podman::PodmanContainerMount;
-use crate::runtime::AttachEndpoint;
 
+use super::endpoint::AttachEndpointReport;
 use super::labels::SessionLabelReport;
 use super::mounts::has_mount_destination;
 use super::{REQUIRED_NIX_CACHE_MOUNT_DESTINATION, record::SessionRecord};
@@ -179,12 +179,8 @@ pub(super) fn derive_status(input: SessionStatusInput<'_>) -> SessionStatus {
         Err(failure) => return SessionStatus::failed(failure),
     };
 
-    if let Some(failure) = label_report.attach_failure() {
+    if let Some(failure) = attach_endpoint.failure() {
         return SessionStatus::failed(failure);
-    }
-
-    if attach_endpoint.is_none() {
-        return SessionStatus::failed(SessionFailure::MissingPublishedAttachPort);
     }
 
     if !has_mount_destination(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
@@ -206,7 +202,7 @@ pub(super) fn derive_status(input: SessionStatusInput<'_>) -> SessionStatus {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SessionStatusInput<'a> {
     pub(super) label_report: &'a SessionLabelReport,
-    pub(super) attach_endpoint: Option<&'a AttachEndpoint>,
+    pub(super) attach_endpoint: &'a AttachEndpointReport,
     pub(super) running: bool,
     pub(super) mounts: &'a [PodmanContainerMount],
     pub(super) git: &'a Git,
