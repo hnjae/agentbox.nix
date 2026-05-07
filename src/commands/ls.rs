@@ -7,6 +7,9 @@ use crate::podman::Podman;
 use crate::session::{SessionRecord, discover_managed_sessions, sorted_session_refs_by_identity};
 
 use super::output;
+use super::session_output::{
+    SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
+};
 
 pub fn run(args: LsArgs) -> Result<()> {
     let podman = Podman::new();
@@ -55,25 +58,21 @@ pub fn render_json(sessions: &[SessionRecord]) -> Result<String> {
 
 #[derive(Debug, Serialize)]
 struct LsJsonRow<'a> {
-    id: Option<&'a str>,
-    canonical_git_root: Option<&'a str>,
-    runtime: Option<&'a str>,
+    #[serde(flatten)]
+    leading: SessionJsonLeadingFields<'a>,
     status: &'static str,
-    endpoint: Option<String>,
-    container_name: &'a str,
+    #[serde(flatten)]
+    trailing: SessionJsonTrailingFields<'a>,
 }
 
 impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
     fn from(session: &'a SessionRecord) -> Self {
-        let display = session.display();
+        let fields = SessionJsonFields::from_session(session);
 
         Self {
-            id: display.id(),
-            canonical_git_root: display.canonical_git_root_str(),
-            runtime: display.runtime(),
+            leading: fields.leading,
             status: session.status.as_str(),
-            endpoint: display.endpoint().map(ToString::to_string),
-            container_name: display.container_name(),
+            trailing: fields.trailing,
         }
     }
 }

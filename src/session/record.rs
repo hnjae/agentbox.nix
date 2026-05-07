@@ -34,7 +34,7 @@ impl SessionRecord {
             id: self.stable_id(),
             canonical_git_root: self.canonical_git_root(),
             runtime: self.runtime(),
-            endpoint: self.attach_endpoint.as_ref().map(ToString::to_string),
+            endpoint: self.attach_endpoint.as_ref(),
             container_name: &self.container_name,
         }
     }
@@ -85,7 +85,7 @@ pub(crate) struct SessionDisplay<'a> {
     id: Option<&'a str>,
     canonical_git_root: Option<&'a Utf8Path>,
     runtime: Option<&'a str>,
-    endpoint: Option<String>,
+    endpoint: Option<&'a AttachEndpoint>,
     container_name: &'a str,
 }
 
@@ -114,12 +114,13 @@ impl<'a> SessionDisplay<'a> {
         self.runtime.unwrap_or("unknown")
     }
 
-    pub(crate) fn endpoint(&self) -> Option<&str> {
-        self.endpoint.as_deref()
+    pub(crate) fn endpoint_string(&self) -> Option<String> {
+        self.endpoint.map(ToString::to_string)
     }
 
-    pub(crate) fn endpoint_or_unknown(&self) -> &str {
-        self.endpoint().unwrap_or("unknown")
+    pub(crate) fn endpoint_or_unknown(&self) -> String {
+        self.endpoint_string()
+            .unwrap_or_else(|| "unknown".to_string())
     }
 
     pub(crate) fn container_name(&self) -> &'a str {

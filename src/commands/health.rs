@@ -12,6 +12,9 @@ use crate::session::{
 };
 
 use super::output;
+use super::session_output::{
+    SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
+};
 
 pub fn run(args: HealthArgs) -> Result<()> {
     let podman = Podman::new();
@@ -124,26 +127,24 @@ fn health_row<'a>(session: &'a SessionRecord, probe: &impl RuntimeHealthProbe) -
 }
 
 #[derive(Debug, Serialize)]
-struct HealthJsonRow<'a> {
-    id: Option<&'a str>,
-    canonical_git_root: Option<&'a str>,
-    runtime: Option<&'a str>,
+struct HealthJsonRow<'identity, 'row> {
+    #[serde(flatten)]
+    leading: SessionJsonLeadingFields<'identity>,
     health: &'static str,
-    reason: &'a str,
-    endpoint: Option<&'a str>,
-    container_name: &'a str,
+    reason: &'row str,
+    #[serde(flatten)]
+    trailing: SessionJsonTrailingFields<'identity>,
 }
 
-impl<'row, 'session: 'row> From<&'row HealthRow<'session>> for HealthJsonRow<'row> {
+impl<'row, 'session> From<&'row HealthRow<'session>> for HealthJsonRow<'session, 'row> {
     fn from(row: &'row HealthRow<'session>) -> Self {
+        let fields = SessionJsonFields::from_display(&row.display);
+
         Self {
-            id: row.display.id(),
-            canonical_git_root: row.display.canonical_git_root_str(),
-            runtime: row.display.runtime(),
+            leading: fields.leading,
             health: row.health.status_str(),
             reason: row.health.reason(),
-            endpoint: row.display.endpoint(),
-            container_name: row.display.container_name(),
+            trailing: fields.trailing,
         }
     }
 }
@@ -180,6 +181,13 @@ mod tests {
         let json = render_json(&rows).unwrap();
         let rows: Vec<Value> = serde_json::from_str(&json).unwrap();
 
+        assert_eq!(
+            json,
+            concat!(
+                r#"[{"id":null,"canonical_git_root":null,"runtime":null,"health":"unhealthy","reason":"missing runtime metadata","endpoint":null,"container_name":"broken-container"}]"#,
+                "\n"
+            )
+        );
         assert_eq!(rows.len(), 1);
         assert!(rows[0]["id"].is_null());
         assert!(rows[0]["canonical_git_root"].is_null());
