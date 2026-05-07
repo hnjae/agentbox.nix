@@ -14,7 +14,7 @@ The MVP is workspace-centric rather than name-centric:
 
 - `agentbox run [--runtime <opencode|codex>] <directory>`
 - `agentbox runtime update <opencode|codex>`
-- `agentbox attach [directory]`
+- `agentbox connect [directory]`
 - `agentbox ls`
 - `agentbox health`
 - `agentbox stop [target]...`
@@ -27,13 +27,13 @@ selected runtime server for that workspace. If `--runtime` is omitted in an
 interactive terminal, `run` prompts for the runtime before validating runtime
 prerequisites or starting a container.
 
-`agentbox attach [directory]` discovers the running server endpoint for the
+`agentbox connect [directory]` discovers the running server endpoint for the
 resolved repository or selected session and runs the running session's runtime
 host-side client command from the session's stored launch directory. A provided
 directory is used only to identify the workspace once the session exists. For
-`attach`, `<directory>` is a workspace selector, not a request to change the
+`connect`, `<directory>` is a workspace selector, not a request to change the
 running session's working directory. If no directory is provided in an
-interactive terminal, `attach` prompts for one attachable running session.
+interactive terminal, `connect` prompts for one connectable running session.
 
 Managed containers are started with Podman's `--rm` cleanup flag. When the
 runtime server exits, or when `agentbox stop [target]...` stops it, Podman
@@ -62,14 +62,14 @@ Always-required host tools:
 
 Conditionally required host tools:
 
-- the running session's runtime host client command for `attach`
+- the running session's runtime host client command for `connect`
 - `npm` when `agentbox` must resolve the latest runtime npm package version
   for initial default image creation, a default runtime image rebuild after the
   embedded image build context changes, or `agentbox runtime update <runtime>`
 - `direnv` when a matching `.envrc` applies to the directory whose environment
   is used by the command: the `run` target directory for server startup
 
-For `run` and `attach`, `<directory>` must resolve to an existing directory
+For `run` and `connect`, `<directory>` must resolve to an existing directory
 inside a git repository. A non-git target fails clearly; the MVP does not create
 ad-hoc non-git sessions. `stop` normally follows the same resolution rules, but
 it may also accept an exact stored git-root absolute path string for a
@@ -108,7 +108,7 @@ the raw path spelling entered by the user.
 
 When `run` successfully launches a session, the canonical target directory
 becomes the session's launch directory. The launch directory is recorded with the
-session and remains the stable working-directory for later attaches to that
+session and remains the stable working-directory for later connects to that
 running session.
 
 Required behavior:
@@ -123,9 +123,9 @@ Required behavior:
   reported as `orphaned` until it is stopped.
 - The target directory is not part of identity. A `run` invocation may choose any
   subdirectory under the git root as the launch directory for a new session, and
-  an `attach` invocation may provide any subdirectory under the same git root to
+  a `connect` invocation may provide any subdirectory under the same git root to
   find that session.
-- `attach` target directories do not retarget a running session. They identify
+- `connect` target directories do not retarget a running session. They identify
   the workspace session, then the running session's stored launch directory
   controls host-client working directory.
 
@@ -216,7 +216,7 @@ Global output rules:
 - Clap parse errors and usage text keep Clap's native stderr format. `--help`
   and `--version` keep Clap's native stdout format.
 - Interactive prompt UI is rendered on stderr without being wrapped as log
-  lines. `attach` runs the runtime host client with inherited stdio and does
+  lines. `connect` runs the runtime host client with inherited stdio and does
   not wrap the client output as logs.
 
 ### `agentbox run [--runtime <opencode|codex>] <directory>`
@@ -246,17 +246,17 @@ Expected behavior:
    guess which one to use.
 8. If exactly one matching managed container exists, fail clearly instead of
    reusing or replacing it. For a healthy running session, suggest
-   `agentbox attach <directory>` or `agentbox stop <directory>`.
+   `agentbox connect <directory>` or `agentbox stop <directory>`.
 9. If none exists, record the canonical target directory as the session launch
    directory and start detached `podman run --rm` with the required labels,
    mounts, default runtime image, local-only published attach endpoint, and
    launch-directory working directory.
 10. Start the selected runtime server for the session. If `direnv` applies, the
     server starts with the launch directory's `direnv` environment.
-11. Wait until the runtime server endpoint is ready for attachment or the
+11. Wait until the runtime server endpoint is ready for connection or the
     container exits.
 12. Report that the discovered attach endpoint is ready and suggest
-    `agentbox attach <directory>`.
+    `agentbox connect <directory>`.
 
 Progress and diagnostics:
 
@@ -435,22 +435,22 @@ Rules:
 - Progress and result messages from `runtime update` are `INFO` logs on stderr.
   Successful `runtime update` does not write to stdout.
 
-### `agentbox attach [directory]`
+### `agentbox connect [directory]`
 
-`attach` connects to an already-running managed workspace session. For
-`attach`, a provided `<directory>` is a workspace selector, not a requested
+`connect` connects to an already-running managed workspace session. For
+`connect`, a provided `<directory>` is a workspace selector, not a requested
 working directory for the running session.
 
 Expected behavior:
 
 1. If `<directory>` is omitted and stdin and stderr are terminals, discover
-   attachable running sessions and prompt on stderr with a fuzzy single-select
+   connectable running sessions and prompt on stderr with a fuzzy single-select
    list.
 2. If `<directory>` is omitted and either stdin or stderr is not a terminal,
-   fail with a clear error that an attach target is required in non-interactive
+   fail with a clear error that a connect target is required in non-interactive
    use.
-3. If `<directory>` is omitted and there are no attachable running sessions,
-   fail without prompting and report that no attachable managed sessions exist.
+3. If `<directory>` is omitted and there are no connectable running sessions,
+   fail without prompting and report that no connectable managed sessions exist.
 4. If the selection prompt is canceled with Escape, exit non-zero with
    `selection canceled`.
 5. If the selection prompt is interrupted with Ctrl-C, exit non-zero with
@@ -466,41 +466,41 @@ Expected behavior:
     managed-container metadata and Podman's published port data.
 12. If the canonical requested directory differs from the stored launch
     directory, report that the requested directory was used only to identify the
-    workspace and that `attach` is using the stored launch directory.
+    workspace and that `connect` is using the stored launch directory.
 13. Execute the runtime host client command from the stored launch directory with
     stdio inherited, without re-evaluating `.envrc` or wrapping the client in
     `direnv`.
 
 Rules:
 
-- `attach` never creates a new session.
-- `attach` never starts or restarts a stopped session.
-- `attach` never prompts for runtime selection.
-- `attach` prompts for a target only when the positional directory is omitted.
-- The attach prompt shows only attachable `running` sessions with recoverable
+- `connect` never creates a new session.
+- `connect` never starts or restarts a stopped session.
+- `connect` never prompts for runtime selection.
+- `connect` prompts for a target only when the positional directory is omitted.
+- The connect prompt shows only connectable `running` sessions with recoverable
   git-root and endpoint metadata.
-- The attach prompt is rendered on stderr and does not write to stdout before
+- The connect prompt is rendered on stderr and does not write to stdout before
   the runtime host client starts.
-- `attach` does not accept or interpret `--runtime`.
-- `attach` does not accept or interpret `--image`.
-- `attach` does not use `podman attach` as the user transport in the MVP.
-- `attach` does not open a raw shell through `podman exec`.
+- `connect` does not accept or interpret `--runtime`.
+- `connect` does not accept or interpret `--image`.
+- `connect` does not use `podman attach` as the user transport in the MVP.
+- `connect` does not open a raw shell through `podman exec`.
 - The host client process current working directory is the running session's
   stored launch directory.
-- The host client process uses the host environment of the `agentbox attach`
-  invocation; `attach` does not re-evaluate `.envrc` from the requested
+- The host client process uses the host environment of the `agentbox connect`
+  invocation; `connect` does not re-evaluate `.envrc` from the requested
   directory or stored launch directory.
 - For Codex sessions, the host client command includes
   `--dangerously-bypass-approvals-and-sandbox` when connecting with `--remote`,
   matching Codex 0.128.0 behavior that requires the YOLO flag on both the
-  app-server and attaching client sides.
+  app-server and connecting client sides.
 - When the requested directory differs from the stored launch directory,
-  `attach` prints a short notice before launching the host client.
+  `connect` prints a short notice before launching the host client.
 - The running server process keeps the working directory and environment from
   its original `run`.
 - A different requested directory under the same git root does not change the
-  running server or host client working directory for that `attach`.
-- If the runtime client cannot be found on the host, `attach` fails clearly with
+  running server or host client working directory for that `connect`.
+- If the runtime client cannot be found on the host, `connect` fails clearly with
   the required command name.
 
 ### `agentbox ls`
@@ -702,15 +702,15 @@ Safety rules:
 
 ## Completion And Installed Assets
 
-Shell completion for `attach`, `stop`, and `health` is dynamic.
+Shell completion for `connect`, `stop`, and `health` is dynamic.
 
 Required behavior:
 
 - Completion candidates come from live managed sessions, not from a static file.
-- `attach` candidate values are canonical or stored git root paths when known.
-  Sessions with no recoverable git-root path are not attach completion
+- `connect` candidate values are canonical or stored git root paths when known.
+  Sessions with no recoverable git-root path are not connect completion
   candidates, but remain visible through `agentbox ls`.
-- `attach` completion includes only attachable `running` sessions with valid
+- `connect` completion includes only connectable `running` sessions with valid
   endpoint metadata.
 - `stop` and `health` candidate values are stable ids.
 - `stop` completion includes running, orphaned, duplicate, and failed sessions
@@ -733,7 +733,7 @@ Required package output paths:
 - `share/zsh/site-functions/_agentbox`
 - `share/fish/vendor_completions.d/agentbox.fish`
 - `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`,
-  `share/man/man1/agentbox-attach.1`, `share/man/man1/agentbox-ls.1`,
+  `share/man/man1/agentbox-connect.1`, `share/man/man1/agentbox-ls.1`,
   `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`,
   `share/man/man1/agentbox-clean.1`, `share/man/man1/agentbox-runtime.1`, and
   `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the
@@ -769,7 +769,7 @@ mutate workspace ownership or permissions to achieve this.
 
 The effective working directory for a running session is the stored launch
 directory, not always the git root. `run` sets the launch directory from its
-canonical target directory. `attach` uses the requested directory only to find
+canonical target directory. `connect` uses the requested directory only to find
 the workspace session, then runs the host client from the stored launch
 directory.
 
@@ -778,16 +778,16 @@ Examples:
 - command: `agentbox run --runtime opencode /aaa/bbb/subdir`
 - mounted git root inside container: `/aaa/bbb`
 - working directory seen by the runtime server: `/aaa/bbb/subdir`
-- command: `agentbox attach /aaa/bbb/other`
+- command: `agentbox connect /aaa/bbb/other`
 - working directory of the host runtime client process: `/aaa/bbb/subdir`
 
 Rules:
 
 - `run` starts the runtime server from the canonical target directory inside the
   container and records that directory as the session launch directory.
-- `attach` starts the runtime host client from the stored launch directory on
+- `connect` starts the runtime host client from the stored launch directory on
   the host.
-- `attach` does not change the already-running server process working
+- `connect` does not change the already-running server process working
   directory.
 - To use a different launch directory for the same git root, the user stops the
   current session and runs a new one from the desired directory.
@@ -892,15 +892,15 @@ Rules:
   forcibly at the git root.
 - `run` starts the runtime server in the target directory's `direnv`
   environment when a matching `.envrc` applies.
-- `attach` starts the runtime host client directly from the stored launch
+- `connect` starts the runtime host client directly from the stored launch
   directory and does not re-evaluate `.envrc`.
 - When `run` launches a session, the server environment is fixed by the
   launch directory used for that `run`.
-- `attach` to an already-running session does not reevaluate or replace the
+- `connect` to an already-running session does not reevaluate or replace the
   server environment.
 - The MVP does not persist host-side direnv state for running-session
   compatibility checks.
-- The MVP does not compare a different requested attach directory against the
+- The MVP does not compare a different requested connect directory against the
   earlier `run` direnv context for that running session.
 - If `.envrc` is present but `direnv` is unavailable, blocked, or fails to load
   during `run`, the affected `run` fails clearly.
@@ -910,7 +910,7 @@ Rules:
 
 OpenCode sessions:
 
-- use OpenCode's remote server and host-side attach client
+- use OpenCode's remote server and host-side connection client
 - expose an `http` attach endpoint
 - run with `OPENCODE_CONFIG_CONTENT={"autoupdate":false}` so OpenCode
   auto-update behavior does not change the installed runtime version inside the
@@ -942,7 +942,7 @@ Endpoint rules:
 - The default host attach IP is `127.0.0.1`.
 - `agentbox` may let Podman allocate the host port, but it must discover the
   concrete host port from Podman before reporting success from `run` or
-  executing `attach`.
+  executing `connect`.
 - The attach endpoint must be discoverable from live managed-container metadata
   plus Podman's published port data.
 - The host client command is executed with inherited stdio from the running
@@ -985,7 +985,7 @@ Rules:
 Valid lifecycle behavior:
 
 - `run` creates the workspace session as a detached runtime server container.
-- `attach` discovers an existing running workspace session and runs the runtime
+- `connect` discovers an existing running workspace session and runs the runtime
   host client against its published endpoint.
 - `ls` derives session status from live Podman state and host path checks.
 - `stop` stops the container and relies on the container's `--rm` run option
@@ -1008,7 +1008,7 @@ reclamation is explicit through `agentbox clean` or direct Podman commands.
 Required drift behavior:
 
 - Duplicate containers for one git root: mark the session as `duplicate`, fail
-  `run` and `attach`, and do not guess which container to use. `stop --force`
+  `run` and `connect`, and do not guess which container to use. `stop --force`
   may stop all duplicate managed containers that exactly claim the resolved
   canonical git root or exact stored git-root path.
 - Missing or malformed managed-container metadata: mark the session as `failed`
@@ -1019,7 +1019,7 @@ Required drift behavior:
   container recreation.
 - Missing or inconsistent attach endpoint metadata or published port data: mark
   the session as `failed` and require explicit cleanup or recreation before the
-  session can be attached.
+  session can be connected.
 - Missing host-attached Nix prerequisite: fail clearly, report the missing
   mount, client, socket, config, or state-path requirement, and do not attempt
   to synthesize a bundled Nix installation.
@@ -1029,7 +1029,7 @@ Required drift behavior:
   not treat them as the same workspace.
 - Stop failure: report exactly which managed containers are still running or
   still inspectable.
-- A `failed` session is not attachable. If enough metadata remains to identify
+- A `failed` session is not connectable. If enough metadata remains to identify
   it by git root or exact stored git-root path,
   `agentbox stop --force <directory>` may stop it. If the session cannot be
   matched safely, `ls` reports the concrete container name and the user must
@@ -1053,7 +1053,7 @@ Required error cases:
 - container failed to start
 - runtime server command not found
 - runtime host client command not found
-- attach failed
+- connect failed
 - missing or inconsistent attach endpoint metadata
 - missing published attach port
 - duplicate managed containers for one git root
@@ -1111,7 +1111,7 @@ Runtime user and bind-mount rules:
 - `agentbox` must not `chown`, `chmod`, remount, or elevate privileges to force
   access.
 - If the runtime user cannot read or write a required path inside the bind
-  mount, `run` or `attach` fails clearly with the affected path and the
+  mount, `run` or `connect` fails clearly with the affected path and the
   permission problem.
 - `agentbox` must not repair host workspace permissions by mutating the host
   mount.
