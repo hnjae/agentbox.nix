@@ -23,7 +23,7 @@ use crate::session::{
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::container_cleanup::{ContainerCleanupFailure, ManagedContainerCleanup};
+use super::container_cleanup::ManagedContainerCleanup;
 use super::runtime::ensure_default_runtime_image;
 use super::runtime_command::server_runtime_command;
 use super::server_readiness::{ServerEndpointWait, wait_for_server_endpoint};
@@ -262,10 +262,8 @@ impl InterruptedRunCleanup {
         let container_name = &workspace.container_name;
         let container_cleanup = ManagedContainerCleanup::stop_and_verify(podman, container_name);
 
-        if let Some(error) = container_cleanup.stop_error() {
-            cleanup
-                .failures
-                .push(format!("container stop failed: {error}"));
+        if let Some(issue) = container_cleanup.stop_issue() {
+            cleanup.failures.push(issue.interrupted_message());
         }
 
         if container_cleanup.container_removed() {
@@ -277,14 +275,12 @@ impl InterruptedRunCleanup {
                         .push(format!("cache volume removal failed: {error}")),
                 }
             }
-        } else if let Some(failure) = container_cleanup.remaining_container_failure() {
-            cleanup
-                .failures
-                .push(interrupted_container_failure_message(failure));
+        } else if let Some(issue) = container_cleanup.remaining_container_issue() {
+            cleanup.failures.push(issue.interrupted_message());
             if !cache_volume_existed_before {
-                cleanup
-                    .failures
-                    .push(interrupted_cache_volume_skip_message(failure).to_string());
+                if let Some(message) = issue.interrupted_cache_volume_skip_message() {
+                    cleanup.failures.push(message.to_string());
+                }
             }
         }
 
@@ -327,25 +323,5 @@ impl InterruptedRunCleanup {
         }
 
         message
-    }
-}
-
-fn interrupted_container_failure_message(failure: ContainerCleanupFailure<'_>) -> String {
-    match failure {
-        ContainerCleanupFailure::StillExists => "container still exists after cleanup".to_string(),
-        ContainerCleanupFailure::VerificationFailed(error) => {
-            format!("container cleanup verification failed: {error}")
-        }
-    }
-}
-
-fn interrupted_cache_volume_skip_message(failure: ContainerCleanupFailure<'_>) -> &'static str {
-    match failure {
-        ContainerCleanupFailure::StillExists => {
-            "cache volume removal skipped because the container still exists"
-        }
-        ContainerCleanupFailure::VerificationFailed(_) => {
-            "cache volume removal skipped because container cleanup could not be verified"
-        }
     }
 }

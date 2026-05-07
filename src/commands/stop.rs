@@ -22,7 +22,7 @@ use crate::session::{
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
-use super::container_cleanup::{ContainerCleanupFailure, ManagedContainerCleanup};
+use super::container_cleanup::{ContainerCleanupIssue, ManagedContainerCleanup};
 use super::workspace_flow::with_locked_git_root;
 
 pub fn run(args: StopArgs) -> Result<()> {
@@ -366,21 +366,11 @@ fn cleanup_sessions<'a>(
 
 fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
     let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &session.container_name);
-    let container_failure = cleanup.remaining_container_failure()?;
-    let mut reasons = cleanup_failure_reasons(&cleanup);
-    reasons.push(CleanupFailureReason::from_container_failure(
-        container_failure,
-    ));
+    let remaining_issue = cleanup.remaining_container_issue()?;
+    let mut reasons = cleanup.stop_issue().into_iter().collect::<Vec<_>>();
+    reasons.push(remaining_issue);
 
     Some(CleanupFailure::new(&session.container_name, reasons))
-}
-
-fn cleanup_failure_reasons(cleanup: &ManagedContainerCleanup) -> Vec<CleanupFailureReason> {
-    cleanup
-        .stop_error()
-        .map(|error| CleanupFailureReason::StopFailed(error.to_string()))
-        .into_iter()
-        .collect()
 }
 
 fn finish_cleanup(identity: &str, failures: &[CleanupFailure]) -> Result<()> {
@@ -405,17 +395,11 @@ fn render_cleanup_failures(identity: &str, failures: &[CleanupFailure]) -> Strin
 
 struct CleanupFailure {
     container_name: String,
-    reasons: Vec<CleanupFailureReason>,
-}
-
-enum CleanupFailureReason {
-    StopFailed(String),
-    StillExists,
-    VerificationFailed(String),
+    reasons: Vec<ContainerCleanupIssue>,
 }
 
 impl CleanupFailure {
-    fn new(container_name: &str, reasons: Vec<CleanupFailureReason>) -> Self {
+    fn new(container_name: &str, reasons: Vec<ContainerCleanupIssue>) -> Self {
         Self {
             container_name: container_name.to_string(),
             reasons,
@@ -426,31 +410,10 @@ impl CleanupFailure {
         let details = self
             .reasons
             .iter()
-            .map(CleanupFailureReason::render)
+            .map(ContainerCleanupIssue::stop_message)
             .collect::<Vec<_>>()
             .join(", ");
 
         format!("container `{}` ({details})", self.container_name)
-    }
-}
-
-impl CleanupFailureReason {
-    fn from_container_failure(failure: ContainerCleanupFailure<'_>) -> Self {
-        match failure {
-            ContainerCleanupFailure::StillExists => Self::StillExists,
-            ContainerCleanupFailure::VerificationFailed(error) => {
-                Self::VerificationFailed(error.to_string())
-            }
-        }
-    }
-
-    fn render(&self) -> String {
-        match self {
-            Self::StopFailed(error) => format!("stop failed: {error}"),
-            Self::StillExists => "container still exists after stop".to_string(),
-            Self::VerificationFailed(error) => {
-                format!("follow-up inspect failed: {error}")
-            }
-        }
     }
 }

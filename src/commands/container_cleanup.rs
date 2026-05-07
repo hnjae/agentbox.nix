@@ -21,10 +21,11 @@ enum ContainerCleanupVerification {
     Failed(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ContainerCleanupFailure<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ContainerCleanupIssue {
+    StopFailed(String),
     StillExists,
-    VerificationFailed(&'a str),
+    VerificationFailed(String),
 }
 
 impl ManagedContainerCleanup {
@@ -45,20 +46,56 @@ impl ManagedContainerCleanup {
         }
     }
 
-    pub(super) fn stop_error(&self) -> Option<&str> {
-        self.stop_error.as_deref()
-    }
-
     pub(super) fn container_removed(&self) -> bool {
         matches!(self.verification, ContainerCleanupVerification::Removed)
     }
 
-    pub(super) fn remaining_container_failure(&self) -> Option<ContainerCleanupFailure<'_>> {
+    pub(super) fn stop_issue(&self) -> Option<ContainerCleanupIssue> {
+        self.stop_error
+            .as_ref()
+            .map(|error| ContainerCleanupIssue::StopFailed(error.clone()))
+    }
+
+    pub(super) fn remaining_container_issue(&self) -> Option<ContainerCleanupIssue> {
         match &self.verification {
             ContainerCleanupVerification::Removed => None,
-            ContainerCleanupVerification::StillExists => Some(ContainerCleanupFailure::StillExists),
+            ContainerCleanupVerification::StillExists => Some(ContainerCleanupIssue::StillExists),
             ContainerCleanupVerification::Failed(error) => {
-                Some(ContainerCleanupFailure::VerificationFailed(error))
+                Some(ContainerCleanupIssue::VerificationFailed(error.clone()))
+            }
+        }
+    }
+}
+
+impl ContainerCleanupIssue {
+    pub(super) fn interrupted_message(&self) -> String {
+        match self {
+            Self::StopFailed(error) => format!("container stop failed: {error}"),
+            Self::StillExists => "container still exists after cleanup".to_string(),
+            Self::VerificationFailed(error) => {
+                format!("container cleanup verification failed: {error}")
+            }
+        }
+    }
+
+    pub(super) fn interrupted_cache_volume_skip_message(&self) -> Option<&'static str> {
+        match self {
+            Self::StopFailed(_) => None,
+            Self::StillExists => {
+                Some("cache volume removal skipped because the container still exists")
+            }
+            Self::VerificationFailed(_) => {
+                Some("cache volume removal skipped because container cleanup could not be verified")
+            }
+        }
+    }
+
+    pub(super) fn stop_message(&self) -> String {
+        match self {
+            Self::StopFailed(error) => format!("stop failed: {error}"),
+            Self::StillExists => "container still exists after stop".to_string(),
+            Self::VerificationFailed(error) => {
+                format!("follow-up inspect failed: {error}")
             }
         }
     }
@@ -76,7 +113,13 @@ mod tests {
         };
 
         assert!(cleanup.container_removed());
-        assert_eq!(cleanup.remaining_container_failure(), None);
+        assert_eq!(cleanup.remaining_container_issue(), None);
+        assert_eq!(
+            cleanup.stop_issue(),
+            Some(ContainerCleanupIssue::StopFailed(
+                "stop failed after removal".to_string()
+            ))
+        );
     }
 
     #[test]
@@ -88,8 +131,16 @@ mod tests {
 
         assert!(!cleanup.container_removed());
         assert_eq!(
-            cleanup.remaining_container_failure(),
-            Some(ContainerCleanupFailure::StillExists)
+            cleanup.remaining_container_issue(),
+            Some(ContainerCleanupIssue::StillExists)
+        );
+        assert_eq!(
+            ContainerCleanupIssue::StillExists.interrupted_message(),
+            "container still exists after cleanup"
+        );
+        assert_eq!(
+            ContainerCleanupIssue::StillExists.stop_message(),
+            "container still exists after stop"
         );
     }
 
@@ -102,9 +153,9 @@ mod tests {
 
         assert!(!cleanup.container_removed());
         assert_eq!(
-            cleanup.remaining_container_failure(),
-            Some(ContainerCleanupFailure::VerificationFailed(
-                "inspect failed"
+            cleanup.remaining_container_issue(),
+            Some(ContainerCleanupIssue::VerificationFailed(
+                "inspect failed".to_string()
             ))
         );
     }
