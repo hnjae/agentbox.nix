@@ -9,6 +9,12 @@
 - `nix build '.#default'`: build the default Nix package.
 - `nix fmt`: apply repository formatting.
 
+## Compatibility Policy
+
+agentbox.nix is still pre-release. Do not spend effort preserving backward
+compatibility or writing migrations for existing user data, configuration, APIs,
+or internal formats unless explicitly requested.
+
 ## Coding Style & Naming Conventions
 
 Follow standard Rust formatting with `cargo fmt`; Use 4-space indentation.
