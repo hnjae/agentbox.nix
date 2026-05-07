@@ -6,6 +6,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -183,17 +184,13 @@ impl CliHarness {
 
     pub fn locked_agentbox_command(&self, workspace: &WorkspaceIdentity) -> AssertCommand {
         let mut command = self.agentbox_command();
-        command
-            .env("AGENTBOX_TEST_LOCK_PATH", self.lock_path(workspace))
-            .env("AGENTBOX_TEST_LOCK_PROBE", &self.lock_probe_path);
+        self.configure_lock_probe_env(&mut command, workspace);
         command
     }
 
     pub fn locked_agentbox_process_command(&self, workspace: &WorkspaceIdentity) -> Command {
         let mut command = self.agentbox_process_command();
-        command
-            .env("AGENTBOX_TEST_LOCK_PATH", self.lock_path(workspace))
-            .env("AGENTBOX_TEST_LOCK_PROBE", &self.lock_probe_path);
+        self.configure_lock_probe_env(&mut command, workspace);
         command
     }
 
@@ -206,27 +203,13 @@ impl CliHarness {
 
     pub fn agentbox_command(&self) -> AssertCommand {
         let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
-        command
-            .env("PATH", self.path_env())
-            .env("HOME", self.home.path())
-            .env("XDG_CONFIG_HOME", self.home.path().join(".config"))
-            .env("XDG_DATA_HOME", self.home.path().join(".local/share"))
-            .env("XDG_STATE_HOME", self.state_home.path())
-            .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
-            .env("AGENTBOX_TEST_LOG", &self.log_path);
+        self.configure_agentbox_env(&mut command);
         command
     }
 
     pub fn agentbox_process_command(&self) -> Command {
         let mut command = Command::new(cargo_bin("agentbox"));
-        command
-            .env("PATH", self.path_env())
-            .env("HOME", self.home.path())
-            .env("XDG_CONFIG_HOME", self.home.path().join(".config"))
-            .env("XDG_DATA_HOME", self.home.path().join(".local/share"))
-            .env("XDG_STATE_HOME", self.state_home.path())
-            .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
-            .env("AGENTBOX_TEST_LOG", &self.log_path);
+        self.configure_agentbox_env(&mut command);
         command
     }
 
@@ -267,6 +250,67 @@ impl CliHarness {
         let mut command = self.agentbox_command();
         command.arg("stop").args(extra_args).arg(target);
         command.assert()
+    }
+
+    fn configure_agentbox_env(&self, command: &mut impl CommandEnv) {
+        for (key, value) in self.agentbox_env() {
+            command.set_env(key, &value);
+        }
+    }
+
+    fn configure_lock_probe_env(
+        &self,
+        command: &mut impl CommandEnv,
+        workspace: &WorkspaceIdentity,
+    ) {
+        command.set_env(
+            "AGENTBOX_TEST_LOCK_PATH",
+            self.lock_path(workspace).as_os_str(),
+        );
+        command.set_env("AGENTBOX_TEST_LOCK_PROBE", self.lock_probe_path.as_os_str());
+    }
+
+    fn agentbox_env(&self) -> [(&'static str, OsString); 7] {
+        [
+            ("PATH", OsString::from(self.path_env())),
+            ("HOME", self.home.path().as_os_str().to_os_string()),
+            (
+                "XDG_CONFIG_HOME",
+                self.home.path().join(".config").into_os_string(),
+            ),
+            (
+                "XDG_DATA_HOME",
+                self.home.path().join(".local/share").into_os_string(),
+            ),
+            (
+                "XDG_STATE_HOME",
+                self.state_home.path().as_os_str().to_os_string(),
+            ),
+            (
+                "AGENTBOX_TEST_FIXTURES",
+                self.fixtures.path().as_os_str().to_os_string(),
+            ),
+            (
+                "AGENTBOX_TEST_LOG",
+                self.log_path.as_os_str().to_os_string(),
+            ),
+        ]
+    }
+}
+
+trait CommandEnv {
+    fn set_env(&mut self, key: &'static str, value: &OsStr);
+}
+
+impl CommandEnv for AssertCommand {
+    fn set_env(&mut self, key: &'static str, value: &OsStr) {
+        self.env(key, value);
+    }
+}
+
+impl CommandEnv for Command {
+    fn set_env(&mut self, key: &'static str, value: &OsStr) {
+        self.env(key, value);
     }
 }
 

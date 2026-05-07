@@ -6,7 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::sync::OnceLock;
 
@@ -15,6 +14,7 @@ use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 
 use super::RuntimeKind;
+use crate::digest;
 use crate::{Error, Result};
 
 pub const OPENCODE_LEGACY_DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
@@ -161,15 +161,7 @@ fn image_context_hash(files: &[EmbeddedDefaultImageFile]) -> String {
         hasher.update([0]);
     }
 
-    hex_lower(&hasher.finalize())[..IMAGE_CONTEXT_HASH_LEN].to_string()
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(&mut output, "{byte:02x}");
-    }
-    output
+    digest::hex_lower(hasher.finalize())[..IMAGE_CONTEXT_HASH_LEN].to_string()
 }
 
 #[cfg(test)]

@@ -9,8 +9,8 @@
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use sha2::{Digest, Sha256};
 
+use crate::digest;
 use crate::error::{Error, Result};
 use crate::git::Git;
 use crate::paths::{absolute_utf8_path, canonicalize_utf8_path, path_is_or_descendant};
@@ -66,12 +66,11 @@ pub fn resolve_workspace_identity_with_git(
 }
 
 pub fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
-    let digest = Sha256::digest(bytes);
-    digest.into()
+    digest::sha256_bytes(bytes)
 }
 
 pub fn hex_digest(bytes: &[u8; 32]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    digest::hex_lower(bytes)
 }
 
 pub fn hash12(bytes: &[u8]) -> String {
@@ -87,7 +86,7 @@ pub fn git_root_hash12(canonical_git_root: &Utf8Path) -> String {
 }
 
 fn digest64_for_bytes(bytes: &[u8]) -> String {
-    hex_digest(&sha256_bytes(bytes))
+    digest::sha256_hex(bytes)
 }
 
 fn hash12_from_digest64(digest64: &str) -> String {
