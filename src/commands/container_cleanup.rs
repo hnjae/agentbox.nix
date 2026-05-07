@@ -15,10 +15,16 @@ pub(super) struct ManagedContainerCleanup {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum ContainerCleanupVerification {
+enum ContainerCleanupVerification {
     Removed,
     StillExists,
     Failed(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ContainerCleanupFailure<'a> {
+    StillExists,
+    VerificationFailed(&'a str),
 }
 
 impl ManagedContainerCleanup {
@@ -43,7 +49,63 @@ impl ManagedContainerCleanup {
         self.stop_error.as_deref()
     }
 
-    pub(super) fn verification(&self) -> &ContainerCleanupVerification {
-        &self.verification
+    pub(super) fn container_removed(&self) -> bool {
+        matches!(self.verification, ContainerCleanupVerification::Removed)
+    }
+
+    pub(super) fn remaining_container_failure(&self) -> Option<ContainerCleanupFailure<'_>> {
+        match &self.verification {
+            ContainerCleanupVerification::Removed => None,
+            ContainerCleanupVerification::StillExists => Some(ContainerCleanupFailure::StillExists),
+            ContainerCleanupVerification::Failed(error) => {
+                Some(ContainerCleanupFailure::VerificationFailed(error))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removed_container_has_no_remaining_failure() {
+        let cleanup = ManagedContainerCleanup {
+            stop_error: Some("stop failed after removal".to_string()),
+            verification: ContainerCleanupVerification::Removed,
+        };
+
+        assert!(cleanup.container_removed());
+        assert_eq!(cleanup.remaining_container_failure(), None);
+    }
+
+    #[test]
+    fn remaining_container_exposes_stable_failure_reason() {
+        let cleanup = ManagedContainerCleanup {
+            stop_error: None,
+            verification: ContainerCleanupVerification::StillExists,
+        };
+
+        assert!(!cleanup.container_removed());
+        assert_eq!(
+            cleanup.remaining_container_failure(),
+            Some(ContainerCleanupFailure::StillExists)
+        );
+    }
+
+    #[test]
+    fn verification_error_exposes_error_detail() {
+        let cleanup = ManagedContainerCleanup {
+            stop_error: None,
+            verification: ContainerCleanupVerification::Failed("inspect failed".to_string()),
+        };
+
+        assert!(!cleanup.container_removed());
+        assert_eq!(
+            cleanup.remaining_container_failure(),
+            Some(ContainerCleanupFailure::VerificationFailed(
+                "inspect failed"
+            ))
+        );
     }
 }

@@ -22,7 +22,7 @@ use crate::session::{
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
-use super::container_cleanup::{ContainerCleanupVerification, ManagedContainerCleanup};
+use super::container_cleanup::{ContainerCleanupFailure, ManagedContainerCleanup};
 use super::workspace_flow::with_locked_git_root;
 
 pub fn run(args: StopArgs) -> Result<()> {
@@ -366,20 +366,13 @@ fn cleanup_sessions<'a>(
 
 fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
     let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &session.container_name);
+    let container_failure = cleanup.remaining_container_failure()?;
+    let mut reasons = cleanup_failure_reasons(&cleanup);
+    reasons.push(CleanupFailureReason::from_container_failure(
+        container_failure,
+    ));
 
-    match cleanup.verification() {
-        ContainerCleanupVerification::Removed => None,
-        ContainerCleanupVerification::StillExists => {
-            let mut reasons = cleanup_failure_reasons(&cleanup);
-            reasons.push(CleanupFailureReason::StillExists);
-            Some(CleanupFailure::new(&session.container_name, reasons))
-        }
-        ContainerCleanupVerification::Failed(error) => {
-            let mut reasons = cleanup_failure_reasons(&cleanup);
-            reasons.push(CleanupFailureReason::VerificationFailed(error.to_string()));
-            Some(CleanupFailure::new(&session.container_name, reasons))
-        }
-    }
+    Some(CleanupFailure::new(&session.container_name, reasons))
 }
 
 fn cleanup_failure_reasons(cleanup: &ManagedContainerCleanup) -> Vec<CleanupFailureReason> {
@@ -442,6 +435,15 @@ impl CleanupFailure {
 }
 
 impl CleanupFailureReason {
+    fn from_container_failure(failure: ContainerCleanupFailure<'_>) -> Self {
+        match failure {
+            ContainerCleanupFailure::StillExists => Self::StillExists,
+            ContainerCleanupFailure::VerificationFailed(error) => {
+                Self::VerificationFailed(error.to_string())
+            }
+        }
+    }
+
     fn render(&self) -> String {
         match self {
             Self::StopFailed(error) => format!("stop failed: {error}"),
