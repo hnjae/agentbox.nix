@@ -323,7 +323,7 @@ fn lockable_stable_id_matches(
 fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<ContainerCleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
-    cleanup_selected_rooted_session_groups(partition.rooted)
+    cleanup_rooted_session_groups(partition.rooted, RootedSessionCleanupScope::Selected)
 }
 
 fn cleanup_all_running_matches(
@@ -331,7 +331,10 @@ fn cleanup_all_running_matches(
 ) -> Result<Vec<ContainerCleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
-    let mut failures = cleanup_running_exact_matches_for_rooted_groups(partition.rooted)?;
+    let mut failures = cleanup_rooted_session_groups(
+        partition.rooted,
+        RootedSessionCleanupScope::RunningExactMatches,
+    )?;
 
     if !partition.unrooted.is_empty() {
         let podman = Podman::new();
@@ -344,17 +347,36 @@ fn cleanup_all_running_matches(
     Ok(failures)
 }
 
-fn cleanup_selected_rooted_session_groups(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RootedSessionCleanupScope {
+    Selected,
+    RunningExactMatches,
+}
+
+impl RootedSessionCleanupScope {
+    fn cleanup(
+        self,
+        locked: &LockedGitRoot<'_>,
+        selected_sessions: &[SessionRecord],
+    ) -> Result<Vec<ContainerCleanupFailure>> {
+        match self {
+            Self::Selected => cleanup_selected_sessions(locked, selected_sessions),
+            Self::RunningExactMatches => cleanup_running_exact_matches_for_locked_root(locked),
+        }
+    }
+}
+
+fn cleanup_rooted_session_groups(
     groups: Vec<SessionGroup>,
+    scope: RootedSessionCleanupScope,
 ) -> Result<Vec<ContainerCleanupFailure>> {
     let mut failures = Vec::new();
 
     for group in groups {
         let git_root = group.canonical_git_root;
         let sessions = group.sessions;
-        let mut group_failures = with_locked_git_root(&git_root, |locked| {
-            cleanup_selected_sessions(&locked, &sessions)
-        })?;
+        let mut group_failures =
+            with_locked_git_root(&git_root, |locked| scope.cleanup(&locked, &sessions))?;
         failures.append(&mut group_failures);
     }
 
@@ -366,22 +388,6 @@ fn cleanup_selected_sessions(
     sessions: &[SessionRecord],
 ) -> Result<Vec<ContainerCleanupFailure>> {
     Ok(cleanup_managed_containers(locked.podman(), sessions.iter()))
-}
-
-fn cleanup_running_exact_matches_for_rooted_groups(
-    groups: Vec<SessionGroup>,
-) -> Result<Vec<ContainerCleanupFailure>> {
-    let mut failures = Vec::new();
-
-    for group in groups {
-        let git_root = group.canonical_git_root;
-        let mut group_failures = with_locked_git_root(&git_root, |locked| {
-            cleanup_running_exact_matches_for_locked_root(&locked)
-        })?;
-        failures.append(&mut group_failures);
-    }
-
-    Ok(failures)
 }
 
 fn cleanup_running_exact_matches_for_locked_root(
