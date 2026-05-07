@@ -23,6 +23,7 @@ use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
 use super::container_cleanup::{ContainerCleanupIssue, ManagedContainerCleanup};
+use super::session_targets::SessionTargetKind;
 use super::workspace_flow::with_locked_git_root;
 
 pub fn run(args: StopArgs) -> Result<()> {
@@ -136,23 +137,17 @@ fn render_target_stop_failures(failures: &[TargetStopFailure]) -> String {
 pub type StopPromptCandidate = prompt::Choice<PathBuf>;
 
 pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandidate> {
-    let mut candidates = sessions
-        .iter()
-        .filter(|session| session.has_stable_id())
-        .filter_map(stop_prompt_candidate)
+    let mut candidates = SessionTargetKind::StableId
+        .candidates(sessions)
+        .map(|candidate| {
+            prompt::Choice::new(
+                candidate.stop_prompt_label(),
+                PathBuf::from(candidate.value()),
+            )
+        })
         .collect::<Vec<_>>();
     prompt::sort_choices_by_label(&mut candidates);
     candidates
-}
-
-fn stop_prompt_candidate(session: &SessionRecord) -> Option<StopPromptCandidate> {
-    let display = session.display();
-    let id = display.id()?;
-    let root = display.canonical_git_root_or_unknown();
-    let runtime = display.runtime_or_unknown();
-    let label = format!("{id} {root} {runtime} {}", session.status.as_str());
-
-    Some(prompt::Choice::new(label, PathBuf::from(id)))
 }
 
 enum StopTarget {

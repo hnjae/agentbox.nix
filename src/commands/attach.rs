@@ -22,6 +22,7 @@ use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::runtime_command::{RuntimeInvocation, host_client_runtime_command};
+use super::session_targets::SessionTargetKind;
 use super::workspace_flow::with_locked_workspace;
 
 pub fn run(args: AttachArgs) -> Result<()> {
@@ -91,25 +92,17 @@ fn attach_directory(directory: &Path) -> Result<()> {
 pub type AttachPromptCandidate = prompt::Choice<PathBuf>;
 
 pub fn attach_prompt_candidates(sessions: &[SessionRecord]) -> Vec<AttachPromptCandidate> {
-    let mut candidates = sessions
-        .iter()
-        .filter(|session| session.is_attachable_candidate())
-        .filter_map(attach_prompt_candidate)
+    let mut candidates = SessionTargetKind::AttachRoot
+        .candidates(sessions)
+        .map(|candidate| {
+            prompt::Choice::new(
+                candidate.attach_prompt_label(),
+                PathBuf::from(candidate.value()),
+            )
+        })
         .collect::<Vec<_>>();
     prompt::sort_choices_by_label(&mut candidates);
     candidates
-}
-
-fn attach_prompt_candidate(session: &SessionRecord) -> Option<AttachPromptCandidate> {
-    let display = session.display();
-    let root = display.canonical_git_root()?;
-    let label = format!(
-        "{} ({})",
-        display.canonical_git_root_or_unknown(),
-        display.runtime_or_unknown()
-    );
-
-    Some(prompt::Choice::new(label, root.as_std_path().to_path_buf()))
 }
 
 fn no_session_error(workspace: &WorkspaceIdentity) -> Error {

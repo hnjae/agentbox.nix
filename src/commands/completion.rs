@@ -7,6 +7,8 @@ use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
 use crate::session::{SessionRecord, discover_managed_sessions};
 
+use super::session_targets::SessionTargetKind;
+
 pub fn run(shell: CompletionShell) -> Result<()> {
     match shell {
         CompletionShell::Bash => print!("{}", bash_script()),
@@ -38,47 +40,30 @@ pub fn generate_manpages(directory: &Path) -> Result<()> {
 
 pub fn live_roots(command: CompletionRootCommand) -> Result<Vec<SessionRecord>> {
     let podman = Podman::new();
+    let target_kind = completion_target_kind(command);
     let sessions = discover_managed_sessions(&podman)?
         .into_iter()
-        .filter(|session| completion_candidate_matches(command, session))
+        .filter(|session| target_kind.matches(session))
         .collect();
 
     Ok(sessions)
 }
 
 pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
-    let mut lines = Vec::new();
-    for session in live_roots(command)? {
-        if let Some(value) = completion_candidate_value(command, &session) {
-            let display = session.display();
-            lines.push(format!(
-                "{}\t{}\t{}\t{}",
-                value,
-                display.canonical_git_root_or_unknown(),
-                display.runtime_or_unknown(),
-                session.status.as_str(),
-            ));
-        }
-    }
+    let target_kind = completion_target_kind(command);
+    let sessions = live_roots(command)?;
+    let lines = target_kind
+        .candidates(&sessions)
+        .map(|candidate| candidate.completion_line())
+        .collect::<Vec<_>>();
+
     Ok(lines.join("\n"))
 }
 
-fn completion_candidate_matches(command: CompletionRootCommand, session: &SessionRecord) -> bool {
+fn completion_target_kind(command: CompletionRootCommand) -> SessionTargetKind {
     match command {
-        CompletionRootCommand::Attach => session.is_attachable_candidate(),
-        CompletionRootCommand::Health | CompletionRootCommand::Stop => session.has_stable_id(),
-    }
-}
-
-fn completion_candidate_value(
-    command: CompletionRootCommand,
-    session: &SessionRecord,
-) -> Option<&str> {
-    let display = session.display();
-
-    match command {
-        CompletionRootCommand::Attach => display.canonical_git_root_str(),
-        CompletionRootCommand::Health | CompletionRootCommand::Stop => display.id(),
+        CompletionRootCommand::Attach => SessionTargetKind::AttachRoot,
+        CompletionRootCommand::Health | CompletionRootCommand::Stop => SessionTargetKind::StableId,
     }
 }
 

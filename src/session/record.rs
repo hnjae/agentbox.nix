@@ -99,10 +99,6 @@ impl<'a> SessionDisplay<'a> {
         self.id.unwrap_or("unknown")
     }
 
-    pub(crate) fn canonical_git_root(&self) -> Option<&'a Utf8Path> {
-        self.canonical_git_root
-    }
-
     pub(crate) fn canonical_git_root_str(&self) -> Option<&'a str> {
         self.canonical_git_root.map(Utf8Path::as_str)
     }
