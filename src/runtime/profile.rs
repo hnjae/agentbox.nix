@@ -11,11 +11,6 @@ use std::path::PathBuf;
 use camino::Utf8PathBuf;
 
 use crate::Result;
-use crate::metadata::{
-    LABEL_CODEX_INSTALL_SOURCE, LABEL_CODEX_PACKAGE, LABEL_CODEX_RESOLVED_AT, LABEL_CODEX_VERSION,
-    LABEL_OPENCODE_INSTALL_SOURCE, LABEL_OPENCODE_PACKAGE, LABEL_OPENCODE_RESOLVED_AT,
-    LABEL_OPENCODE_VERSION,
-};
 use crate::preflight::{
     CODEX_CONFIG_DESTINATION, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
 };
@@ -111,10 +106,6 @@ const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
         name: OPENCODE_NPM_PACKAGE,
         install_source: NPM_INSTALL_SOURCE,
         build_arg: "OPENCODE_NPM_VERSION",
-        package_label: LABEL_OPENCODE_PACKAGE,
-        version_label: LABEL_OPENCODE_VERSION,
-        install_source_label: LABEL_OPENCODE_INSTALL_SOURCE,
-        resolved_at_label: LABEL_OPENCODE_RESOLVED_AT,
     },
     attach: RuntimeAttachSpec {
         scheme: "http",
@@ -139,10 +130,6 @@ const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
         name: CODEX_NPM_PACKAGE,
         install_source: NPM_INSTALL_SOURCE,
         build_arg: "CODEX_NPM_VERSION",
-        package_label: LABEL_CODEX_PACKAGE,
-        version_label: LABEL_CODEX_VERSION,
-        install_source_label: LABEL_CODEX_INSTALL_SOURCE,
-        resolved_at_label: LABEL_CODEX_RESOLVED_AT,
     },
     attach: RuntimeAttachSpec {
         scheme: "ws",
@@ -180,10 +167,6 @@ pub(crate) struct RuntimePackageSpec {
     pub(crate) name: &'static str,
     pub(crate) install_source: &'static str,
     pub(crate) build_arg: &'static str,
-    pub(crate) package_label: &'static str,
-    pub(crate) version_label: &'static str,
-    pub(crate) install_source_label: &'static str,
-    pub(crate) resolved_at_label: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

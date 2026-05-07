@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::cli::RunArgs;
 use crate::diagnostic;
+use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
 use crate::preflight::check_host_prerequisites_for_runtime;
 use crate::prompt;
@@ -69,7 +70,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         if let Some(version) = runtime_version {
             run_spec
                 .labels
-                .insert(runtime.package_spec().version_label.to_string(), version);
+                .insert(runtime_package_version_label(runtime), version);
         }
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;

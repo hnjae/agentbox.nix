@@ -22,14 +22,6 @@ pub const LABEL_LOGICAL_NAME: &str = "io.agentbox.logical_name";
 pub const LABEL_ATTACH_SCHEME: &str = "io.agentbox.attach_scheme";
 pub const LABEL_CONTAINER_PORT: &str = "io.agentbox.container_port";
 pub const LABEL_CONTAINER_LISTEN_IP: &str = "io.agentbox.container_listen_ip";
-pub const LABEL_CODEX_PACKAGE: &str = "io.agentbox.codex.package";
-pub const LABEL_CODEX_VERSION: &str = "io.agentbox.codex.version";
-pub const LABEL_CODEX_INSTALL_SOURCE: &str = "io.agentbox.codex.install_source";
-pub const LABEL_CODEX_RESOLVED_AT: &str = "io.agentbox.codex.resolved_at";
-pub const LABEL_OPENCODE_PACKAGE: &str = "io.agentbox.opencode.package";
-pub const LABEL_OPENCODE_VERSION: &str = "io.agentbox.opencode.version";
-pub const LABEL_OPENCODE_INSTALL_SOURCE: &str = "io.agentbox.opencode.install_source";
-pub const LABEL_OPENCODE_RESOLVED_AT: &str = "io.agentbox.opencode.resolved_at";
 pub const LABEL_DEFAULT_RUNTIME_IMAGE: &str = "io.agentbox.default_runtime_image";
 pub const LABEL_IMAGE_CONTEXT_HASH: &str = "io.agentbox.image_context_hash";
 
@@ -54,6 +46,14 @@ pub(crate) fn managed_label_filter() -> String {
 
 pub(crate) fn default_runtime_image_label_filter() -> String {
     format!("label={LABEL_DEFAULT_RUNTIME_IMAGE}={LABEL_DEFAULT_RUNTIME_IMAGE_VALUE}")
+}
+
+pub(crate) fn runtime_package_version_label(runtime: RuntimeKind) -> String {
+    runtime_package_metadata_label(runtime, "version")
+}
+
+fn runtime_package_metadata_label(runtime: RuntimeKind, name: &str) -> String {
+    format!("io.agentbox.{}.{name}", runtime.as_str())
 }
 
 /// Input values for constructing the complete default runtime image label set.
@@ -107,6 +107,7 @@ pub(crate) fn default_runtime_image_labels(
     input: DefaultRuntimeImageLabelInput<'_>,
 ) -> BTreeMap<String, String> {
     let package = input.runtime.package_spec();
+    let runtime = input.runtime;
 
     BTreeMap::from([
         (
@@ -122,14 +123,20 @@ pub(crate) fn default_runtime_image_labels(
             LABEL_IMAGE_CONTEXT_HASH.to_string(),
             input.image_context_hash.to_string(),
         ),
-        (package.package_label.to_string(), package.name.to_string()),
-        (package.version_label.to_string(), input.version.to_string()),
         (
-            package.install_source_label.to_string(),
+            runtime_package_metadata_label(runtime, "package"),
+            package.name.to_string(),
+        ),
+        (
+            runtime_package_version_label(runtime),
+            input.version.to_string(),
+        ),
+        (
+            runtime_package_metadata_label(runtime, "install_source"),
             package.install_source.to_string(),
         ),
         (
-            package.resolved_at_label.to_string(),
+            runtime_package_metadata_label(runtime, "resolved_at"),
             input.resolved_at.to_string(),
         ),
     ])
@@ -235,10 +242,22 @@ mod tests {
 
         assert_eq!(metadata.runtime(), runtime);
         assert_eq!(metadata.image_context_hash(), image_context_hash);
-        assert_eq!(labels[LABEL_CODEX_PACKAGE], "@openai/codex");
-        assert_eq!(labels[LABEL_CODEX_VERSION], "1.2.3");
-        assert_eq!(labels[LABEL_CODEX_INSTALL_SOURCE], "npm");
-        assert_eq!(labels[LABEL_CODEX_RESOLVED_AT], "12345");
+        assert_eq!(labels["io.agentbox.codex.package"], "@openai/codex");
+        assert_eq!(labels["io.agentbox.codex.version"], "1.2.3");
+        assert_eq!(labels["io.agentbox.codex.install_source"], "npm");
+        assert_eq!(labels["io.agentbox.codex.resolved_at"], "12345");
+    }
+
+    #[test]
+    fn runtime_package_label_names_are_derived_from_runtime_name() {
+        assert_eq!(
+            runtime_package_version_label(RuntimeKind::Opencode),
+            "io.agentbox.opencode.version"
+        );
+        assert_eq!(
+            runtime_package_version_label(RuntimeKind::Codex),
+            "io.agentbox.codex.version"
+        );
     }
 
     #[test]
