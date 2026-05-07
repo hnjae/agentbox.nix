@@ -8,7 +8,7 @@
 
 use std::fs;
 
-use agentbox::runtime::{RuntimeKind, default_image::OPENCODE_LEGACY_DEFAULT_IMAGE};
+use agentbox::runtime::RuntimeKind;
 use predicates::prelude::*;
 
 #[path = "support/mod.rs"]
@@ -347,7 +347,7 @@ fn run_builds_current_hash_image_when_only_legacy_local_image_exists() {
     let image = RuntimeKind::Opencode.default_image();
     let harness = Harness::new();
     harness.mark_default_image_absent();
-    harness.mark_image_present(OPENCODE_LEGACY_DEFAULT_IMAGE);
+    harness.mark_image_present("localhost/agentbox-opencode:local");
     let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
     harness.write_inspect(
         &workspace.container_name,

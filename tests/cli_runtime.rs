@@ -181,7 +181,7 @@ fn runtime_update_opencode_skips_rebuild_when_image_and_state_are_current() {
 }
 
 #[test]
-fn runtime_update_rebuilds_old_state_without_image_context_hash() {
+fn runtime_update_rejects_state_without_image_context_hash() {
     let harness = CliHarness::new();
     let image = RuntimeKind::Opencode.default_image();
     let state_path = opencode_state_path(&harness);
@@ -208,15 +208,17 @@ fn runtime_update_rebuilds_old_state_without_image_context_hash() {
     command.args(["runtime", "update", "opencode"]);
     command
         .assert()
-        .success()
-        .stdout(predicate::str::is_empty());
+        .failure()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "failed to parse opencode runtime image state",
+        ))
+        .stderr(predicate::str::contains(
+            "missing field `image_context_hash`",
+        ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["image", "build"]);
-    let state = fs::read_to_string(state_path).unwrap();
-    assert!(state.contains("\"image_context_hash\":"));
-    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
-    assert_ne!(state["image_built_at"], 1);
+    assert_eq!(operation_names(&log), ["image"]);
 }
 
 fn codex_state_path(harness: &CliHarness) -> std::path::PathBuf {

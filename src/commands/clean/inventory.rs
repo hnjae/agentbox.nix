@@ -9,7 +9,7 @@
 use crate::Result;
 use crate::metadata::{DefaultRuntimeImageMetadata, default_runtime_image_label_filter};
 use crate::podman::{Podman, PodmanContainerInspect, PodmanImage};
-use crate::runtime::{RuntimeKind, default_image};
+use crate::runtime::default_image;
 
 use super::plan::{CleanInventory, CleanScope, DefaultRuntimeImageCandidate};
 
@@ -44,27 +44,7 @@ fn inspect_all_containers(podman: &Podman) -> Result<Vec<PodmanContainerInspect>
 }
 
 fn default_runtime_image_candidates(podman: &Podman) -> Result<Vec<DefaultRuntimeImageCandidate>> {
-    let mut candidates = labeled_default_runtime_images(podman)?;
-    candidates.extend(legacy_default_runtime_image_candidates(podman)?);
-
-    Ok(candidates)
-}
-
-fn legacy_default_runtime_image_candidates(
-    podman: &Podman,
-) -> Result<Vec<DefaultRuntimeImageCandidate>> {
-    let mut candidates = Vec::new();
-    for runtime in RuntimeKind::variants().iter().copied() {
-        let image = default_image::legacy_default_image(runtime);
-        if podman.image_exists(image)? {
-            candidates.push(DefaultRuntimeImageCandidate {
-                runtime,
-                image: image.to_string(),
-            });
-        }
-    }
-
-    Ok(candidates)
+    labeled_default_runtime_images(podman)
 }
 
 fn labeled_default_runtime_images(podman: &Podman) -> Result<Vec<DefaultRuntimeImageCandidate>> {

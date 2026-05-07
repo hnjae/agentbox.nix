@@ -71,7 +71,7 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
         image_exists
             && state.installed_version == latest_version
             && state.image == image
-            && state.image_context_hash.as_deref() == Some(context_hash)
+            && state.image_context_hash == context_hash
     }) {
         let state = state.with_latest_check(latest_version.clone(), now_unix_seconds()?);
         write_runtime_image_state(runtime, &state)?;

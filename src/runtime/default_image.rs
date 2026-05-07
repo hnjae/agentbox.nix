@@ -17,9 +17,6 @@ use super::RuntimeKind;
 use crate::digest;
 use crate::{Error, Result};
 
-pub const OPENCODE_LEGACY_DEFAULT_IMAGE: &str = "localhost/agentbox-opencode:local";
-pub const CODEX_LEGACY_DEFAULT_IMAGE: &str = "localhost/agentbox-codex:local";
-
 const IMAGE_CONTEXT_HASH_LEN: usize = 16;
 const IMAGE_CONTEXT_HASH_TAG_PREFIX: &str = "ctx-";
 
@@ -101,13 +98,6 @@ pub fn default_image(runtime: RuntimeKind) -> String {
         runtime.as_str(),
         default_image_context_hash()
     )
-}
-
-pub fn legacy_default_image(runtime: RuntimeKind) -> &'static str {
-    match runtime {
-        RuntimeKind::Opencode => OPENCODE_LEGACY_DEFAULT_IMAGE,
-        RuntimeKind::Codex => CODEX_LEGACY_DEFAULT_IMAGE,
-    }
 }
 
 pub fn is_content_hash_default_image_ref(runtime: RuntimeKind, image: &str) -> bool {
@@ -243,7 +233,7 @@ mod tests {
         ));
         assert!(!is_content_hash_default_image_ref(
             RuntimeKind::Opencode,
-            OPENCODE_LEGACY_DEFAULT_IMAGE
+            "localhost/agentbox-opencode:local"
         ));
     }
 

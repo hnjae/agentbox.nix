@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn clean_plan_deduplicates_labeled_and_legacy_image_references() {
+    fn clean_plan_deduplicates_duplicate_image_references() {
         let image = RuntimeKind::Opencode.default_image();
         let inventory = CleanInventory {
             default_runtime_images: vec![

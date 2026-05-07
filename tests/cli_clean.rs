@@ -41,10 +41,7 @@ fn clean_dry_run_prints_candidates_without_deleting() {
         .stderr(predicate::str::contains(UNUSED_VOLUME));
 
     let log = harness.read_log();
-    assert_eq!(
-        operation_names(&log),
-        ["ps", "image", "image", "image", "volume"]
-    );
+    assert_eq!(operation_names(&log), ["ps", "image", "volume"]);
     assert!(
         !log.iter().any(|line| line.contains(" rm ")),
         "dry-run must not remove images or volumes"
