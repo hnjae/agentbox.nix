@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{Error, Result};
 
@@ -205,12 +205,57 @@ pub struct PodmanHostConfig {
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanContainerMount {
     #[serde(rename = "Type")]
-    pub kind: String,
+    pub kind: PodmanContainerMountKind,
     pub source: String,
     pub destination: String,
     #[serde(default)]
     #[serde(rename = "RW")]
     pub rw: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PodmanContainerMountKind {
+    Bind,
+    Volume,
+    Other(String),
+}
+
+impl PodmanContainerMountKind {
+    pub fn is_volume(&self) -> bool {
+        matches!(self, Self::Volume)
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Bind => "bind",
+            Self::Volume => "volume",
+            Self::Other(value) => value,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PodmanContainerMountKind {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let kind = String::deserialize(deserializer)?;
+
+        Ok(match kind.as_str() {
+            "bind" => Self::Bind,
+            "volume" => Self::Volume,
+            other => Self::Other(other.to_string()),
+        })
+    }
+}
+
+impl Serialize for PodmanContainerMountKind {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]

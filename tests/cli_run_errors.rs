@@ -24,7 +24,8 @@ mod support;
 
 use support::{
     CliHarness as Harness, managed_ps_entry, opencode_managed_labels as managed_labels,
-    opencode_workspace_inspect_fixture, opencode_workspace_labels, operation_names, ps_fixture,
+    opencode_workspace_inspect_fixture, opencode_workspace_inspect_fixture_with_cache_bind,
+    opencode_workspace_labels, operation_names, ps_fixture,
     running_managed_inspect_fixture as managed_inspect_fixture,
     running_workspace_inspect_fixture_with_host_port, workspace_ps_entry,
 };
@@ -631,6 +632,36 @@ fn failed_session_with_missing_cache_mount_requires_recreation() {
         ))
         .stderr(predicates::str::contains(
             "recreate the container before retrying",
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
+}
+
+#[test]
+fn failed_session_with_cache_bind_mount_requires_recreation() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "cache-bind-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "cache-bind-id",
+        &opencode_workspace_inspect_fixture_with_cache_bind(workspace),
+    );
+    harness.write_inspect(
+        &workspace.container_name,
+        &opencode_workspace_inspect_fixture_with_cache_bind(workspace),
+    );
+
+    run_command(&harness, target, &[])
+        .failure()
+        .stderr(predicates::str::contains("missing required cache mount"))
+        .stderr(predicates::str::contains(
+            REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
         ));
 
     let log = harness.read_log();

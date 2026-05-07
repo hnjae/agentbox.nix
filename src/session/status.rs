@@ -18,7 +18,7 @@ use crate::podman::PodmanContainerMount;
 
 use super::endpoint::AttachEndpointReport;
 use super::labels::SessionLabelReport;
-use super::mounts::has_mount_destination;
+use super::mounts::has_volume_mount_destination;
 use super::{REQUIRED_NIX_CACHE_MOUNT_DESTINATION, record::SessionRecord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,7 +183,7 @@ pub(super) fn derive_status(input: SessionStatusInput<'_>) -> SessionStatus {
         return SessionStatus::failed(failure);
     }
 
-    if !has_mount_destination(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
+    if !has_volume_mount_destination(mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
         return SessionStatus::failed(SessionFailure::MissingCacheMount);
     }
 

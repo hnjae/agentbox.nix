@@ -16,8 +16,9 @@ use agentbox::metadata::{
     LABEL_RUNTIME, ManagedSessionLabelInput, managed_session_labels,
 };
 use agentbox::podman::{
-    PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
-    PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
+    PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerMountKind,
+    PodmanContainerState, PodmanHostConfig, PodmanNetworkSettings, PodmanPortBinding,
+    PodmanPsContainer,
 };
 use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
@@ -377,7 +378,7 @@ fn managed_container_mounts(
     include_cache_mount: bool,
 ) -> Vec<PodmanContainerMount> {
     let mut mounts = vec![PodmanContainerMount {
-        kind: "bind".to_string(),
+        kind: PodmanContainerMountKind::Bind,
         source: git_root.to_string(),
         destination: git_root.to_string(),
         rw: true,
@@ -385,7 +386,7 @@ fn managed_container_mounts(
 
     if include_cache_mount {
         mounts.push(PodmanContainerMount {
-            kind: "volume".to_string(),
+            kind: PodmanContainerMountKind::Volume,
             source: container_name.to_string(),
             destination: REQUIRED_NIX_CACHE_MOUNT_DESTINATION.to_string(),
             rw: true,
@@ -541,6 +542,24 @@ pub fn opencode_workspace_inspect_fixture(
         include_cache_mount,
         opencode_workspace_labels(workspace),
     )
+}
+
+pub fn opencode_workspace_inspect_fixture_with_cache_bind(workspace: &WorkspaceIdentity) -> String {
+    let mut inspect = ManagedInspectFixture::new(
+        &workspace.container_name,
+        workspace.canonical_git_root.as_str(),
+        opencode_workspace_labels(workspace),
+    )
+    .include_cache_mount(false)
+    .build();
+    inspect.mounts.push(PodmanContainerMount {
+        kind: PodmanContainerMountKind::Bind,
+        source: workspace.container_name.clone(),
+        destination: REQUIRED_NIX_CACHE_MOUNT_DESTINATION.to_string(),
+        rw: true,
+    });
+
+    inspect_fixture_json(inspect)
 }
 
 pub fn running_workspace_inspect_fixture(

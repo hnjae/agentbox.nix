@@ -12,8 +12,6 @@ use crate::podman::{PodmanContainerInspect, PodmanVolume};
 use crate::runtime::RuntimeKind;
 use crate::workspace::is_agentbox_workspace_resource_name;
 
-const PODMAN_VOLUME_MOUNT_KIND: &str = "volume";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct CleanScope {
     pub(super) images: bool,
@@ -169,7 +167,7 @@ impl ResourceUsage {
             usage.mark_image_used(&container.image_name, &container.id);
 
             for mount in &container.mounts {
-                if mount.kind == PODMAN_VOLUME_MOUNT_KIND {
+                if mount.kind.is_volume() {
                     usage.mark_volume_used(&mount.source, &container.id);
                 }
             }
@@ -276,8 +274,8 @@ mod tests {
 
     use super::*;
     use crate::podman::{
-        PodmanContainerConfig, PodmanContainerMount, PodmanContainerState, PodmanHostConfig,
-        PodmanNetworkSettings,
+        PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount,
+        PodmanContainerMountKind, PodmanContainerState, PodmanHostConfig, PodmanNetworkSettings,
     };
 
     const USED_VOLUME: &str = "agentbox-used-abcdef123456";
@@ -310,7 +308,7 @@ mod tests {
     fn resource_usage_ignores_bind_mount_sources_when_indexing_volumes() {
         let mut container = inspect_container("bind-user", "image", &[]);
         container.mounts.push(PodmanContainerMount {
-            kind: "bind".to_string(),
+            kind: PodmanContainerMountKind::Bind,
             source: USED_VOLUME.to_string(),
             destination: "/workspace".to_string(),
             rw: true,
@@ -449,7 +447,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(index, source)| PodmanContainerMount {
-                    kind: "volume".to_string(),
+                    kind: PodmanContainerMountKind::Volume,
                     source: (*source).to_string(),
                     destination: format!("/mount/{index}"),
                     rw: true,

@@ -5,7 +5,7 @@ use crate::runtime::RuntimeCreateSpec;
 use crate::workspace::WorkspaceIdentity;
 
 use super::labels::{SessionIdentityLabels, SessionLabelReport};
-use super::mounts::has_mount_destination;
+use super::mounts::has_volume_mount_destination;
 use super::{
     REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionMetadata, SessionRecord,
     SessionStatus, failed_session_requires_action_error, session_failure_requires_action_error,
@@ -142,7 +142,11 @@ impl ManagedContainerConflict<'_> {
             );
         }
 
-        if !has_mount_destination(&self.inspect.mounts, REQUIRED_NIX_CACHE_MOUNT_DESTINATION) {
+        let has_cache_volume = has_volume_mount_destination(
+            &self.inspect.mounts,
+            REQUIRED_NIX_CACHE_MOUNT_DESTINATION,
+        );
+        if !has_cache_volume {
             return failure_conflict_error(
                 self.workspace,
                 self.container_name,

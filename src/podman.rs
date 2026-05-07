@@ -27,9 +27,10 @@ mod run;
 
 use model::parse_json;
 pub use model::{
-    PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
-    PodmanHealth, PodmanHostConfig, PodmanImage, PodmanNamespaces, PodmanNetworkEndpoint,
-    PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer, PodmanPsPort, PodmanVolume,
+    PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerMountKind,
+    PodmanContainerState, PodmanHealth, PodmanHostConfig, PodmanImage, PodmanNamespaces,
+    PodmanNetworkEndpoint, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
+    PodmanPsPort, PodmanVolume,
 };
 
 const PODMAN_PROGRAM: &str = "podman";
