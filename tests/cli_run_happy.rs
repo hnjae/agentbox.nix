@@ -67,7 +67,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        ["ps", "image", "build", "run", "inspect"]
+        ["ps", "image", "build", "volume", "run", "inspect"]
     );
 
     assert!(log[0].contains("lock=held"));
@@ -75,6 +75,7 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[2].contains("lock=held"));
     assert!(log[3].contains("lock=held"));
     assert!(log[4].contains("lock=held"));
+    assert!(log[5].contains("lock=held"));
 
     assert!(log[2].contains(&format!("-t {image} -f")));
     assert!(log[2].contains("--build-arg AGENTBOX_RUNTIME=opencode"));
@@ -87,38 +88,44 @@ fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
     assert!(log[2].contains("--label io.agentbox.opencode.package=opencode-ai"));
     assert!(log[2].contains("--label io.agentbox.opencode.version=0.99.0"));
 
-    assert!(log[3].contains("--rm"));
-    assert!(!log[3].contains("--rmi"));
-    assert!(log[3].contains("--detach"));
-    assert_runtime_user_args(&log[3]);
-    assert!(!log[3].contains("--interactive"));
-    assert!(!log[3].contains("--tty"));
-    assert!(log[3].contains(&format!("--label io.agentbox.image={image}")));
-    assert!(log[3].contains("--label io.agentbox.opencode.version=0.99.0"));
-    assert!(log[3].contains("--label io.agentbox.attach_scheme=http"));
-    assert!(log[3].contains("--label io.agentbox.container_port=4096"));
-    assert!(log[3].contains(&format!(
+    assert!(log[3].contains(&format!("args=exists {}", workspace.container_name)));
+    assert!(log[4].contains("--rm"));
+    assert!(!log[4].contains("--rmi"));
+    assert!(log[4].contains("--detach"));
+    assert_runtime_user_args(&log[4]);
+    assert!(!log[4].contains("--interactive"));
+    assert!(!log[4].contains("--tty"));
+    assert!(log[4].contains(&format!("--label io.agentbox.image={image}")));
+    assert!(log[4].contains("--label io.agentbox.opencode.version=0.99.0"));
+    assert!(log[4].contains("--label io.agentbox.attach_scheme=http"));
+    assert!(log[4].contains("--label io.agentbox.container_port=4096"));
+    assert!(log[4].contains(&format!(
         "--label io.agentbox.git_root={}",
         workspace.canonical_git_root
     )));
-    assert!(log[3].contains(&format!("--name {}", workspace.container_name)));
-    assert!(log[3].contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(log[3].contains(&image));
-    assert!(log[3].contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
-    assert!(log[3].contains("--publish 127.0.0.1::4096"));
-    assert!(log[3].contains("--env OPENCODE_CONFIG_CONTENT={\"autoupdate\":false}"));
-    assert!(log[3].contains(&format!(
+    assert!(log[4].contains(&format!("--name {}", workspace.container_name)));
+    assert!(log[4].contains(&format!("--workdir {}", workspace.canonical_target)));
+    assert!(log[4].contains(&image));
+    assert!(log[4].contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
+    assert!(log[4].contains("--publish 127.0.0.1::4096"));
+    assert!(log[4].contains("--env OPENCODE_CONFIG_CONTENT={\"autoupdate\":false}"));
+    assert!(log[4].contains(&format!(
         "type=bind,src={},dst=/home/user/.config/opencode",
         harness.home_path().join(".config/opencode").display()
     )));
-    assert!(log[3].contains(&format!(
+    assert!(log[4].contains(&format!(
         "type=bind,src={},dst=/home/user/.local/share/opencode",
         harness.home_path().join(".local/share/opencode").display()
     )));
-    assert!(log[3].contains("type=volume"));
-    assert!(log[3].contains("dst=/home/user/.cache/nix,U"));
-    assert!(!log[3].contains("direnv exec ."));
-    assert!(!log[3].contains("sleep infinity"));
+    assert!(log[4].contains("type=volume"));
+    assert!(log[4].contains("dst=/home/user/.cache/nix,U"));
+    assert!(!log[4].contains("direnv exec ."));
+    assert!(!log[4].contains("sleep infinity"));
+    assert!(!log.iter().any(|line| line.starts_with("stop ")));
+    assert!(
+        !log.iter()
+            .any(|line| line.starts_with("volume ") && line.contains("args=rm "))
+    );
 
     let state_path = harness
         .state_home_path()
@@ -203,7 +210,7 @@ fn run_launches_codex_server_in_yolo_mode() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        ["ps", "image", "build", "run", "inspect"]
+        ["ps", "image", "build", "volume", "run", "inspect"]
     );
 
     let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
@@ -278,7 +285,10 @@ fn run_skips_build_when_default_image_already_exists_locally() {
 
     let log = harness.read_log();
     let operations = operation_names(&log);
-    assert_eq!(&operations[..4], ["ps", "image", "run", "inspect"]);
+    assert_eq!(
+        &operations[..5],
+        ["ps", "image", "volume", "run", "inspect"]
+    );
     assert!(!log.iter().any(|line| line.starts_with("build ")));
 }
 
@@ -311,7 +321,7 @@ fn run_builds_current_hash_image_when_only_legacy_local_image_exists() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        ["ps", "image", "build", "run", "inspect"]
+        ["ps", "image", "build", "volume", "run", "inspect"]
     );
     assert!(log[1].contains(&format!("args=exists {image}")));
     assert!(log[2].contains(&format!("-t {image} -f")));

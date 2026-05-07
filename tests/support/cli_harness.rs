@@ -8,6 +8,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use agentbox::lock::lock_path_in_state_dir;
 use agentbox::metadata::{
@@ -158,6 +159,14 @@ impl CliHarness {
         .unwrap();
     }
 
+    pub fn mark_volume_exists(&self, name: &str) {
+        fs::write(
+            self.fixtures.path().join(format!("volume-exists-{name}")),
+            "",
+        )
+        .unwrap();
+    }
+
     pub fn read_log(&self) -> Vec<String> {
         read_log_lines(&self.log_path)
     }
@@ -182,6 +191,14 @@ impl CliHarness {
         command
     }
 
+    pub fn locked_agentbox_process_command(&self, workspace: &WorkspaceIdentity) -> Command {
+        let mut command = self.agentbox_process_command();
+        command
+            .env("AGENTBOX_TEST_LOCK_PATH", self.lock_path(workspace))
+            .env("AGENTBOX_TEST_LOCK_PROBE", &self.lock_probe_path);
+        command
+    }
+
     pub fn state_files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
         collect_files(self.state_home.path(), self.state_home.path(), &mut files);
@@ -191,6 +208,19 @@ impl CliHarness {
 
     pub fn agentbox_command(&self) -> AssertCommand {
         let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+        command
+            .env("PATH", self.path_env())
+            .env("HOME", self.home.path())
+            .env("XDG_CONFIG_HOME", self.home.path().join(".config"))
+            .env("XDG_DATA_HOME", self.home.path().join(".local/share"))
+            .env("XDG_STATE_HOME", self.state_home.path())
+            .env("AGENTBOX_TEST_FIXTURES", self.fixtures.path())
+            .env("AGENTBOX_TEST_LOG", &self.log_path);
+        command
+    }
+
+    pub fn agentbox_process_command(&self) -> Command {
+        let mut command = Command::new(cargo_bin("agentbox"));
         command
             .env("PATH", self.path_env())
             .env("HOME", self.home.path())

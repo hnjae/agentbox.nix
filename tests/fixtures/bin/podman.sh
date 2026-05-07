@@ -146,6 +146,13 @@ case "$cmd" in
             ls)
                 cat "$fixtures/volumes.json"
                 ;;
+            exists)
+                target=${1:?missing volume exists target}
+                if [ -f "$fixtures/volume-exists-$target" ]; then
+                    exit 0
+                fi
+                exit 1
+                ;;
             rm)
                 maybe_fail volume-rm
                 printf 'removed volume\n'

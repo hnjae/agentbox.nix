@@ -21,8 +21,9 @@ pub(super) fn wait_for_server_endpoint(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
     runtime: RuntimeKind,
-) -> Result<AttachEndpoint> {
-    ServerEndpointWaiter::production().wait(podman, workspace, runtime)
+    interrupted: impl Fn() -> bool,
+) -> Result<ServerEndpointWait> {
+    ServerEndpointWaiter::production().wait(podman, workspace, runtime, interrupted)
 }
 
 #[derive(Debug, Clone)]
@@ -51,11 +52,16 @@ where
         podman: &Podman,
         workspace: &WorkspaceIdentity,
         runtime: RuntimeKind,
-    ) -> Result<AttachEndpoint> {
+        interrupted: impl Fn() -> bool,
+    ) -> Result<ServerEndpointWait> {
         let deadline = Instant::now() + self.timeout;
         let mut last_error = None::<String>;
 
         loop {
+            if interrupted() {
+                return Ok(ServerEndpointWait::Interrupted);
+            }
+
             if Instant::now() >= deadline {
                 let last_error = last_error
                     .as_deref()
@@ -69,7 +75,9 @@ where
             match podman.inspect_one(&workspace.container_name) {
                 Ok(inspect) => {
                     match inspect_server_endpoint(workspace, runtime, inspect, &self.probe)? {
-                        ServerEndpointState::Ready(endpoint) => return Ok(endpoint),
+                        ServerEndpointState::Ready(endpoint) => {
+                            return Ok(ServerEndpointWait::Ready(endpoint));
+                        }
                         ServerEndpointState::Pending(error) => last_error = Some(error),
                     }
                 }
@@ -81,6 +89,11 @@ where
             std::thread::sleep(self.poll_interval);
         }
     }
+}
+
+pub(super) enum ServerEndpointWait {
+    Ready(AttachEndpoint),
+    Interrupted,
 }
 
 enum ServerEndpointState {

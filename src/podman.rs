@@ -123,6 +123,12 @@ impl Podman {
         .map(|_| ())
     }
 
+    pub fn volume_exists(&self, volume: &str) -> Result<bool> {
+        self.exists_status(|command| {
+            command.args(["volume", "exists", volume]);
+        })
+    }
+
     pub fn container_exists(&self, container_name: &str) -> Result<bool> {
         self.exists_status(|command| {
             command.args(["container", "exists", container_name]);

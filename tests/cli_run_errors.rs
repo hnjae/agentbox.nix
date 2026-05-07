@@ -6,10 +6,14 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::net::TcpListener;
 use std::path::Path;
+use std::process::{Output, Stdio};
+use std::time::{Duration, Instant};
 
 use agentbox::metadata::{LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME};
 use agentbox::prompt;
+use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::git_root_hash12;
 use assert_cmd::Command as AssertCommand;
@@ -21,7 +25,8 @@ mod support;
 use support::{
     CliHarness as Harness, managed_ps_entry, opencode_managed_labels as managed_labels,
     opencode_workspace_inspect_fixture, opencode_workspace_labels, operation_names, ps_fixture,
-    running_managed_inspect_fixture as managed_inspect_fixture, workspace_ps_entry,
+    running_managed_inspect_fixture as managed_inspect_fixture,
+    running_workspace_inspect_fixture_with_host_port, workspace_ps_entry,
 };
 
 #[test]
@@ -243,7 +248,10 @@ fn create_name_conflict_reports_the_conflicting_root() {
         ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "volume", "run", "inspect"]
+    );
 }
 
 #[test]
@@ -286,7 +294,10 @@ fn create_name_conflict_reports_conflicting_root_even_with_malformed_runtime_lab
         ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "volume", "run", "inspect"]
+    );
 }
 
 #[test]
@@ -323,7 +334,10 @@ fn create_name_conflict_reports_conflicting_root_even_with_missing_launch_direct
         ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "volume", "run", "inspect"]
+    );
 }
 
 #[test]
@@ -361,7 +375,10 @@ fn create_name_conflict_with_malformed_runtime_label_reports_specific_drift() {
         ));
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "run", "inspect"]);
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "volume", "run", "inspect"]
+    );
 }
 
 #[test]
@@ -388,7 +405,7 @@ fn run_start_failure_includes_container_logs_when_available() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        ["ps", "image", "run", "inspect", "logs"]
+        ["ps", "image", "volume", "run", "inspect", "logs"]
     );
 }
 
@@ -419,8 +436,127 @@ fn run_readiness_failure_includes_container_logs_when_available() {
     let log = harness.read_log();
     assert_eq!(
         operation_names(&log),
-        ["ps", "image", "run", "inspect", "logs"]
+        ["ps", "image", "volume", "run", "inspect", "logs"]
     );
+}
+
+#[test]
+fn run_sigint_during_readiness_stops_container_and_removes_new_cache_volume() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            unused_local_port(),
+        ),
+    );
+
+    let output = interrupt_run_after_first_inspect(&harness, workspace, target);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("run interrupted before managed session"));
+    assert!(stderr.contains("removed newly-created cache volume"));
+    assert!(stderr.contains("default runtime image was left untouched"));
+
+    let log = harness.read_log();
+    assert!(log.iter().any(|line| {
+        line.starts_with("volume ")
+            && line.contains(&format!("args=exists {}", workspace.container_name))
+    }));
+    assert!(log.iter().any(|line| {
+        line.starts_with("stop ")
+            && line.contains(&format!("args=--ignore {}", workspace.container_name))
+    }));
+    assert!(log.iter().any(|line| {
+        line.starts_with("container-exists ")
+            && line.contains(&format!("args={}", workspace.container_name))
+    }));
+    assert!(log.iter().any(|line| {
+        line.starts_with("volume ")
+            && line.contains(&format!("args=rm {}", workspace.container_name))
+    }));
+    assert!(!log.iter().any(|line| {
+        line.starts_with("image ")
+            && line.contains(&format!(
+                "args=rm {}",
+                RuntimeKind::Opencode.default_image()
+            ))
+    }));
+}
+
+#[test]
+fn run_sigint_during_readiness_preserves_preexisting_cache_volume() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.mark_volume_exists(&workspace.container_name);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            unused_local_port(),
+        ),
+    );
+
+    let output = interrupt_run_after_first_inspect(&harness, workspace, target);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("run interrupted before managed session"));
+    assert!(stderr.contains("preserved existing cache volume"));
+
+    let log = harness.read_log();
+    assert!(log.iter().any(|line| {
+        line.starts_with("volume ")
+            && line.contains(&format!("args=exists {}", workspace.container_name))
+    }));
+    assert!(log.iter().any(|line| {
+        line.starts_with("stop ")
+            && line.contains(&format!("args=--ignore {}", workspace.container_name))
+    }));
+    assert!(!log.iter().any(|line| {
+        line.starts_with("volume ")
+            && line.contains(&format!("args=rm {}", workspace.container_name))
+    }));
+}
+
+#[test]
+fn run_sigint_reports_partial_cleanup_when_cache_volume_removal_fails() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("volume-rm", "volume removal exploded", 125);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            unused_local_port(),
+        ),
+    );
+
+    let output = interrupt_run_after_first_inspect(&harness, workspace, target);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("partial cleanup failed"));
+    assert!(stderr.contains("cache volume removal failed"));
+    assert!(stderr.contains("volume removal exploded"));
+    assert!(stderr.contains("default runtime image was left untouched"));
 }
 
 #[test]
@@ -519,4 +655,52 @@ fn labels_with_runtime(
 ) -> std::collections::BTreeMap<String, String> {
     labels.insert(LABEL_RUNTIME.to_string(), runtime.to_string());
     labels
+}
+
+fn interrupt_run_after_first_inspect(
+    harness: &Harness,
+    workspace: &agentbox::workspace::WorkspaceIdentity,
+    target: &Path,
+) -> Output {
+    let mut command = harness.locked_agentbox_process_command(workspace);
+    command
+        .args(["run", "--runtime", "opencode"])
+        .arg(target)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let child = command.spawn().unwrap();
+    wait_for_log_line(harness, "inspect ");
+    send_sigint(child.id());
+    child.wait_with_output().unwrap()
+}
+
+fn wait_for_log_line(harness: &Harness, prefix: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if harness
+            .read_log()
+            .iter()
+            .any(|line| line.starts_with(prefix))
+        {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    panic!("timed out waiting for podman log line starting with `{prefix}`");
+}
+
+fn send_sigint(pid: u32) {
+    let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGINT) };
+    assert_eq!(
+        result,
+        0,
+        "failed to send SIGINT to child process {pid}: {}",
+        std::io::Error::last_os_error(),
+    );
+}
+
+fn unused_local_port() -> u16 {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.local_addr().unwrap().port()
 }

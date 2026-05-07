@@ -6,6 +6,9 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::cli::RunArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
@@ -21,7 +24,7 @@ use crate::{Error, Result};
 
 use super::runtime::ensure_default_runtime_image;
 use super::runtime_command::server_runtime_command;
-use super::server_readiness::wait_for_server_endpoint;
+use super::server_readiness::{ServerEndpointWait, wait_for_server_endpoint};
 use super::workspace_flow::with_locked_workspace;
 
 const RUN_FAILURE_LOG_TAIL_LINES: usize = 80;
@@ -29,7 +32,7 @@ const RUN_FAILURE_LOG_TAIL_LINES: usize = 80;
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let runtime = selected_runtime(args.runtime)?;
     let diagnostics = RunDiagnostics::new(verbose);
-    let (workspace, endpoint) = with_locked_workspace(&args.directory, verbose, |locked| {
+    with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
         diagnostics.phase("checking workspace prerequisites");
         let preflight = check_host_prerequisites_for_runtime(
@@ -68,29 +71,78 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
                 .insert(runtime.package_spec().version_label.to_string(), version);
         }
 
+        let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;
+        let interrupt = RunInterrupt::install()?;
+
         diagnostics.phase(format!(
             "starting container `{}` for `{}`",
             workspace.container_name, runtime
         ));
-        podman
-            .run_detached(
-                &workspace.container_name,
-                &run_spec,
-                Some(server_run.workdir.as_str()),
-            )
-            .map_err(|error| classify_run_create_error(podman, workspace, &run_spec, error))?;
+        match podman.run_detached(
+            &workspace.container_name,
+            &run_spec,
+            Some(server_run.workdir.as_str()),
+        ) {
+            Ok(()) if interrupt.interrupted() => {
+                return Err(cleanup_interrupted_run(
+                    podman,
+                    workspace,
+                    cache_volume_existed_before,
+                ));
+            }
+            Ok(()) => {}
+            Err(_) if interrupt.interrupted() => {
+                return Err(cleanup_interrupted_run(
+                    podman,
+                    workspace,
+                    cache_volume_existed_before,
+                ));
+            }
+            Err(error) => {
+                return Err(classify_run_create_error(
+                    podman, workspace, &run_spec, error,
+                ));
+            }
+        }
 
         diagnostics.phase(format!("waiting for `{runtime}` runtime server"));
-        let endpoint = wait_for_server_endpoint(podman, workspace, runtime)
-            .map_err(|error| error_with_container_logs(podman, workspace, error))?;
+        let endpoint = match wait_for_server_endpoint(podman, workspace, runtime, || {
+            interrupt.interrupted()
+        }) {
+            Ok(ServerEndpointWait::Ready(_)) if interrupt.interrupted() => {
+                return Err(cleanup_interrupted_run(
+                    podman,
+                    workspace,
+                    cache_volume_existed_before,
+                ));
+            }
+            Ok(ServerEndpointWait::Ready(endpoint)) => endpoint,
+            Ok(ServerEndpointWait::Interrupted) => {
+                return Err(cleanup_interrupted_run(
+                    podman,
+                    workspace,
+                    cache_volume_existed_before,
+                ));
+            }
+            Err(error) => return Err(error_with_container_logs(podman, workspace, error)),
+        };
 
-        Ok(endpoint)
+        if interrupt.interrupted() {
+            return Err(cleanup_interrupted_run(
+                podman,
+                workspace,
+                cache_volume_existed_before,
+            ));
+        }
+
+        diagnostic::info(format!(
+            "managed session `{}` for `{}` is ready at `{endpoint}`; use `agentbox attach {}` to connect",
+            workspace.container_name, workspace.canonical_git_root, workspace.requested_target,
+        ));
+
+        drop(interrupt);
+        Ok(())
     })?;
-
-    diagnostic::info(format!(
-        "managed session `{}` for `{}` is ready at `{endpoint}`; use `agentbox attach {}` to connect",
-        workspace.container_name, workspace.canonical_git_root, workspace.requested_target,
-    ));
     Ok(())
 }
 
@@ -158,5 +210,147 @@ fn error_with_container_logs(
         Err(log_error) => Error::msg(format!(
             "{original_error}\n\nfailed to read container logs with `{command}`: {log_error}"
         )),
+    }
+}
+
+#[derive(Debug)]
+struct RunInterrupt {
+    flag: Arc<AtomicBool>,
+    signal_id: Option<signal_hook::SigId>,
+}
+
+impl RunInterrupt {
+    fn install() -> Result<Self> {
+        let flag = Arc::new(AtomicBool::new(false));
+        let signal_id = signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&flag))
+            .map_err(|error| {
+                Error::msg(format!(
+                    "failed to install SIGINT cleanup handler for `agentbox run`: {error}"
+                ))
+            })?;
+
+        Ok(Self {
+            flag,
+            signal_id: Some(signal_id),
+        })
+    }
+
+    fn interrupted(&self) -> bool {
+        self.flag.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for RunInterrupt {
+    fn drop(&mut self) {
+        if let Some(signal_id) = self.signal_id.take() {
+            signal_hook::low_level::unregister(signal_id);
+        }
+    }
+}
+
+fn cleanup_interrupted_run(
+    podman: &Podman,
+    workspace: &WorkspaceIdentity,
+    cache_volume_existed_before: bool,
+) -> Error {
+    let cleanup = InterruptedRunCleanup::run(podman, workspace, cache_volume_existed_before);
+    Error::msg(cleanup.render(workspace, cache_volume_existed_before))
+}
+
+#[derive(Debug, Default)]
+struct InterruptedRunCleanup {
+    failures: Vec<String>,
+    cache_volume_removed: bool,
+}
+
+impl InterruptedRunCleanup {
+    fn run(
+        podman: &Podman,
+        workspace: &WorkspaceIdentity,
+        cache_volume_existed_before: bool,
+    ) -> Self {
+        let mut cleanup = Self::default();
+        let container_name = &workspace.container_name;
+
+        if let Err(error) = podman.stop_ignore(container_name) {
+            cleanup
+                .failures
+                .push(format!("container stop failed: {error}"));
+        }
+
+        match podman.container_exists(container_name) {
+            Ok(false) => {
+                if !cache_volume_existed_before {
+                    match podman.remove_volume(container_name) {
+                        Ok(()) => cleanup.cache_volume_removed = true,
+                        Err(error) => cleanup
+                            .failures
+                            .push(format!("cache volume removal failed: {error}")),
+                    }
+                }
+            }
+            Ok(true) => {
+                cleanup
+                    .failures
+                    .push("container still exists after cleanup".to_string());
+                if !cache_volume_existed_before {
+                    cleanup.failures.push(
+                        "cache volume removal skipped because the container still exists"
+                            .to_string(),
+                    );
+                }
+            }
+            Err(error) => {
+                cleanup
+                    .failures
+                    .push(format!("container cleanup verification failed: {error}"));
+                if !cache_volume_existed_before {
+                    cleanup.failures.push(
+                        "cache volume removal skipped because container cleanup could not be verified"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+
+        cleanup
+    }
+
+    fn render(&self, workspace: &WorkspaceIdentity, cache_volume_existed_before: bool) -> String {
+        let mut message = format!(
+            "run interrupted before managed session `{}` for `{}` became ready",
+            workspace.container_name, workspace.canonical_git_root,
+        );
+
+        if self.failures.is_empty() {
+            let volume_detail = if cache_volume_existed_before {
+                format!(
+                    "preserved existing cache volume `{}`",
+                    workspace.container_name
+                )
+            } else if self.cache_volume_removed {
+                format!(
+                    "removed newly-created cache volume `{}`",
+                    workspace.container_name
+                )
+            } else {
+                format!(
+                    "no new cache volume `{}` remained",
+                    workspace.container_name
+                )
+            };
+
+            message.push_str(&format!(
+                "; cleaned up managed container `{}` and {volume_detail}; default runtime image was left untouched",
+                workspace.container_name,
+            ));
+        } else {
+            message.push_str(&format!(
+                "; partial cleanup failed: {}; default runtime image was left untouched",
+                self.failures.join("; "),
+            ));
+        }
+
+        message
     }
 }

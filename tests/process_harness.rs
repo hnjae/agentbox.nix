@@ -206,6 +206,30 @@ fn podman_container_exists_returns_true_when_podman_reports_presence() {
 }
 
 #[test]
+fn podman_volume_exists_treats_exit_status_one_as_missing() {
+    let fake_bins = support::FakeBinDir::new();
+    fake_bins.install_exact_failure("podman", &["volume", "exists", "agentbox-demo"], "", 1);
+
+    let exists = Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .volume_exists("agentbox-demo")
+        .unwrap();
+
+    assert!(!exists);
+}
+
+#[test]
+fn podman_volume_exists_returns_true_when_podman_reports_presence() {
+    let fake_bins = support::FakeBinDir::new();
+    fake_bins.install_exact_response("podman", &["volume", "exists", "agentbox-demo"], "");
+
+    let exists = Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .volume_exists("agentbox-demo")
+        .unwrap();
+
+    assert!(exists);
+}
+
+#[test]
 fn podman_build_image_uses_containerfile_and_context_arguments() {
     let fake_bins = support::FakeBinDir::new();
     let image = RuntimeKind::Opencode.default_image();
