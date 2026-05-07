@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::runtime::RuntimeKind;
+use crate::runtime::default_image::default_image_context_hash;
 use crate::state::AgentboxStateRoot;
 use crate::{Error, Result};
 
@@ -41,7 +42,7 @@ impl RuntimeImageState {
             package: package.name.to_string(),
             install_source: package.install_source.to_string(),
             image: runtime.default_image(),
-            image_context_hash: runtime.default_image_context_hash().to_string(),
+            image_context_hash: default_image_context_hash().to_string(),
             installed_version: version.clone(),
             latest_seen_version: version,
             latest_checked_at,

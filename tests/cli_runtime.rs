@@ -9,6 +9,7 @@
 use std::fs;
 
 use agentbox::runtime::RuntimeKind;
+use agentbox::runtime::default_image::default_image_context_hash;
 use predicates::prelude::*;
 
 #[path = "support/mod.rs"]
@@ -20,7 +21,7 @@ use support::{CliHarness, operation_names};
 fn runtime_update_codex_rebuilds_and_records_state_when_state_is_missing() {
     let harness = CliHarness::new();
     let image = RuntimeKind::Codex.default_image();
-    let context_hash = RuntimeKind::Codex.default_image_context_hash();
+    let context_hash = default_image_context_hash();
 
     let mut command = harness.agentbox_command();
     command.args(["runtime", "update", "codex"]);
@@ -59,7 +60,7 @@ fn runtime_update_codex_rebuilds_and_records_state_when_state_is_missing() {
 fn runtime_update_opencode_rebuilds_and_records_state_when_state_is_missing() {
     let harness = CliHarness::new();
     let image = RuntimeKind::Opencode.default_image();
-    let context_hash = RuntimeKind::Opencode.default_image_context_hash();
+    let context_hash = default_image_context_hash();
 
     let mut command = harness.agentbox_command();
     command.args(["runtime", "update", "opencode"]);
@@ -98,7 +99,7 @@ fn runtime_update_opencode_rebuilds_and_records_state_when_state_is_missing() {
 fn runtime_update_codex_skips_rebuild_when_image_and_state_are_current() {
     let harness = CliHarness::new();
     let image = RuntimeKind::Codex.default_image();
-    let context_hash = RuntimeKind::Codex.default_image_context_hash();
+    let context_hash = default_image_context_hash();
     let state_path = codex_state_path(&harness);
     fs::create_dir_all(state_path.parent().unwrap()).unwrap();
     fs::write(
@@ -141,7 +142,7 @@ fn runtime_update_codex_skips_rebuild_when_image_and_state_are_current() {
 fn runtime_update_opencode_skips_rebuild_when_image_and_state_are_current() {
     let harness = CliHarness::new();
     let image = RuntimeKind::Opencode.default_image();
-    let context_hash = RuntimeKind::Opencode.default_image_context_hash();
+    let context_hash = default_image_context_hash();
     let state_path = opencode_state_path(&harness);
     fs::create_dir_all(state_path.parent().unwrap()).unwrap();
     fs::write(

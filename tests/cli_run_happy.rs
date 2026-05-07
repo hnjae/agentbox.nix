@@ -9,6 +9,7 @@
 use std::fs;
 
 use agentbox::runtime::RuntimeKind;
+use agentbox::runtime::default_image::default_image_context_hash;
 use predicates::prelude::*;
 
 #[path = "support/mod.rs"]
@@ -25,7 +26,7 @@ fn run_creates_starts_serves_waits_and_suggests_connect_for_a_new_session() {
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
     let image = RuntimeKind::Opencode.default_image();
-    let context_hash = RuntimeKind::Opencode.default_image_context_hash();
+    let context_hash = default_image_context_hash();
     let harness = Harness::new();
     harness.mark_default_image_absent();
     let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
@@ -176,7 +177,7 @@ fn run_launches_codex_server_in_yolo_mode() {
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
     let image = RuntimeKind::Codex.default_image();
-    let context_hash = RuntimeKind::Codex.default_image_context_hash();
+    let context_hash = default_image_context_hash();
     let harness = Harness::new();
     harness.mark_default_image_absent();
     let endpoint = ReadyEndpoint::start(RuntimeKind::Codex);

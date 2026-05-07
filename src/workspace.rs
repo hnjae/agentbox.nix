@@ -50,9 +50,10 @@ pub fn resolve_workspace_identity_with_git(
         ));
     }
 
-    let digest64 = git_root_digest64(canonical_git_root.as_ref());
-    let hash12 = hash12_from_digest64(&digest64);
-    let container_name = container_name_from_canonical_root(&canonical_git_root);
+    let digest = git_root_digest(canonical_git_root.as_ref());
+    let digest64 = digest::hex_lower(digest);
+    let hash12 = digest::hex_prefix(digest, GIT_ROOT_HASH_LEN);
+    let container_name = container_name_from_canonical_root_and_hash(&canonical_git_root, &hash12);
 
     Ok(WorkspaceIdentity {
         requested_target: requested_target.clone(),
@@ -65,38 +66,27 @@ pub fn resolve_workspace_identity_with_git(
     })
 }
 
-pub fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
-    digest::sha256_bytes(bytes)
-}
-
-pub fn hex_digest(bytes: &[u8; 32]) -> String {
-    digest::hex_lower(bytes)
-}
-
-pub fn hash12(bytes: &[u8]) -> String {
-    hash12_from_digest64(&digest64_for_bytes(bytes))
-}
-
 pub fn git_root_digest64(canonical_git_root: &Utf8Path) -> String {
-    digest64_for_bytes(canonical_git_root.as_str().as_bytes())
+    digest::sha256_hex(canonical_git_root.as_str().as_bytes())
 }
 
 pub fn git_root_hash12(canonical_git_root: &Utf8Path) -> String {
-    hash12_from_digest64(&git_root_digest64(canonical_git_root))
+    digest::hex_prefix(git_root_digest(canonical_git_root), GIT_ROOT_HASH_LEN)
 }
 
-fn digest64_for_bytes(bytes: &[u8]) -> String {
-    digest::sha256_hex(bytes)
-}
-
-fn hash12_from_digest64(digest64: &str) -> String {
-    digest64.chars().take(GIT_ROOT_HASH_LEN).collect()
+fn git_root_digest(canonical_git_root: &Utf8Path) -> [u8; 32] {
+    digest::sha256_bytes(canonical_git_root.as_str().as_bytes())
 }
 
 pub fn container_name_from_canonical_root(root: impl AsRef<str>) -> String {
     let root = root.as_ref();
-    let escaped = escape_root(root);
     let hash = git_root_hash12(Utf8Path::new(root));
+    container_name_from_canonical_root_and_hash(root, &hash)
+}
+
+fn container_name_from_canonical_root_and_hash(root: impl AsRef<str>, hash: &str) -> String {
+    let root = root.as_ref();
+    let escaped = escape_root(root);
     let separator_len = 1 + hash.len();
     let max_suffix_len = MAX_CONTAINER_NAME_LEN - CONTAINER_PREFIX.len() - separator_len;
     let suffix = if escaped.len() <= max_suffix_len {

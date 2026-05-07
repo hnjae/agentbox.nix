@@ -17,6 +17,7 @@ use crate::metadata::{DefaultRuntimeImageLabelInput, default_runtime_image_label
 use crate::podman::{Podman, PodmanBuildOptions};
 use crate::process::ProcessRunner;
 use crate::runtime::RuntimeKind;
+use crate::runtime::default_image::default_image_context_hash;
 use crate::{Error, Result};
 
 mod image_state;
@@ -63,7 +64,7 @@ fn update(runtime: RuntimeKind, verbose: bool) -> Result<()> {
     diagnostic::info(format!("resolving latest `{}` version", package.name));
     let latest_version = resolve_latest_runtime_version(package.name)?;
     let image = runtime.default_image();
-    let context_hash = runtime.default_image_context_hash();
+    let context_hash = default_image_context_hash();
     let image_exists = podman.image_exists(&image)?;
     let prior_state = read_runtime_image_state(runtime)?;
 
@@ -125,7 +126,7 @@ fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> 
         labels: default_runtime_image_labels(DefaultRuntimeImageLabelInput {
             runtime,
             image: &image,
-            image_context_hash: runtime.default_image_context_hash(),
+            image_context_hash: default_image_context_hash(),
             version,
             resolved_at: &resolved_at,
         }),

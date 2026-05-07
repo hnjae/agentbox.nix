@@ -151,7 +151,7 @@ fn image_context_hash(files: &[EmbeddedDefaultImageFile]) -> String {
         hasher.update([0]);
     }
 
-    digest::hex_lower(hasher.finalize())[..IMAGE_CONTEXT_HASH_LEN].to_string()
+    digest::hex_prefix(hasher.finalize(), IMAGE_CONTEXT_HASH_LEN)
 }
 
 #[cfg(test)]

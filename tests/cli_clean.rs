@@ -10,6 +10,7 @@ use std::fs;
 
 use agentbox::prompt;
 use agentbox::runtime::RuntimeKind;
+use agentbox::runtime::default_image::default_image_context_hash;
 use predicates::prelude::*;
 
 #[path = "support/mod.rs"]
@@ -240,7 +241,7 @@ fn clean_preserves_runtime_image_state_when_active_image_is_still_in_use() {
     let workspace = &fixture.workspace;
     let harness = Harness::new();
     let current_image = RuntimeKind::Opencode.default_image();
-    let current_hash = RuntimeKind::Opencode.default_image_context_hash();
+    let current_hash = default_image_context_hash();
     let old_image = "localhost/agentbox-opencode:ctx-0000000000000000";
     harness.write_images(&podman_images_fixture(&[
         runtime_image_fixture(RuntimeKind::Opencode, &current_image, current_hash),
@@ -325,6 +326,6 @@ fn runtime_state(runtime: &str, package: &str, image: &str) -> String {
   "image_built_at": 1
 }}
 "#,
-        RuntimeKind::Opencode.default_image_context_hash()
+        default_image_context_hash()
     )
 }

@@ -45,10 +45,6 @@ impl RuntimeKind {
         default_image::default_image(self)
     }
 
-    pub fn default_image_context_hash(self) -> &'static str {
-        default_image::default_image_context_hash()
-    }
-
     pub fn materialize_default_image_context(self) -> Result<DefaultImageBuildContext> {
         let profile = self.profile();
         (profile.materialize_default_image_context)()

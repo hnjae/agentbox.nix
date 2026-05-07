@@ -228,7 +228,7 @@ mod tests {
     fn default_runtime_image_labels_round_trip_through_metadata_parser() {
         let runtime = RuntimeKind::Codex;
         let image = runtime.default_image();
-        let image_context_hash = runtime.default_image_context_hash();
+        let image_context_hash = default_image::default_image_context_hash();
 
         let labels = default_runtime_image_labels(DefaultRuntimeImageLabelInput {
             runtime,
@@ -267,7 +267,7 @@ mod tests {
         let mut labels = default_runtime_image_labels(DefaultRuntimeImageLabelInput {
             runtime,
             image: &image,
-            image_context_hash: runtime.default_image_context_hash(),
+            image_context_hash: default_image::default_image_context_hash(),
             version: "1.2.3",
             resolved_at: "12345",
         });

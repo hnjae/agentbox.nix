@@ -21,6 +21,7 @@ use agentbox::podman::{
     PodmanPsContainer,
 };
 use agentbox::runtime::RuntimeKind;
+use agentbox::runtime::default_image::default_image_context_hash;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
 use camino::Utf8Path;
@@ -130,7 +131,7 @@ pub fn default_runtime_images_fixture() -> String {
             runtime_image_fixture(
                 *runtime,
                 &runtime.default_image(),
-                runtime.default_image_context_hash(),
+                default_image_context_hash(),
             )
         })
         .collect::<Vec<_>>();
@@ -441,7 +442,7 @@ pub fn managed_labels(
     runtime: RuntimeKind,
     logical_name: &str,
 ) -> BTreeMap<String, String> {
-    let image = RuntimeKind::Opencode.default_image();
+    let image = runtime.default_image();
     managed_labels_for_image(git_root, git_root_hash, runtime, &image, logical_name)
 }
 
