@@ -12,6 +12,7 @@ use crate::error::Result;
 pub mod attach;
 pub mod clean;
 pub mod completion;
+mod container_cleanup;
 pub mod health;
 pub mod ls;
 mod output;

@@ -22,6 +22,7 @@ use crate::session::{
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
+use super::container_cleanup::{ContainerCleanupVerification, ManagedContainerCleanup};
 use super::workspace_flow::with_locked_git_root;
 
 pub fn run(args: StopArgs) -> Result<()> {
@@ -368,22 +369,29 @@ fn cleanup_sessions<'a>(
 }
 
 fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
-    let mut reasons = Vec::new();
-    if let Err(error) = podman.stop_ignore(&session.container_name) {
-        reasons.push(CleanupFailureReason::StopFailed(error.to_string()));
-    }
+    let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &session.container_name);
 
-    match podman.container_exists(&session.container_name) {
-        Ok(false) => None,
-        Ok(true) => {
+    match cleanup.verification() {
+        ContainerCleanupVerification::Removed => None,
+        ContainerCleanupVerification::StillExists => {
+            let mut reasons = cleanup_failure_reasons(&cleanup);
             reasons.push(CleanupFailureReason::StillExists);
             Some(CleanupFailure::new(&session.container_name, reasons))
         }
-        Err(error) => {
+        ContainerCleanupVerification::Failed(error) => {
+            let mut reasons = cleanup_failure_reasons(&cleanup);
             reasons.push(CleanupFailureReason::VerificationFailed(error.to_string()));
             Some(CleanupFailure::new(&session.container_name, reasons))
         }
     }
+}
+
+fn cleanup_failure_reasons(cleanup: &ManagedContainerCleanup) -> Vec<CleanupFailureReason> {
+    cleanup
+        .stop_error()
+        .map(|error| CleanupFailureReason::StopFailed(error.to_string()))
+        .into_iter()
+        .collect()
 }
 
 fn finish_cleanup(identity: &str, failures: &[CleanupFailure]) -> Result<()> {

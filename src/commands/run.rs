@@ -22,6 +22,7 @@ use crate::session::{
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
+use super::container_cleanup::{ContainerCleanupVerification, ManagedContainerCleanup};
 use super::runtime::ensure_default_runtime_image;
 use super::runtime_command::server_runtime_command;
 use super::server_readiness::{ServerEndpointWait, wait_for_server_endpoint};
@@ -271,15 +272,16 @@ impl InterruptedRunCleanup {
     ) -> Self {
         let mut cleanup = Self::default();
         let container_name = &workspace.container_name;
+        let container_cleanup = ManagedContainerCleanup::stop_and_verify(podman, container_name);
 
-        if let Err(error) = podman.stop_ignore(container_name) {
+        if let Some(error) = container_cleanup.stop_error() {
             cleanup
                 .failures
                 .push(format!("container stop failed: {error}"));
         }
 
-        match podman.container_exists(container_name) {
-            Ok(false) => {
+        match container_cleanup.verification() {
+            ContainerCleanupVerification::Removed => {
                 if !cache_volume_existed_before {
                     match podman.remove_volume(container_name) {
                         Ok(()) => cleanup.cache_volume_removed = true,
@@ -289,7 +291,7 @@ impl InterruptedRunCleanup {
                     }
                 }
             }
-            Ok(true) => {
+            ContainerCleanupVerification::StillExists => {
                 cleanup
                     .failures
                     .push("container still exists after cleanup".to_string());
@@ -300,7 +302,7 @@ impl InterruptedRunCleanup {
                     );
                 }
             }
-            Err(error) => {
+            ContainerCleanupVerification::Failed(error) => {
                 cleanup
                     .failures
                     .push(format!("container cleanup verification failed: {error}"));
