@@ -10,10 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cli::CleanArgs;
 use crate::diagnostic;
-use crate::metadata::{
-    LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_IMAGE_CONTEXT_HASH,
-    LABEL_RUNTIME, default_runtime_image_label_filter,
-};
+use crate::metadata::{DefaultRuntimeImageMetadata, default_runtime_image_label_filter};
 use crate::podman::{Podman, PodmanContainerInspect, PodmanImage, PodmanVolume};
 use crate::prompt;
 use crate::runtime::{RuntimeKind, default_image};
@@ -289,31 +286,11 @@ fn labeled_default_runtime_images(podman: &Podman) -> Result<Vec<DefaultRuntimeI
 fn labeled_default_runtime_image_candidates(
     image: &PodmanImage,
 ) -> Vec<DefaultRuntimeImageCandidate> {
-    if image
-        .labels
-        .get(LABEL_DEFAULT_RUNTIME_IMAGE)
-        .map(String::as_str)
-        != Some(LABEL_DEFAULT_RUNTIME_IMAGE_VALUE)
-    {
-        return Vec::new();
-    }
-
-    let Some(runtime) = image
-        .labels
-        .get(LABEL_RUNTIME)
-        .and_then(|runtime| runtime.parse::<RuntimeKind>().ok())
-    else {
+    let Some(metadata) = DefaultRuntimeImageMetadata::from_labels(&image.labels) else {
         return Vec::new();
     };
-
-    let Some(context_hash) = image
-        .labels
-        .get(LABEL_IMAGE_CONTEXT_HASH)
-        .map(String::as_str)
-        .filter(|hash| default_image::is_default_image_context_hash(hash))
-    else {
-        return Vec::new();
-    };
+    let runtime = metadata.runtime();
+    let context_hash = metadata.image_context_hash();
 
     image
         .references()

@@ -13,10 +13,7 @@ use camino::Utf8Path;
 
 use crate::cli::{RuntimeArgs, RuntimeCommand};
 use crate::diagnostic;
-use crate::metadata::{
-    LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_IMAGE,
-    LABEL_IMAGE_CONTEXT_HASH, LABEL_RUNTIME,
-};
+use crate::metadata::{DefaultRuntimeImageLabelInput, default_runtime_image_labels};
 use crate::podman::{Podman, PodmanBuildOptions};
 use crate::process::ProcessRunner;
 use crate::runtime::RuntimeKind;
@@ -118,35 +115,24 @@ fn build_runtime_image_and_record_state(
 fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> Result<()> {
     let package = runtime.package_spec();
     let context = runtime.materialize_default_image_context()?;
+    let image = runtime.default_image();
     let resolved_at = now_unix_seconds()?.to_string();
     let options = PodmanBuildOptions {
         build_args: BTreeMap::from([
             ("AGENTBOX_RUNTIME".to_string(), runtime.as_str().to_string()),
             (package.build_arg.to_string(), version.to_string()),
         ]),
-        labels: BTreeMap::from([
-            (
-                LABEL_DEFAULT_RUNTIME_IMAGE.to_string(),
-                LABEL_DEFAULT_RUNTIME_IMAGE_VALUE.to_string(),
-            ),
-            (LABEL_RUNTIME.to_string(), runtime.as_str().to_string()),
-            (LABEL_IMAGE.to_string(), runtime.default_image()),
-            (
-                LABEL_IMAGE_CONTEXT_HASH.to_string(),
-                runtime.default_image_context_hash().to_string(),
-            ),
-            (package.package_label.to_string(), package.name.to_string()),
-            (package.version_label.to_string(), version.to_string()),
-            (
-                package.install_source_label.to_string(),
-                package.install_source.to_string(),
-            ),
-            (package.resolved_at_label.to_string(), resolved_at),
-        ]),
+        labels: default_runtime_image_labels(DefaultRuntimeImageLabelInput {
+            runtime,
+            image: &image,
+            image_context_hash: runtime.default_image_context_hash(),
+            version,
+            resolved_at: &resolved_at,
+        }),
     };
 
     podman.build_image(
-        &runtime.default_image(),
+        &image,
         context.containerfile().as_ref(),
         context.root(),
         &options,
