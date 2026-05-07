@@ -1,7 +1,14 @@
-use comfy_table::Table;
+use comfy_table::{Table, presets::NOTHING};
 use serde::Serialize;
 
 use crate::error::Result;
+
+pub(super) fn table(headers: impl Into<comfy_table::Row>) -> Table {
+    let mut table = Table::new();
+    table.load_preset(NOTHING);
+    table.set_header(headers);
+    table
+}
 
 pub(super) fn render_table(mut table: Table) -> String {
     trim_outer_padding(&mut table);

@@ -12,7 +12,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::runtime::RuntimeKind;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "kebab-case")]
 pub enum CompletionShell {
     Bash,
     Zsh,
@@ -21,7 +22,7 @@ pub enum CompletionShell {
 
 impl CompletionShell {
     fn variants() -> &'static [Self] {
-        &[Self::Bash, Self::Zsh, Self::Fish]
+        <Self as ValueEnum>::value_variants()
     }
 
     pub fn as_str(self) -> &'static str {
@@ -37,18 +38,6 @@ impl CompletionShell {
             .iter()
             .map(|shell| shell.as_str())
             .collect()
-    }
-}
-
-impl std::str::FromStr for CompletionShell {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::variants()
-            .iter()
-            .copied()
-            .find(|shell| shell.as_str() == value)
-            .ok_or_else(|| format!("unsupported shell `{value}`"))
     }
 }
 
@@ -96,6 +85,7 @@ pub enum Command {
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct CompletionArgs {
+    #[arg(value_enum)]
     pub shell: CompletionShell,
 }
 

@@ -1,4 +1,4 @@
-use comfy_table::{Cell, Table, presets::NOTHING};
+use comfy_table::Cell;
 use serde::Serialize;
 
 use crate::Error;
@@ -35,9 +35,7 @@ fn print_json(rows: &[HealthRow<'_>]) -> Result<()> {
 }
 
 fn render_table(rows: &[HealthRow<'_>]) -> String {
-    let mut table = Table::new();
-    table.load_preset(NOTHING);
-    table.set_header([
+    let mut table = output::table([
         "ID",
         "CANONICAL GIT ROOT",
         "RUNTIME",

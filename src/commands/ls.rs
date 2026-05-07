@@ -1,4 +1,4 @@
-use comfy_table::{Cell, Table, presets::NOTHING};
+use comfy_table::Cell;
 use serde::Serialize;
 
 use crate::cli::{LsArgs, OutputFormat};
@@ -28,9 +28,7 @@ pub fn print_json(sessions: &[SessionRecord]) -> Result<()> {
 }
 
 pub fn render_table(sessions: &[SessionRecord]) -> String {
-    let mut table = Table::new();
-    table.load_preset(NOTHING);
-    table.set_header(["ID", "CANONICAL GIT ROOT", "RUNTIME", "STATUS", "ENDPOINT"]);
+    let mut table = output::table(["ID", "CANONICAL GIT ROOT", "RUNTIME", "STATUS", "ENDPOINT"]);
 
     for session in sorted_session_refs_by_identity(sessions) {
         let display = session.display();

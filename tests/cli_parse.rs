@@ -119,6 +119,17 @@ fn core_commands_parse_into_expected_variants() {
 }
 
 #[test]
+fn completion_rejects_unknown_shell() {
+    let error = Cli::try_parse_from(["agentbox", "completion", "powershell"]).unwrap_err();
+
+    assert_eq!(error.exit_code(), 2);
+    assert!(
+        error.to_string().contains("invalid value 'powershell'"),
+        "expected clap to reject unsupported completion shells"
+    );
+}
+
+#[test]
 fn clean_accepts_cleanup_flags() {
     for (args, expected) in [
         (
