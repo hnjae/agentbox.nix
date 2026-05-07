@@ -371,7 +371,8 @@ Volume cleanup rules:
 - `clean` only considers named volumes whose names match the current workspace
   cache volume shape `agentbox-...-<12 hex>`.
 - A candidate volume is skipped when any Podman container, managed or
-  unmanaged, mounts that exact volume source.
+  unmanaged, mounts that exact named volume source. Bind mounts whose host
+  source path happens to match the volume name do not count as volume usage.
 - `clean` does not call broad Podman volume pruning such as
   `podman volume prune --all`.
 
