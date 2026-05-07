@@ -6,25 +6,25 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::{Path, PathBuf};
-
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 
 use crate::cli::StopArgs;
 use crate::diagnostic;
-use crate::paths::path_buf_to_utf8;
 use crate::podman::Podman;
 use crate::prompt;
 use crate::session::{
     SessionGroup, SessionRecord, discover_managed_sessions, exact_git_root_matches,
     partition_sessions_by_git_root, select_stable_id_prefix,
 };
-use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
 use super::container_cleanup::{ContainerCleanupFailure, cleanup_managed_containers};
 use super::session_targets::SessionTargetKind;
 use super::workspace_flow::{LockedGitRoot, with_locked_git_root};
+
+mod target;
+
+use target::{StopTarget, StopTargetInput, resolve_stop_target};
 
 pub fn run(args: StopArgs) -> Result<()> {
     if args.all {
@@ -144,27 +144,6 @@ pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandi
     )
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum StopTargetInput {
-    Cli(PathBuf),
-    StableId(String),
-}
-
-impl StopTargetInput {
-    fn display(&self) -> String {
-        match self {
-            Self::Cli(path) => path.display().to_string(),
-            Self::StableId(id) => id.clone(),
-        }
-    }
-}
-
-enum StopTarget {
-    ResolvedGitRoot(Utf8PathBuf),
-    ExactStoredGitRootPath(Utf8PathBuf),
-    StableId(String),
-}
-
 fn stop_git_root(git_root: &Utf8Path, force: bool, target: &StopTargetInput) -> Result<()> {
     stop_exact_git_root_matches(git_root, force, target, ExactGitRootStopMode::Scoped)
 }
@@ -223,12 +202,7 @@ fn stop_exact_git_root_matches(
             )));
         }
 
-        if sessions.len() > 1 && !force {
-            return Err(Error::msg(format!(
-                "duplicate managed sessions exist for {target_ref}; rerun `agentbox stop --force {}` to remove all exact matches",
-                target.display()
-            )));
-        }
+        require_force_for_duplicate_matches(sessions.len() > 1, force, &target_ref, target)?;
 
         cleanup_selected_sessions(&locked, &sessions)
     })?;
@@ -242,12 +216,12 @@ fn stop_stable_id(prefix: &str, force: bool, target: &StopTargetInput) -> Result
     let selection = select_stable_id_prefix(&sessions, prefix)?;
     let id = selection.id().to_string();
 
-    if selection.has_duplicate_sessions() && !force {
-        return Err(Error::msg(format!(
-            "duplicate managed sessions exist for stable id `{id}`; rerun `agentbox stop --force {}` to remove all exact matches",
-            target.display()
-        )));
-    }
+    require_force_for_duplicate_matches(
+        selection.has_duplicate_sessions(),
+        force,
+        &format!("stable id `{id}`"),
+        target,
+    )?;
 
     let sessions = lockable_stable_id_matches(selection.into_sessions(), &id)?;
     let failures = cleanup_stable_id_matches(sessions)?;
@@ -264,34 +238,6 @@ fn stop_all_running() -> Result<()> {
     let failures = cleanup_all_running_matches(sessions)?;
 
     finish_cleanup("all running managed sessions", &failures)
-}
-
-fn resolve_stop_target(target: &StopTargetInput) -> Result<StopTarget> {
-    match target {
-        StopTargetInput::Cli(path) => resolve_cli_stop_target(path),
-        StopTargetInput::StableId(prefix) => Ok(StopTarget::StableId(prefix.clone())),
-    }
-}
-
-fn resolve_cli_stop_target(target: &Path) -> Result<StopTarget> {
-    if target.exists() {
-        return resolve_workspace_identity(target)
-            .map(|workspace| StopTarget::ResolvedGitRoot(workspace.canonical_git_root));
-    }
-
-    if target.is_absolute() {
-        let git_root = path_buf_to_utf8(target.to_path_buf())?;
-        return Ok(StopTarget::ExactStoredGitRootPath(git_root));
-    }
-
-    let prefix = target.to_str().ok_or_else(|| {
-        Error::msg(format!(
-            "non-utf8 target `{}` cannot be used as a stable id prefix",
-            target.display()
-        ))
-    })?;
-
-    Ok(StopTarget::StableId(prefix.to_string()))
 }
 
 fn lockable_stable_id_matches(
@@ -318,6 +264,22 @@ fn lockable_stable_id_matches(
     }
 
     Ok(lockable)
+}
+
+fn require_force_for_duplicate_matches(
+    has_duplicates: bool,
+    force: bool,
+    target_ref: &str,
+    target: &StopTargetInput,
+) -> Result<()> {
+    if has_duplicates && !force {
+        Err(Error::msg(format!(
+            "duplicate managed sessions exist for {target_ref}; rerun `agentbox stop --force {}` to remove all exact matches",
+            target.display()
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<ContainerCleanupFailure>> {
