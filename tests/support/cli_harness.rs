@@ -240,9 +240,9 @@ impl CliHarness {
         command.assert()
     }
 
-    pub fn attach_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
+    pub fn connect_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
         let mut command = self.agentbox_command();
-        command.arg("attach").arg(target);
+        command.arg("connect").arg(target);
         command.assert()
     }
 

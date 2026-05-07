@@ -28,7 +28,7 @@ use support::{
 fn required_error_cases_are_actionable() {
     workspace_identity_errors_are_actionable();
     host_preflight_errors_are_actionable();
-    attach_side_drift_errors_are_actionable();
+    connect_side_drift_errors_are_actionable();
     runtime_command_failures_are_actionable();
 }
 
@@ -210,7 +210,7 @@ fn host_preflight_errors_are_actionable() {
     );
 }
 
-fn attach_side_drift_errors_are_actionable() {
+fn connect_side_drift_errors_are_actionable() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -234,7 +234,7 @@ fn attach_side_drift_errors_are_actionable() {
     );
 
     missing_labels
-        .attach_assert(target)
+        .connect_assert(target)
         .failure()
         .stderr(predicates::str::contains("missing required session labels"))
         .stderr(predicates::str::contains(
@@ -255,7 +255,7 @@ fn attach_side_drift_errors_are_actionable() {
     );
 
     missing_cache
-        .attach_assert(target)
+        .connect_assert(target)
         .failure()
         .stderr(predicates::str::contains("missing required cache mount"))
         .stderr(predicates::str::contains(

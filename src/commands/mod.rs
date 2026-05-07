@@ -9,9 +9,9 @@
 use crate::cli::Command;
 use crate::error::Result;
 
-pub mod attach;
 pub mod clean;
 pub mod completion;
+pub mod connect;
 mod container_cleanup;
 pub mod health;
 pub mod ls;
@@ -30,7 +30,7 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
     match command {
         Command::Run(args) => run::run(args, verbose),
         Command::Runtime(args) => runtime::run(args, verbose),
-        Command::Attach(args) => attach::run(args),
+        Command::Connect(args) => connect::run(args),
         Command::Ls(args) => ls::run(args),
         Command::Health(args) => health::run(args),
         Command::Stop(args) => stop::run(args),

@@ -17,14 +17,14 @@ use super::record::SessionRecord;
 use super::selection::run_command_hint;
 use super::status::{SessionFailure, SessionStatus, session_failure_requires_action_error};
 
-pub(crate) struct AttachableSession<'a> {
+pub(crate) struct ConnectableSession<'a> {
     session: &'a SessionRecord,
     runtime: RuntimeKind,
     endpoint: &'a AttachEndpoint,
     launch_directory: &'a Utf8Path,
 }
 
-impl<'a> AttachableSession<'a> {
+impl<'a> ConnectableSession<'a> {
     pub(crate) fn session(&self) -> &'a SessionRecord {
         self.session
     }
@@ -42,17 +42,17 @@ impl<'a> AttachableSession<'a> {
     }
 }
 
-pub(crate) fn prepare_attach_session<'a>(
+pub(crate) fn prepare_connect_session<'a>(
     workspace: &WorkspaceIdentity,
     session: &'a SessionRecord,
-) -> Result<AttachableSession<'a>> {
-    validate_attachable_status(workspace, session)?;
+) -> Result<ConnectableSession<'a>> {
+    validate_connectable_status(workspace, session)?;
 
     let runtime = session_runtime(workspace, session)?;
     let endpoint = session_endpoint(workspace, session)?;
     let launch_directory = session_launch_directory(workspace, session)?;
 
-    Ok(AttachableSession {
+    Ok(ConnectableSession {
         session,
         runtime,
         endpoint,
@@ -84,7 +84,7 @@ fn session_launch_directory<'a>(
     })
 }
 
-fn validate_attachable_status(
+fn validate_connectable_status(
     workspace: &WorkspaceIdentity,
     session: &SessionRecord,
 ) -> Result<()> {

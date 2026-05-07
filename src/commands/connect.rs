@@ -11,13 +11,13 @@ use std::process::Stdio;
 
 use camino::Utf8Path;
 
-use crate::cli::AttachArgs;
+use crate::cli::ConnectArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
 use crate::process::{ProcessRunner, format_status, run_command_status};
 use crate::prompt;
 use crate::session::{SessionRecord, discover_managed_sessions};
-use crate::session::{prepare_attach_session, run_command_hint, select_single_session};
+use crate::session::{prepare_connect_session, run_command_hint, select_single_session};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
@@ -25,60 +25,60 @@ use super::runtime_command::{RuntimeInvocation, host_client_runtime_command};
 use super::session_targets::SessionTargetKind;
 use super::workspace_flow::with_locked_workspace;
 
-pub fn run(args: AttachArgs) -> Result<()> {
-    let directory = selected_attach_directory(args.directory)?;
-    attach_directory(&directory)
+pub fn run(args: ConnectArgs) -> Result<()> {
+    let directory = selected_connect_directory(args.directory)?;
+    connect_directory(&directory)
 }
 
-fn selected_attach_directory(directory: Option<PathBuf>) -> Result<PathBuf> {
+fn selected_connect_directory(directory: Option<PathBuf>) -> Result<PathBuf> {
     match directory {
         Some(directory) => Ok(directory),
-        None => select_attach_directory(),
+        None => select_connect_directory(),
     }
 }
 
-fn select_attach_directory() -> Result<PathBuf> {
+fn select_connect_directory() -> Result<PathBuf> {
     prompt::require_interactive_terminal(
-        "agentbox attach requires a target when stdin or stderr is not a TTY",
+        "agentbox connect requires a target when stdin or stderr is not a TTY",
     )?;
     let podman = Podman::new();
-    let candidates = attach_prompt_candidates(&discover_managed_sessions(&podman)?);
+    let candidates = connect_prompt_candidates(&discover_managed_sessions(&podman)?);
 
     if candidates.is_empty() {
-        return Err(Error::msg("no attachable managed sessions exist"));
+        return Err(Error::msg("no connectable managed sessions exist"));
     }
 
     let selected = prompt::select_one(
         "Select session",
         candidates,
-        "agentbox attach requires a target when stdin or stderr is not a TTY",
+        "agentbox connect requires a target when stdin or stderr is not a TTY",
     )?;
     Ok(selected.into_value())
 }
 
-fn attach_directory(directory: &Path) -> Result<()> {
+fn connect_directory(directory: &Path) -> Result<()> {
     with_locked_workspace(directory, false, |locked| {
         let workspace = locked.workspace();
         let sessions = locked.discover_sessions()?;
         let Some(session) = select_single_session(&sessions, workspace)? else {
             return Err(no_session_error(workspace));
         };
-        let attach_session = prepare_attach_session(workspace, session)?;
+        let connect_session = prepare_connect_session(workspace, session)?;
 
         let process_runner = ProcessRunner::new();
         let client = host_client_runtime_command(
-            attach_session.runtime(),
-            attach_session.endpoint(),
-            attach_session.launch_directory(),
+            connect_session.runtime(),
+            connect_session.endpoint(),
+            connect_session.launch_directory(),
         );
         let retry_run_command =
-            run_command_hint(Some(attach_session.runtime().as_str()), workspace);
-        report_launch_directory_notice(workspace, attach_session.launch_directory());
+            run_command_hint(Some(connect_session.runtime().as_str()), workspace);
+        report_launch_directory_notice(workspace, connect_session.launch_directory());
 
         run_host_client(&process_runner, &client).map_err(|error| {
             Error::msg(format!(
-                "failed to attach to managed session `{}` for `{}`: {error}. If the session already exited, rerun `{}` or remove the leftover container with `agentbox stop {}`.",
-                attach_session.session().container_name,
+                "failed to connect to managed session `{}` for `{}`: {error}. If the session already exited, rerun `{}` or remove the leftover container with `agentbox stop {}`.",
+                connect_session.session().container_name,
                 workspace.canonical_git_root,
                 retry_run_command,
                 workspace.requested_target,
@@ -89,13 +89,13 @@ fn attach_directory(directory: &Path) -> Result<()> {
     Ok(())
 }
 
-pub type AttachPromptCandidate = prompt::Choice<PathBuf>;
+pub type ConnectPromptCandidate = prompt::Choice<PathBuf>;
 
-pub fn attach_prompt_candidates(sessions: &[SessionRecord]) -> Vec<AttachPromptCandidate> {
-    SessionTargetKind::AttachRoot.prompt_choices(
+pub fn connect_prompt_candidates(sessions: &[SessionRecord]) -> Vec<ConnectPromptCandidate> {
+    SessionTargetKind::ConnectRoot.prompt_choices(
         sessions,
         |candidate| PathBuf::from(candidate.value()),
-        |candidate| candidate.attach_prompt_label(),
+        |candidate| candidate.connect_prompt_label(),
     )
 }
 
@@ -113,7 +113,7 @@ fn report_launch_directory_notice(workspace: &WorkspaceIdentity, launch_director
     }
 
     diagnostic::info(format!(
-        "agentbox attach: `{}` identified the workspace; using stored launch directory `{}`",
+        "agentbox connect: `{}` identified the workspace; using stored launch directory `{}`",
         workspace.canonical_target, launch_directory,
     ));
 }

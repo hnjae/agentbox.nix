@@ -191,7 +191,7 @@ pub(crate) fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
 
 fn running_existing_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
     Error::msg(format!(
-        "managed session `{}` is already running for `{}`; use `agentbox attach {}` to join it or `agentbox stop {}` to stop it first",
+        "managed session `{}` is already running for `{}`; use `agentbox connect {}` to connect to it or `agentbox stop {}` to stop it first",
         session.container_name,
         workspace.canonical_git_root,
         workspace.requested_target,

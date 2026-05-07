@@ -62,7 +62,7 @@ pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
 
 fn completion_target_kind(command: CompletionRootCommand) -> SessionTargetKind {
     match command {
-        CompletionRootCommand::Attach => SessionTargetKind::AttachRoot,
+        CompletionRootCommand::Connect => SessionTargetKind::ConnectRoot,
         CompletionRootCommand::Health | CompletionRootCommand::Stop => SessionTargetKind::StableId,
     }
 }

@@ -20,7 +20,7 @@ use support::{
 };
 
 #[test]
-fn run_creates_starts_serves_waits_and_attaches_for_a_new_session() {
+fn run_creates_starts_serves_waits_and_suggests_connect_for_a_new_session() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -203,7 +203,7 @@ fn run_launches_codex_server_in_yolo_mode() {
                 .and(predicate::str::contains(format!(
                     "is ready at `{expected_endpoint}`"
                 )))
-                .and(predicate::str::contains("use `agentbox attach")),
+                .and(predicate::str::contains("use `agentbox connect")),
         );
     endpoint.wait();
 

@@ -3,7 +3,7 @@ use crate::session::SessionRecord;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SessionTargetKind {
-    AttachRoot,
+    ConnectRoot,
     StableId,
 }
 
@@ -13,7 +13,7 @@ impl SessionTargetKind {
         session: &'a SessionRecord,
     ) -> Option<SessionTargetCandidate<'a>> {
         let value = match self {
-            Self::AttachRoot if session.is_attachable_candidate() => {
+            Self::ConnectRoot if session.is_connectable_candidate() => {
                 session.canonical_git_root()?.as_str()
             }
             Self::StableId if session.has_stable_id() => session.stable_id()?,
@@ -72,7 +72,7 @@ impl<'a> SessionTargetCandidate<'a> {
         self.value
     }
 
-    pub(super) fn attach_prompt_label(&self) -> String {
+    pub(super) fn connect_prompt_label(&self) -> String {
         format!("{} ({})", self.canonical_git_root, self.runtime)
     }
 

@@ -6,9 +6,9 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-mod attachable;
 mod collection;
 mod conflict;
+mod connectable;
 mod discovery;
 mod endpoint;
 mod labels;
@@ -17,13 +17,13 @@ mod record;
 mod selection;
 mod status;
 
-pub(crate) use attachable::prepare_attach_session;
 pub use collection::group_sessions_by_git_root;
 pub(crate) use collection::{
     exact_git_root_matches, partition_sessions_by_git_root, sort_session_refs_by_identity,
     sorted_session_refs_by_identity,
 };
 pub(crate) use conflict::{classify_create_error_or_else, existing_session_error};
+pub(crate) use connectable::prepare_connect_session;
 pub use discovery::{
     discover_managed_sessions, discover_managed_sessions_from_ps, discover_sessions_for_git_root,
     discover_sessions_for_git_root_from_ps,

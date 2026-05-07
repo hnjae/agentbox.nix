@@ -107,7 +107,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         cleanup.check_interrupted(&interrupt)?;
 
         diagnostic::info(format!(
-            "managed session `{}` for `{}` is ready at `{endpoint}`; use `agentbox attach {}` to connect",
+            "managed session `{}` for `{}` is ready at `{endpoint}`; use `agentbox connect {}` to connect",
             workspace.container_name, workspace.canonical_git_root, workspace.requested_target,
         ));
 

@@ -60,8 +60,8 @@ pub enum Command {
     Run(RunArgs),
     /// Manage default runtime images.
     Runtime(RuntimeArgs),
-    /// Attach to a running managed session.
-    Attach(AttachArgs),
+    /// Connect to a running managed session.
+    Connect(ConnectArgs),
     /// List managed sessions.
     Ls(LsArgs),
     /// Check running managed session runtime health.
@@ -101,7 +101,7 @@ pub struct GenerateManpagesArgs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum CompletionRootCommand {
-    Attach,
+    Connect,
     Health,
     Stop,
 }
@@ -168,7 +168,7 @@ pub struct RuntimeUpdateArgs {
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
-pub struct AttachArgs {
+pub struct ConnectArgs {
     /// Workspace directory inside a git repository.
     pub directory: Option<PathBuf>,
 }

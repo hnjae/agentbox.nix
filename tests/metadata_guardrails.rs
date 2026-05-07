@@ -74,7 +74,7 @@ fn no_extra_host_metadata_is_written_beyond_locks() {
 }
 
 #[test]
-fn stale_lock_file_is_reused_in_run_and_attach_flows() {
+fn stale_lock_file_is_reused_in_run_and_connect_flows() {
     let run_fixture = support::temp_workspace("run-nested");
     let run_target = run_fixture.target.as_path();
     let run_workspace = &run_fixture.workspace;
@@ -91,27 +91,29 @@ fn stale_lock_file_is_reused_in_run_and_attach_flows() {
     endpoint.wait();
     assert_eq!(fs::read(&run_lock).unwrap(), b"stale-lock");
 
-    let attach_fixture = support::temp_workspace("attach-nested");
-    let attach_target = attach_fixture.target.as_path();
-    let attach_workspace = &attach_fixture.workspace;
-    let attach_harness = Harness::new();
-    let attach_lock =
-        lock_path_in_state_dir(attach_harness.state_home_path(), &attach_workspace.digest64);
-    fs::create_dir_all(attach_lock.parent().unwrap()).unwrap();
-    fs::write(&attach_lock, b"stale-lock").unwrap();
-    attach_harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
-        "attach-id",
-        attach_workspace,
+    let connect_fixture = support::temp_workspace("connect-nested");
+    let connect_target = connect_fixture.target.as_path();
+    let connect_workspace = &connect_fixture.workspace;
+    let connect_harness = Harness::new();
+    let connect_lock = lock_path_in_state_dir(
+        connect_harness.state_home_path(),
+        &connect_workspace.digest64,
+    );
+    fs::create_dir_all(connect_lock.parent().unwrap()).unwrap();
+    fs::write(&connect_lock, b"stale-lock").unwrap();
+    connect_harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "connect-id",
+        connect_workspace,
     )]));
-    attach_harness.write_inspect(
-        "attach-id",
-        &opencode_workspace_inspect_fixture(attach_workspace, true, true),
+    connect_harness.write_inspect(
+        "connect-id",
+        &opencode_workspace_inspect_fixture(connect_workspace, true, true),
     );
 
-    attach_harness
-        .agentbox_assert(&["attach", attach_target.to_str().unwrap()])
+    connect_harness
+        .agentbox_assert(&["connect", connect_target.to_str().unwrap()])
         .success();
-    assert_eq!(fs::read(&attach_lock).unwrap(), b"stale-lock");
+    assert_eq!(fs::read(&connect_lock).unwrap(), b"stale-lock");
 }
 
 #[test]

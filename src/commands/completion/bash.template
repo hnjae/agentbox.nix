@@ -17,9 +17,9 @@ _agentbox() {
 
     subcommand="${COMP_WORDS[1]}"
     case "$subcommand" in
-        attach)
+        connect)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
-                _agentbox_completion_roots attach
+                _agentbox_completion_roots connect
             fi
             ;;
         stop)

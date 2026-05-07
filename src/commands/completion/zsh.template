@@ -25,8 +25,8 @@ _agentbox() {
   fi
 
   case "$words[2]" in
-    attach)
-      (( CURRENT == 3 )) && _agentbox_completion_roots attach
+    connect)
+      (( CURRENT == 3 )) && _agentbox_completion_roots connect
       ;;
     stop)
       if (( CURRENT >= 3 )); then

@@ -38,7 +38,7 @@ fn helper_returns_live_roots_with_runtime_and_status_metadata() {
 
     let output = harness
         .agentbox_command()
-        .args(["__completion-roots", "attach"])
+        .args(["__completion-roots", "connect"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -50,7 +50,7 @@ fn helper_returns_live_roots_with_runtime_and_status_metadata() {
 }
 
 #[test]
-fn helper_filters_attach_and_stop_candidates_by_command() {
+fn helper_filters_connect_and_stop_candidates_by_command() {
     let running_fixture = support::temp_workspace("running");
     let failed_fixture = support::temp_workspace("failed");
     let running_workspace = &running_fixture.workspace;
@@ -78,20 +78,20 @@ fn helper_filters_attach_and_stop_candidates_by_command() {
         ),
     );
 
-    let attach = harness
+    let connect = harness
         .agentbox_command()
-        .args(["__completion-roots", "attach"])
+        .args(["__completion-roots", "connect"])
         .output()
         .unwrap();
-    assert!(attach.status.success());
-    assert!(attach.stderr.is_empty());
-    let attach = String::from_utf8(attach.stdout).unwrap();
+    assert!(connect.status.success());
+    assert!(connect.stderr.is_empty());
+    let connect = String::from_utf8(connect.stdout).unwrap();
     assert_eq!(
-        first_candidate_value(&attach),
+        first_candidate_value(&connect),
         running_workspace.canonical_git_root.as_str()
     );
-    assert!(attach.contains(running_workspace.canonical_git_root.as_str()));
-    assert!(!attach.contains(failed_workspace.canonical_git_root.as_str()));
+    assert!(connect.contains(running_workspace.canonical_git_root.as_str()));
+    assert!(!connect.contains(failed_workspace.canonical_git_root.as_str()));
 
     let stop = harness
         .agentbox_command()
@@ -136,10 +136,10 @@ fn fish_completion_script_keeps_helper_metadata_available() {
     let script = capture_completion_script_shell("fish");
 
     assert!(script.contains("agentbox __completion-roots $command 2>/dev/null"));
-    assert!(script.contains("__fish_seen_subcommand_from attach"));
+    assert!(script.contains("__fish_seen_subcommand_from connect"));
     assert!(script.contains("__fish_seen_subcommand_from health"));
     assert!(script.contains("__fish_seen_subcommand_from stop"));
-    assert!(script.contains("(__agentbox_completion_roots attach)"));
+    assert!(script.contains("(__agentbox_completion_roots connect)"));
     assert!(script.contains("(__agentbox_completion_roots health)"));
     assert!(script.contains("(__agentbox_completion_roots stop)"));
 }
@@ -149,7 +149,7 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(script.contains("run runtime attach ls health stop clean completion help"));
+    assert!(script.contains("run runtime connect ls health stop clean completion help"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -291,7 +291,7 @@ fn installed_manpages_include_referenced_subcommands() {
         "agentbox.1",
         "agentbox-run.1",
         "agentbox-runtime.1",
-        "agentbox-attach.1",
+        "agentbox-connect.1",
         "agentbox-ls.1",
         "agentbox-health.1",
         "agentbox-stop.1",

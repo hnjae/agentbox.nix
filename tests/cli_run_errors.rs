@@ -54,7 +54,7 @@ fn prompt_selection_errors_are_stable() {
 }
 
 #[test]
-fn existing_managed_session_suggests_attach_before_image_work() {
+fn existing_managed_session_suggests_connect_before_image_work() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -73,7 +73,7 @@ fn existing_managed_session_suggests_attach_before_image_work() {
     assert
         .failure()
         .stderr(predicates::str::contains(format!(
-            "agentbox attach {}",
+            "agentbox connect {}",
             target.display()
         )))
         .stderr(predicates::str::contains(format!(

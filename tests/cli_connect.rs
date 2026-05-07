@@ -8,7 +8,7 @@
 
 use std::fs;
 
-use agentbox::commands::attach::attach_prompt_candidates;
+use agentbox::commands::connect::connect_prompt_candidates;
 use agentbox::metadata::{LABEL_ATTACH_SCHEME, LABEL_LAUNCH_DIRECTORY};
 use agentbox::runtime::RuntimeKind;
 use agentbox::session::discover_managed_sessions_from_ps;
@@ -24,7 +24,7 @@ use support::{
 };
 
 #[test]
-fn attach_to_a_running_session_attaches_to_container_stdio() {
+fn connect_to_a_running_session_runs_runtime_client() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -48,7 +48,7 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.arg("attach").arg(target);
+    command.arg("connect").arg(target);
 
     command.assert().success().stderr("");
 
@@ -64,20 +64,20 @@ fn attach_to_a_running_session_attaches_to_container_stdio() {
 }
 
 #[test]
-fn attach_without_target_requires_tty_for_selection() {
+fn connect_without_target_requires_tty_for_selection() {
     let harness = Harness::new();
     let mut command = harness.agentbox_command();
-    command.arg("attach");
+    command.arg("connect");
 
     command.assert().failure().stderr(predicates::str::contains(
-        "agentbox attach requires a target when stdin or stderr is not a TTY",
+        "agentbox connect requires a target when stdin or stderr is not a TTY",
     ));
 
     assert!(harness.read_log().is_empty());
 }
 
 #[test]
-fn attach_prompt_candidates_include_only_attachable_running_sessions() {
+fn connect_prompt_candidates_include_only_connectable_running_sessions() {
     let running_fixture = support::temp_workspace("running");
     let stopped_fixture = support::temp_workspace("stopped");
     let failed_fixture = support::temp_workspace("failed");
@@ -110,7 +110,7 @@ fn attach_prompt_candidates_include_only_attachable_running_sessions() {
     )
     .unwrap();
 
-    let candidates = attach_prompt_candidates(&sessions);
+    let candidates = connect_prompt_candidates(&sessions);
 
     assert_eq!(candidates.len(), 1);
     assert_eq!(
@@ -120,7 +120,7 @@ fn attach_prompt_candidates_include_only_attachable_running_sessions() {
 }
 
 #[test]
-fn attach_does_not_wrap_host_client_with_direnv_when_envrc_applies() {
+fn connect_does_not_wrap_host_client_with_direnv_when_envrc_applies() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -145,7 +145,7 @@ fn attach_does_not_wrap_host_client_with_direnv_when_envrc_applies() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.arg("attach").arg(target);
+    command.arg("connect").arg(target);
 
     command.assert().success().stderr("");
 
@@ -158,7 +158,7 @@ fn attach_does_not_wrap_host_client_with_direnv_when_envrc_applies() {
 }
 
 #[test]
-fn attach_to_codex_session_passes_yolo_flag_to_remote_client() {
+fn connect_to_codex_session_passes_yolo_flag_to_remote_client() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -174,7 +174,7 @@ fn attach_to_codex_session_passes_yolo_flag_to_remote_client() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.arg("attach").arg(target);
+    command.arg("connect").arg(target);
 
     command.assert().success().stderr("");
 
@@ -187,7 +187,7 @@ fn attach_to_codex_session_passes_yolo_flag_to_remote_client() {
 }
 
 #[test]
-fn attach_uses_stored_launch_directory_when_requesting_another_subdirectory() {
+fn connect_uses_stored_launch_directory_when_requesting_another_subdirectory() {
     let repo = support::temp_git_repo();
     let launch_target = repo.path().join("launch");
     let request_target = repo.path().join("request");
@@ -221,12 +221,12 @@ fn attach_uses_stored_launch_directory_when_requesting_another_subdirectory() {
     );
 
     let mut command = harness.locked_agentbox_command(&request_workspace);
-    command.arg("attach").arg(&request_target);
+    command.arg("connect").arg(&request_target);
 
     command
         .assert()
         .success()
-        .stderr(predicates::str::contains("INFO: agentbox attach:"))
+        .stderr(predicates::str::contains("INFO: agentbox connect:"))
         .stderr(predicates::str::contains("using stored launch directory"));
 
     let log = harness.read_log();
@@ -236,7 +236,7 @@ fn attach_uses_stored_launch_directory_when_requesting_another_subdirectory() {
 }
 
 #[test]
-fn attach_to_a_stopped_session_reports_the_running_only_model() {
+fn connect_to_a_stopped_session_reports_the_running_only_model() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -260,7 +260,7 @@ fn attach_to_a_stopped_session_reports_the_running_only_model() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.arg("attach").arg(target);
+    command.arg("connect").arg(target);
 
     command
         .assert()
@@ -291,7 +291,7 @@ fn labels_with_launch_directory(
 }
 
 #[test]
-fn attach_without_an_existing_session_suggests_run() {
+fn connect_without_an_existing_session_suggests_run() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -299,7 +299,7 @@ fn attach_without_an_existing_session_suggests_run() {
     harness.write_ps(&ps_fixture(Vec::new()));
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.arg("attach").arg(target);
+    command.arg("connect").arg(target);
 
     command
         .assert()

@@ -7,7 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::cli::{
-    AttachArgs, CleanArgs, Cli, Command, CompletionArgs, CompletionShell, HealthArgs, LsArgs,
+    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, HealthArgs, LsArgs,
     OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
@@ -24,7 +24,8 @@ fn help_lists_core_commands() {
     command.assert().success().stdout(
         predicate::str::contains("run")
             .and(predicate::str::contains("runtime"))
-            .and(predicate::str::contains("attach"))
+            .and(predicate::str::contains("connect"))
+            .and(predicate::str::contains("attach").not())
             .and(predicate::str::contains("ls"))
             .and(predicate::str::contains("health"))
             .and(predicate::str::contains("stop"))
@@ -51,7 +52,7 @@ fn unknown_subcommand_fails() {
 fn core_commands_parse_into_expected_variants() {
     let run = Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode", "/tmp/workspace"])
         .unwrap();
-    let attach = Cli::try_parse_from(["agentbox", "attach", "/tmp/workspace"]).unwrap();
+    let connect = Cli::try_parse_from(["agentbox", "connect", "/tmp/workspace"]).unwrap();
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
     let health = Cli::try_parse_from(["agentbox", "health"]).unwrap();
     let stop = Cli::try_parse_from(["agentbox", "stop", "/tmp/workspace"]).unwrap();
@@ -67,8 +68,8 @@ fn core_commands_parse_into_expected_variants() {
         })
     );
     assert_eq!(
-        attach.command,
-        Command::Attach(AttachArgs {
+        connect.command,
+        Command::Connect(ConnectArgs {
             directory: Some("/tmp/workspace".into()),
         })
     );
@@ -401,17 +402,25 @@ fn run_accepts_missing_runtime_for_prompting() {
 }
 
 #[test]
-fn attach_accepts_missing_directory_for_prompting() {
-    let cli = Cli::try_parse_from(["agentbox", "attach"]).unwrap();
+fn connect_accepts_missing_directory_for_prompting() {
+    let cli = Cli::try_parse_from(["agentbox", "connect"]).unwrap();
 
-    assert_eq!(cli.command, Command::Attach(AttachArgs { directory: None }));
+    assert_eq!(
+        cli.command,
+        Command::Connect(ConnectArgs { directory: None })
+    );
 }
 
 #[test]
-fn attach_rejects_runtime_and_image_flags() {
-    let runtime_error =
-        Cli::try_parse_from(["agentbox", "attach", "--runtime", "codex", "/tmp/workspace"])
-            .unwrap_err();
+fn connect_rejects_runtime_and_image_flags() {
+    let runtime_error = Cli::try_parse_from([
+        "agentbox",
+        "connect",
+        "--runtime",
+        "codex",
+        "/tmp/workspace",
+    ])
+    .unwrap_err();
     assert_eq!(runtime_error.exit_code(), 2);
     assert!(
         runtime_error
@@ -421,7 +430,7 @@ fn attach_rejects_runtime_and_image_flags() {
 
     let image_error = Cli::try_parse_from([
         "agentbox",
-        "attach",
+        "connect",
         "--image",
         "example:test",
         "/tmp/workspace",
@@ -432,5 +441,17 @@ fn attach_rejects_runtime_and_image_flags() {
         image_error
             .to_string()
             .contains("unexpected argument '--image'")
+    );
+}
+
+#[test]
+fn attach_is_not_a_supported_subcommand() {
+    let error = Cli::try_parse_from(["agentbox", "attach"]).unwrap_err();
+
+    assert_eq!(error.exit_code(), 2);
+    assert!(
+        error
+            .to_string()
+            .contains("unrecognized subcommand 'attach'")
     );
 }
