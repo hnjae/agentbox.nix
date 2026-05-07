@@ -1,0 +1,81 @@
+_agentbox_completion_roots() {
+    local command
+    command="${1:?missing command}"
+    local candidates
+    candidates="$({ agentbox __completion-roots "$command" 2>/dev/null; } || true)"
+    COMPREPLY=( $(compgen -W "$(printf '%s\n' "$candidates" | cut -f1)" -- "${COMP_WORDS[COMP_CWORD]}") )
+}
+
+_agentbox() {
+    local cur subcommand
+    cur="${COMP_WORDS[COMP_CWORD]}"
+
+    if [[ "$COMP_CWORD" -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "@SUBCOMMAND_NAMES@" -- "$cur") )
+        return 0
+    fi
+
+    subcommand="${COMP_WORDS[1]}"
+    case "$subcommand" in
+        attach)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                _agentbox_completion_roots attach
+            fi
+            ;;
+        stop)
+            local stop_words_before
+            stop_words_before="${COMP_WORDS[*]:2:COMP_CWORD-2}"
+            if [[ " $stop_words_before " == *" --all "* ]]; then
+                return 0
+            fi
+
+            if [[ "$cur" == --* ]]; then
+                COMPREPLY=( $(compgen -W "--force --all" -- "$cur") )
+            else
+                _agentbox_completion_roots stop
+            fi
+            ;;
+        run)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--runtime" ]]; then
+                COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
+            elif [[ "$cur" == --* ]]; then
+                COMPREPLY=( $(compgen -W "--runtime" -- "$cur") )
+            fi
+            ;;
+        ls)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--output" || "${COMP_WORDS[COMP_CWORD-1]}" == "-o" ]]; then
+                COMPREPLY=( $(compgen -W "@OUTPUT_VALUES@" -- "$cur") )
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--output -o" -- "$cur") )
+            fi
+            ;;
+        health)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--output" || "${COMP_WORDS[COMP_CWORD-1]}" == "-o" ]]; then
+                COMPREPLY=( $(compgen -W "@OUTPUT_VALUES@" -- "$cur") )
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--output -o" -- "$cur") )
+            else
+                _agentbox_completion_roots health
+            fi
+            ;;
+        clean)
+            if [[ "$cur" == --* ]]; then
+                COMPREPLY=( $(compgen -W "--dry-run --yes --images --volumes" -- "$cur") )
+            fi
+            ;;
+        runtime)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "update" -- "$cur") )
+            elif [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[2]}" == "update" ]]; then
+                COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
+            fi
+            ;;
+        completion)
+            if [[ "$COMP_CWORD" -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "@SHELL_VALUES@" -- "$cur") )
+            fi
+            ;;
+    esac
+}
+
+complete -F _agentbox agentbox

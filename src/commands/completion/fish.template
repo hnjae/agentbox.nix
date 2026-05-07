@@ -1,0 +1,37 @@
+function __agentbox_has_subcommand
+    set -l tokens (commandline -opc)
+    for token in $tokens[2..-1]
+        switch $token
+            case @SUBCOMMAND_NAMES@
+                return 0
+        end
+    end
+    return 1
+end
+
+function __agentbox_completion_roots --argument-names command
+    agentbox __completion-roots $command 2>/dev/null | while read -l value root runtime status
+        printf "%s\t%s %s %s\n" "$value" "$root" "$runtime" "$status"
+    end
+end
+
+function __agentbox_stop_all_seen
+    commandline -opc | contains -- --all
+end
+
+complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "@SUBCOMMAND_NAMES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from attach" -a "(__agentbox_completion_roots attach)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from ls" -s o -l output -r -a "@OUTPUT_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from health" -s o -l output -r -a "@OUTPUT_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from health" -a "(__agentbox_completion_roots health)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l force -d "Clean up duplicate or failed exact matches"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop" -l all -d "Stop every running managed session"
+complete -c agentbox -f -n "__fish_seen_subcommand_from stop; and not __agentbox_stop_all_seen" -a "(__agentbox_completion_roots stop)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l dry-run -d "Print cleanup candidates without deleting"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l yes -d "Delete cleanup candidates without prompting"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l images -d "Consider default runtime images"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l volumes -d "Consider workspace cache volumes"
+complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from runtime" -a "update"
+complete -c agentbox -f -n "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update" -a "@RUNTIME_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from completion" -a "@SHELL_VALUES@"

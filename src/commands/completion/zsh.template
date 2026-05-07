@@ -1,0 +1,92 @@
+#compdef agentbox
+
+_agentbox_completion_roots() {
+  local command
+  command="${1:?missing command}"
+  local line value root runtime status
+  local -a candidates descriptions
+  for line in ${(f)"$({ agentbox __completion-roots "$command" 2>/dev/null; } || true)"}; do
+    IFS=$'\t' read -r value root runtime status <<< "$line"
+    candidates+=("$value")
+    descriptions+=("${root} ${runtime} ${status}")
+  done
+  compadd -d descriptions -- "${candidates[@]}"
+}
+
+_agentbox() {
+  local -a subcommands
+  subcommands=(
+@ZSH_SUBCOMMAND_SPECS@
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' subcommands
+    return
+  fi
+
+  case "$words[2]" in
+    attach)
+      (( CURRENT == 3 )) && _agentbox_completion_roots attach
+      ;;
+    stop)
+      if (( CURRENT >= 3 )); then
+        local stop_words_before
+        stop_words_before=""
+        if (( CURRENT > 3 )); then
+          stop_words_before="${words[3,CURRENT-1]}"
+        fi
+
+        if [[ " $stop_words_before " == *" --all "* ]]; then
+          return
+        fi
+
+        if [[ "$PREFIX" == -* ]]; then
+          _values 'option' '--force[clean up duplicate or failed exact matches]' '--all[stop every running managed session]'
+        else
+          _agentbox_completion_roots stop
+        fi
+      fi
+      ;;
+    run)
+      if (( CURRENT > 2 && "$words[CURRENT-1]" == "--runtime" )); then
+        _values 'runtime' @RUNTIME_VALUES@
+      else
+        _values 'option' '--runtime[select runtime]'
+      fi
+      ;;
+    ls)
+      if [[ $CURRENT -gt 2 && ( "$words[CURRENT-1]" == "--output" || "$words[CURRENT-1]" == "-o" ) ]]; then
+        _values 'output' @OUTPUT_VALUES@
+      else
+        _values 'option' '--output[select output format]' '-o[select output format]'
+      fi
+      ;;
+    health)
+      if [[ $CURRENT -gt 2 && ( "$words[CURRENT-1]" == "--output" || "$words[CURRENT-1]" == "-o" ) ]]; then
+        _values 'output' @OUTPUT_VALUES@
+      else
+        _values 'option' '--output[select output format]' '-o[select output format]'
+        _agentbox_completion_roots health
+      fi
+      ;;
+    clean)
+      _values 'option' \
+        '--dry-run[print cleanup candidates without deleting]' \
+        '--yes[delete cleanup candidates without prompting]' \
+        '--images[consider default runtime images]' \
+        '--volumes[consider workspace cache volumes]'
+      ;;
+    runtime)
+      if (( CURRENT == 3 )); then
+        _values 'runtime command' 'update[Update a default runtime image]'
+      elif (( CURRENT == 4 && "$words[3]" == "update" )); then
+        _values 'runtime' @RUNTIME_VALUES@
+      fi
+      ;;
+    completion)
+      (( CURRENT == 3 )) && _values 'shell' @SHELL_VALUES@
+      ;;
+  esac
+}
+
+compdef _agentbox agentbox
