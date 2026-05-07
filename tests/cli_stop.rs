@@ -117,7 +117,7 @@ fn stop_prompt_candidates_include_stop_completion_eligible_sessions() {
     let candidates = stop_prompt_candidates(&sessions);
     let mut targets = candidates
         .iter()
-        .map(|candidate| candidate.value().to_str().unwrap().to_string())
+        .map(|candidate| candidate.value().clone())
         .collect::<Vec<_>>();
     targets.sort();
     let mut expected = vec![failed.hash12.clone(), running.hash12.clone()];

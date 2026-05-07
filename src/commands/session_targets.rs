@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::prompt;
 use crate::session::SessionRecord;
 
@@ -42,16 +40,15 @@ impl SessionTargetKind {
             .filter_map(move |session| self.candidate(session))
     }
 
-    pub(super) fn prompt_choices(
+    pub(super) fn prompt_choices<T>(
         self,
         sessions: &[SessionRecord],
+        value: impl Fn(&SessionTargetCandidate<'_>) -> T,
         label: impl Fn(&SessionTargetCandidate<'_>) -> String,
-    ) -> Vec<prompt::Choice<PathBuf>> {
+    ) -> Vec<prompt::Choice<T>> {
         let mut choices = self
             .candidates(sessions)
-            .map(|candidate| {
-                prompt::Choice::new(label(&candidate), PathBuf::from(candidate.value()))
-            })
+            .map(|candidate| prompt::Choice::new(label(&candidate), value(&candidate)))
             .collect::<Vec<_>>();
         prompt::sort_choices_by_label(&mut choices);
         choices

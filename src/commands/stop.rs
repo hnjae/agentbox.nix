@@ -38,13 +38,13 @@ pub fn run(args: StopArgs) -> Result<()> {
     let targets = if args.targets.is_empty() {
         select_stop_targets()?
     } else {
-        args.targets
+        args.targets.into_iter().map(StopTargetInput::Cli).collect()
     };
 
     stop_targets(&targets, args.force)
 }
 
-fn select_stop_targets() -> Result<Vec<PathBuf>> {
+fn select_stop_targets() -> Result<Vec<StopTargetInput>> {
     let non_tty_error =
         "agentbox stop requires a target or --all when stdin or stderr is not a TTY";
     prompt::require_interactive_terminal(non_tty_error)?;
@@ -69,10 +69,10 @@ fn select_stop_targets() -> Result<Vec<PathBuf>> {
     targets.sort();
     targets.dedup();
 
-    Ok(targets)
+    Ok(targets.into_iter().map(StopTargetInput::StableId).collect())
 }
 
-fn stop_targets(targets: &[PathBuf], force: bool) -> Result<()> {
+fn stop_targets(targets: &[StopTargetInput], force: bool) -> Result<()> {
     if targets.is_empty() {
         return Ok(());
     }
@@ -95,7 +95,7 @@ fn stop_targets(targets: &[PathBuf], force: bool) -> Result<()> {
     }
 }
 
-fn stop_target(target: &Path, force: bool) -> Result<()> {
+fn stop_target(target: &StopTargetInput, force: bool) -> Result<()> {
     match resolve_stop_target(target)? {
         StopTarget::ResolvedGitRoot(git_root) => stop_git_root(&git_root, force, target),
         StopTarget::ExactStoredGitRootPath(git_root) => {
@@ -111,9 +111,9 @@ struct TargetStopFailure {
 }
 
 impl TargetStopFailure {
-    fn new(target: &Path, error: Error) -> Self {
+    fn new(target: &StopTargetInput, error: Error) -> Self {
         Self {
-            target: target.display().to_string(),
+            target: target.display(),
             error,
         }
     }
@@ -134,10 +134,29 @@ fn render_target_stop_failures(failures: &[TargetStopFailure]) -> String {
     format!("failed to stop {} {noun}: {details}", failures.len())
 }
 
-pub type StopPromptCandidate = prompt::Choice<PathBuf>;
+pub type StopPromptCandidate = prompt::Choice<String>;
 
 pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandidate> {
-    SessionTargetKind::StableId.prompt_choices(sessions, |candidate| candidate.stop_prompt_label())
+    SessionTargetKind::StableId.prompt_choices(
+        sessions,
+        |candidate| candidate.value().to_string(),
+        |candidate| candidate.stop_prompt_label(),
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StopTargetInput {
+    Cli(PathBuf),
+    StableId(String),
+}
+
+impl StopTargetInput {
+    fn display(&self) -> String {
+        match self {
+            Self::Cli(path) => path.display().to_string(),
+            Self::StableId(id) => id.clone(),
+        }
+    }
 }
 
 enum StopTarget {
@@ -146,11 +165,15 @@ enum StopTarget {
     StableId(String),
 }
 
-fn stop_git_root(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> {
+fn stop_git_root(git_root: &Utf8Path, force: bool, target: &StopTargetInput) -> Result<()> {
     stop_exact_git_root_matches(git_root, force, target, ExactGitRootStopMode::Scoped)
 }
 
-fn stop_exact_stored_git_root_path(git_root: &Utf8Path, force: bool, target: &Path) -> Result<()> {
+fn stop_exact_stored_git_root_path(
+    git_root: &Utf8Path,
+    force: bool,
+    target: &StopTargetInput,
+) -> Result<()> {
     stop_exact_git_root_matches(
         git_root,
         force,
@@ -187,7 +210,7 @@ impl ExactGitRootStopMode {
 fn stop_exact_git_root_matches(
     git_root: &Utf8Path,
     force: bool,
-    target: &Path,
+    target: &StopTargetInput,
     mode: ExactGitRootStopMode,
 ) -> Result<()> {
     let failures = with_locked_git_root(git_root, |locked| {
@@ -213,7 +236,7 @@ fn stop_exact_git_root_matches(
     finish_cleanup(git_root.as_str(), &failures)
 }
 
-fn stop_stable_id(prefix: &str, force: bool, target: &Path) -> Result<()> {
+fn stop_stable_id(prefix: &str, force: bool, target: &StopTargetInput) -> Result<()> {
     let podman = Podman::new();
     let sessions = discover_managed_sessions(&podman)?;
     let selection = select_stable_id_prefix(&sessions, prefix)?;
@@ -243,7 +266,14 @@ fn stop_all_running() -> Result<()> {
     finish_cleanup("all running managed sessions", &failures)
 }
 
-fn resolve_stop_target(target: &Path) -> Result<StopTarget> {
+fn resolve_stop_target(target: &StopTargetInput) -> Result<StopTarget> {
+    match target {
+        StopTargetInput::Cli(path) => resolve_cli_stop_target(path),
+        StopTargetInput::StableId(prefix) => Ok(StopTarget::StableId(prefix.clone())),
+    }
+}
+
+fn resolve_cli_stop_target(target: &Path) -> Result<StopTarget> {
     if target.exists() {
         return resolve_workspace_identity(target)
             .map(|workspace| StopTarget::ResolvedGitRoot(workspace.canonical_git_root));
