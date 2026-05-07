@@ -260,9 +260,9 @@ impl InterruptedRunCleanup {
         let container_name = &workspace.container_name;
         let container_cleanup = ManagedContainerCleanup::stop_and_verify(podman, container_name);
 
-        if let Some(issue) = container_cleanup.stop_issue() {
-            cleanup.failures.push(issue.interrupted_message());
-        }
+        cleanup
+            .failures
+            .extend(container_cleanup.interrupted_messages());
 
         if container_cleanup.container_removed() {
             if !cache_volume_existed_before {
@@ -273,12 +273,9 @@ impl InterruptedRunCleanup {
                         .push(format!("cache volume removal failed: {error}")),
                 }
             }
-        } else if let Some(issue) = container_cleanup.remaining_container_issue() {
-            cleanup.failures.push(issue.interrupted_message());
-            if !cache_volume_existed_before {
-                if let Some(message) = issue.interrupted_cache_volume_skip_message() {
-                    cleanup.failures.push(message.to_string());
-                }
+        } else if !cache_volume_existed_before {
+            if let Some(message) = container_cleanup.interrupted_cache_volume_skip_message() {
+                cleanup.failures.push(message.to_string());
             }
         }
 

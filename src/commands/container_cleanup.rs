@@ -28,6 +28,12 @@ pub(super) enum ContainerCleanupIssue {
     VerificationFailed(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ContainerCleanupFailure {
+    container_name: String,
+    issues: Vec<ContainerCleanupIssue>,
+}
+
 impl ManagedContainerCleanup {
     pub(super) fn stop_and_verify(podman: &Podman, container_name: &str) -> Self {
         let stop_error = podman
@@ -50,13 +56,49 @@ impl ManagedContainerCleanup {
         matches!(self.verification, ContainerCleanupVerification::Removed)
     }
 
-    pub(super) fn stop_issue(&self) -> Option<ContainerCleanupIssue> {
+    pub(super) fn interrupted_messages(&self) -> Vec<String> {
+        self.interrupted_issues()
+            .iter()
+            .map(ContainerCleanupIssue::interrupted_message)
+            .collect()
+    }
+
+    fn interrupted_issues(&self) -> Vec<ContainerCleanupIssue> {
+        let mut issues = self.stop_issue().into_iter().collect::<Vec<_>>();
+        issues.extend(self.remaining_container_issue());
+        issues
+    }
+
+    pub(super) fn interrupted_cache_volume_skip_message(&self) -> Option<&'static str> {
+        match &self.verification {
+            ContainerCleanupVerification::Removed => None,
+            ContainerCleanupVerification::StillExists => {
+                Some("cache volume removal skipped because the container still exists")
+            }
+            ContainerCleanupVerification::Failed(_) => {
+                Some("cache volume removal skipped because container cleanup could not be verified")
+            }
+        }
+    }
+
+    pub(super) fn remaining_failure(
+        &self,
+        container_name: &str,
+    ) -> Option<ContainerCleanupFailure> {
+        let remaining_issue = self.remaining_container_issue()?;
+        let mut issues = self.stop_issue().into_iter().collect::<Vec<_>>();
+        issues.push(remaining_issue);
+
+        Some(ContainerCleanupFailure::new(container_name, issues))
+    }
+
+    fn stop_issue(&self) -> Option<ContainerCleanupIssue> {
         self.stop_error
             .as_ref()
             .map(|error| ContainerCleanupIssue::StopFailed(error.clone()))
     }
 
-    pub(super) fn remaining_container_issue(&self) -> Option<ContainerCleanupIssue> {
+    fn remaining_container_issue(&self) -> Option<ContainerCleanupIssue> {
         match &self.verification {
             ContainerCleanupVerification::Removed => None,
             ContainerCleanupVerification::StillExists => Some(ContainerCleanupIssue::StillExists),
@@ -67,8 +109,28 @@ impl ManagedContainerCleanup {
     }
 }
 
+impl ContainerCleanupFailure {
+    fn new(container_name: &str, issues: Vec<ContainerCleanupIssue>) -> Self {
+        Self {
+            container_name: container_name.to_string(),
+            issues,
+        }
+    }
+
+    pub(super) fn render_stop_message(&self) -> String {
+        let details = self
+            .issues
+            .iter()
+            .map(ContainerCleanupIssue::stop_message)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        format!("container `{}` ({details})", self.container_name)
+    }
+}
+
 impl ContainerCleanupIssue {
-    pub(super) fn interrupted_message(&self) -> String {
+    fn interrupted_message(&self) -> String {
         match self {
             Self::StopFailed(error) => format!("container stop failed: {error}"),
             Self::StillExists => "container still exists after cleanup".to_string(),
@@ -78,19 +140,7 @@ impl ContainerCleanupIssue {
         }
     }
 
-    pub(super) fn interrupted_cache_volume_skip_message(&self) -> Option<&'static str> {
-        match self {
-            Self::StopFailed(_) => None,
-            Self::StillExists => {
-                Some("cache volume removal skipped because the container still exists")
-            }
-            Self::VerificationFailed(_) => {
-                Some("cache volume removal skipped because container cleanup could not be verified")
-            }
-        }
-    }
-
-    pub(super) fn stop_message(&self) -> String {
+    fn stop_message(&self) -> String {
         match self {
             Self::StopFailed(error) => format!("stop failed: {error}"),
             Self::StillExists => "container still exists after stop".to_string(),
@@ -114,11 +164,18 @@ mod tests {
 
         assert!(cleanup.container_removed());
         assert_eq!(cleanup.remaining_container_issue(), None);
+        assert_eq!(cleanup.remaining_failure("agentbox-demo"), None);
         assert_eq!(
             cleanup.stop_issue(),
             Some(ContainerCleanupIssue::StopFailed(
                 "stop failed after removal".to_string()
             ))
+        );
+        assert_eq!(
+            cleanup.interrupted_issues(),
+            vec![ContainerCleanupIssue::StopFailed(
+                "stop failed after removal".to_string()
+            )]
         );
     }
 
@@ -142,6 +199,10 @@ mod tests {
             ContainerCleanupIssue::StillExists.stop_message(),
             "container still exists after stop"
         );
+        assert_eq!(
+            cleanup.interrupted_cache_volume_skip_message(),
+            Some("cache volume removal skipped because the container still exists")
+        );
     }
 
     #[test]
@@ -157,6 +218,21 @@ mod tests {
             Some(ContainerCleanupIssue::VerificationFailed(
                 "inspect failed".to_string()
             ))
+        );
+    }
+
+    #[test]
+    fn remaining_failure_includes_stop_error_and_remaining_container_issue() {
+        let cleanup = ManagedContainerCleanup {
+            stop_error: Some("podman stop failed".to_string()),
+            verification: ContainerCleanupVerification::StillExists,
+        };
+
+        let failure = cleanup.remaining_failure("agentbox-demo").unwrap();
+
+        assert_eq!(
+            failure.render_stop_message(),
+            "container `agentbox-demo` (stop failed: podman stop failed, container still exists after stop)"
         );
     }
 }

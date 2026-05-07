@@ -22,7 +22,7 @@ use crate::session::{
 use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
-use super::container_cleanup::{ContainerCleanupIssue, ManagedContainerCleanup};
+use super::container_cleanup::{ContainerCleanupFailure, ManagedContainerCleanup};
 use super::session_targets::SessionTargetKind;
 use super::workspace_flow::with_locked_git_root;
 
@@ -290,7 +290,7 @@ fn lockable_stable_id_matches(
     Ok(lockable)
 }
 
-fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<CleanupFailure>> {
+fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<ContainerCleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
     cleanup_rooted_session_groups(partition.rooted, |locked, sessions| {
@@ -298,7 +298,9 @@ fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<Cleanup
     })
 }
 
-fn cleanup_all_running_matches(sessions: Vec<SessionRecord>) -> Result<Vec<CleanupFailure>> {
+fn cleanup_all_running_matches(
+    sessions: Vec<SessionRecord>,
+) -> Result<Vec<ContainerCleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
     let mut failures = cleanup_rooted_session_groups(partition.rooted, |locked, _sessions| {
@@ -324,8 +326,8 @@ fn cleanup_rooted_session_groups(
     mut cleanup_group: impl FnMut(
         &super::workspace_flow::LockedGitRoot<'_>,
         &[SessionRecord],
-    ) -> Result<Vec<CleanupFailure>>,
-) -> Result<Vec<CleanupFailure>> {
+    ) -> Result<Vec<ContainerCleanupFailure>>,
+) -> Result<Vec<ContainerCleanupFailure>> {
     let mut failures = Vec::new();
 
     for group in groups {
@@ -342,23 +344,22 @@ fn cleanup_rooted_session_groups(
 fn cleanup_sessions<'a>(
     podman: &Podman,
     sessions: impl IntoIterator<Item = &'a SessionRecord>,
-) -> Vec<CleanupFailure> {
+) -> Vec<ContainerCleanupFailure> {
     sessions
         .into_iter()
         .filter_map(|session| cleanup_managed_container(podman, session))
         .collect()
 }
 
-fn cleanup_managed_container(podman: &Podman, session: &SessionRecord) -> Option<CleanupFailure> {
+fn cleanup_managed_container(
+    podman: &Podman,
+    session: &SessionRecord,
+) -> Option<ContainerCleanupFailure> {
     let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &session.container_name);
-    let remaining_issue = cleanup.remaining_container_issue()?;
-    let mut reasons = cleanup.stop_issue().into_iter().collect::<Vec<_>>();
-    reasons.push(remaining_issue);
-
-    Some(CleanupFailure::new(&session.container_name, reasons))
+    cleanup.remaining_failure(&session.container_name)
 }
 
-fn finish_cleanup(identity: &str, failures: &[CleanupFailure]) -> Result<()> {
+fn finish_cleanup(identity: &str, failures: &[ContainerCleanupFailure]) -> Result<()> {
     if failures.is_empty() {
         Ok(())
     } else {
@@ -366,39 +367,14 @@ fn finish_cleanup(identity: &str, failures: &[CleanupFailure]) -> Result<()> {
     }
 }
 
-fn render_cleanup_failures(identity: &str, failures: &[CleanupFailure]) -> String {
+fn render_cleanup_failures(identity: &str, failures: &[ContainerCleanupFailure]) -> String {
     let details = failures
         .iter()
-        .map(CleanupFailure::render)
+        .map(ContainerCleanupFailure::render_stop_message)
         .collect::<Vec<_>>()
         .join("; ");
 
     format!(
         "partial stop failed for `{identity}`; remaining managed containers: {details}. podman-owned image cleanup and cache volumes are left untouched"
     )
-}
-
-struct CleanupFailure {
-    container_name: String,
-    reasons: Vec<ContainerCleanupIssue>,
-}
-
-impl CleanupFailure {
-    fn new(container_name: &str, reasons: Vec<ContainerCleanupIssue>) -> Self {
-        Self {
-            container_name: container_name.to_string(),
-            reasons,
-        }
-    }
-
-    fn render(&self) -> String {
-        let details = self
-            .reasons
-            .iter()
-            .map(ContainerCleanupIssue::stop_message)
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        format!("container `{}` ({details})", self.container_name)
-    }
 }
