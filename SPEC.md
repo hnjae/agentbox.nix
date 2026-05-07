@@ -370,9 +370,11 @@ Selection rules:
 Image cleanup rules:
 
 - `clean` considers agentbox-owned default runtime images discovered from
-  image labels, including old content-hash-tagged default image references, and
-  the legacy exact image references `localhost/agentbox-opencode:local` and
-  `localhost/agentbox-codex:local`.
+  image labels, including old content-hash-tagged default image references.
+  Legacy pre-release exact image references such as
+  `localhost/agentbox-opencode:local` and `localhost/agentbox-codex:local` are
+  not current default image references and are not selected by `clean` unless
+  they carry the current default-runtime-image labels.
 - A default runtime image candidate is skipped when any Podman container,
   managed or unmanaged, currently uses that exact image reference.
 - When the current state file for a runtime points to an image that was deleted
@@ -445,6 +447,9 @@ Expected behavior:
 Rules:
 
 - The update command does not stop, replace, or mutate running sessions.
+- Runtime image metadata files must include an image context hash; older
+  pre-release state files missing that field are invalid runtime image
+  metadata and are not migrated.
 - The update command does not write metadata under runtime host state
   directories such as `~/.codex`, `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`,
   or `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`.
