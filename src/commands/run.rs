@@ -75,67 +75,36 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;
         let interrupt = RunInterrupt::install()?;
+        let cleanup =
+            InterruptedRunCleanupScope::new(podman, workspace, cache_volume_existed_before);
 
         diagnostic::info(format!(
             "starting container `{}` for `{}`",
             workspace.container_name, runtime
         ));
-        match podman.run_detached(
+        if let Err(error) = podman.run_detached(
             &workspace.container_name,
             &run_spec,
             Some(server_run.workdir.as_str()),
         ) {
-            Ok(()) if interrupt.interrupted() => {
-                return Err(cleanup_interrupted_run(
-                    podman,
-                    workspace,
-                    cache_volume_existed_before,
-                ));
-            }
-            Ok(()) => {}
-            Err(_) if interrupt.interrupted() => {
-                return Err(cleanup_interrupted_run(
-                    podman,
-                    workspace,
-                    cache_volume_existed_before,
-                ));
-            }
-            Err(error) => {
-                return Err(classify_run_create_error(
-                    podman, workspace, &run_spec, error,
-                ));
-            }
+            cleanup.check_interrupted(&interrupt)?;
+            return Err(classify_run_create_error(
+                podman, workspace, &run_spec, error,
+            ));
         }
+        cleanup.check_interrupted(&interrupt)?;
 
         diagnostic::info(format!("waiting for `{runtime}` runtime server"));
         let endpoint = match wait_for_server_endpoint(podman, workspace, runtime, || {
             interrupt.interrupted()
         }) {
-            Ok(ServerEndpointWait::Ready(_)) if interrupt.interrupted() => {
-                return Err(cleanup_interrupted_run(
-                    podman,
-                    workspace,
-                    cache_volume_existed_before,
-                ));
-            }
             Ok(ServerEndpointWait::Ready(endpoint)) => endpoint,
             Ok(ServerEndpointWait::Interrupted) => {
-                return Err(cleanup_interrupted_run(
-                    podman,
-                    workspace,
-                    cache_volume_existed_before,
-                ));
+                return Err(cleanup.interrupted_error());
             }
             Err(error) => return Err(error_with_container_logs(podman, workspace, error)),
         };
-
-        if interrupt.interrupted() {
-            return Err(cleanup_interrupted_run(
-                podman,
-                workspace,
-                cache_volume_existed_before,
-            ));
-        }
+        cleanup.check_interrupted(&interrupt)?;
 
         diagnostic::info(format!(
             "managed session `{}` for `{}` is ready at `{endpoint}`; use `agentbox attach {}` to connect",
@@ -237,13 +206,42 @@ impl Drop for RunInterrupt {
     }
 }
 
-fn cleanup_interrupted_run(
-    podman: &Podman,
-    workspace: &WorkspaceIdentity,
+#[derive(Debug, Clone, Copy)]
+struct InterruptedRunCleanupScope<'a> {
+    podman: &'a Podman,
+    workspace: &'a WorkspaceIdentity,
     cache_volume_existed_before: bool,
-) -> Error {
-    let cleanup = InterruptedRunCleanup::run(podman, workspace, cache_volume_existed_before);
-    Error::msg(cleanup.render(workspace, cache_volume_existed_before))
+}
+
+impl<'a> InterruptedRunCleanupScope<'a> {
+    fn new(
+        podman: &'a Podman,
+        workspace: &'a WorkspaceIdentity,
+        cache_volume_existed_before: bool,
+    ) -> Self {
+        Self {
+            podman,
+            workspace,
+            cache_volume_existed_before,
+        }
+    }
+
+    fn check_interrupted(self, interrupt: &RunInterrupt) -> Result<()> {
+        if interrupt.interrupted() {
+            Err(self.interrupted_error())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn interrupted_error(self) -> Error {
+        let cleanup = InterruptedRunCleanup::run(
+            self.podman,
+            self.workspace,
+            self.cache_volume_existed_before,
+        );
+        Error::msg(cleanup.render(self.workspace, self.cache_volume_existed_before))
+    }
 }
 
 #[derive(Debug, Default)]

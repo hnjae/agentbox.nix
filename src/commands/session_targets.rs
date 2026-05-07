@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+
+use crate::prompt;
 use crate::session::SessionRecord;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +40,21 @@ impl SessionTargetKind {
         sessions
             .iter()
             .filter_map(move |session| self.candidate(session))
+    }
+
+    pub(super) fn prompt_choices(
+        self,
+        sessions: &[SessionRecord],
+        label: impl Fn(&SessionTargetCandidate<'_>) -> String,
+    ) -> Vec<prompt::Choice<PathBuf>> {
+        let mut choices = self
+            .candidates(sessions)
+            .map(|candidate| {
+                prompt::Choice::new(label(&candidate), PathBuf::from(candidate.value()))
+            })
+            .collect::<Vec<_>>();
+        prompt::sort_choices_by_label(&mut choices);
+        choices
     }
 
     pub(super) fn matches(self, session: &SessionRecord) -> bool {

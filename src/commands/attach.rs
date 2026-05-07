@@ -92,17 +92,8 @@ fn attach_directory(directory: &Path) -> Result<()> {
 pub type AttachPromptCandidate = prompt::Choice<PathBuf>;
 
 pub fn attach_prompt_candidates(sessions: &[SessionRecord]) -> Vec<AttachPromptCandidate> {
-    let mut candidates = SessionTargetKind::AttachRoot
-        .candidates(sessions)
-        .map(|candidate| {
-            prompt::Choice::new(
-                candidate.attach_prompt_label(),
-                PathBuf::from(candidate.value()),
-            )
-        })
-        .collect::<Vec<_>>();
-    prompt::sort_choices_by_label(&mut candidates);
-    candidates
+    SessionTargetKind::AttachRoot
+        .prompt_choices(sessions, |candidate| candidate.attach_prompt_label())
 }
 
 fn no_session_error(workspace: &WorkspaceIdentity) -> Error {

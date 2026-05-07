@@ -137,17 +137,7 @@ fn render_target_stop_failures(failures: &[TargetStopFailure]) -> String {
 pub type StopPromptCandidate = prompt::Choice<PathBuf>;
 
 pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandidate> {
-    let mut candidates = SessionTargetKind::StableId
-        .candidates(sessions)
-        .map(|candidate| {
-            prompt::Choice::new(
-                candidate.stop_prompt_label(),
-                PathBuf::from(candidate.value()),
-            )
-        })
-        .collect::<Vec<_>>();
-    prompt::sort_choices_by_label(&mut candidates);
-    candidates
+    SessionTargetKind::StableId.prompt_choices(sessions, |candidate| candidate.stop_prompt_label())
 }
 
 enum StopTarget {
