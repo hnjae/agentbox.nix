@@ -223,6 +223,23 @@ impl CliHarness {
         self.agentbox_command().args(args).output().unwrap()
     }
 
+    pub fn agentbox_success_stdout(&self, args: &[&str]) -> String {
+        let output = self.agentbox_output(args);
+        let stderr = String::from_utf8(output.stderr).unwrap();
+
+        assert!(
+            output.status.success(),
+            "agentbox {args:?} exited with {}; stderr:\n{stderr}",
+            output.status,
+        );
+        assert!(
+            stderr.is_empty(),
+            "agentbox {args:?} wrote unexpected stderr:\n{stderr}"
+        );
+
+        String::from_utf8(output.stdout).unwrap()
+    }
+
     pub fn run_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
         self.run_assert_with_args(target, &[])
     }

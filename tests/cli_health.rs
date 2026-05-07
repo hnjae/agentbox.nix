@@ -40,12 +40,9 @@ fn health_reports_running_opencode_session_as_healthy() {
         ),
     );
 
-    let output = harness.agentbox_output(&["health"]);
+    let stdout = harness.agentbox_success_stdout(&["health"]);
     endpoint.wait();
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(workspace.canonical_git_root.as_str()));
     assert!(stdout.contains(&workspace.hash12));
     assert!(stdout.contains("opencode"));
@@ -80,12 +77,9 @@ fn health_reports_running_codex_session_as_healthy() {
         ),
     );
 
-    let output = harness.agentbox_output(&["health"]);
+    let stdout = harness.agentbox_success_stdout(&["health"]);
     endpoint.wait();
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(workspace.canonical_git_root.as_str()));
     assert!(stdout.contains(&workspace.hash12));
     assert!(stdout.contains("codex"));
@@ -116,12 +110,9 @@ fn health_reports_unhealthy_opencode_without_failing() {
         ),
     );
 
-    let output = harness.agentbox_output(&["health"]);
+    let stdout = harness.agentbox_success_stdout(&["health"]);
     endpoint.wait();
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("unhealthy"));
     assert!(stdout.contains("healthy=false"));
     assert!(stdout.contains(&workspace.hash12));
@@ -162,13 +153,10 @@ fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
         ),
     );
 
-    let output = harness.agentbox_output(&["health", "--output=json"]);
+    let stdout = harness.agentbox_success_stdout(&["health", "--output=json"]);
     healthy_endpoint.wait();
     unhealthy_endpoint.wait();
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let stdout = String::from_utf8(output.stdout).unwrap();
     let rows: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
     let roots = rows
         .iter()
@@ -247,12 +235,9 @@ fn health_filters_non_running_session_statuses() {
     );
     std::fs::remove_dir_all(orphan.canonical_git_root.as_std_path()).unwrap();
 
-    let output = harness.agentbox_output(&["health"]);
+    let stdout = harness.agentbox_success_stdout(&["health"]);
     endpoint.wait();
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(&running.hash12));
     assert!(!stdout.contains(&stopped.hash12));
     assert!(!stdout.contains(&failed.hash12));
@@ -292,12 +277,9 @@ fn health_target_probes_only_matching_stable_id_prefix() {
         ),
     );
 
-    let output = harness.agentbox_output(&["health", &selected.hash12[..6]]);
+    let stdout = harness.agentbox_success_stdout(&["health", &selected.hash12[..6]]);
     endpoint.wait();
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(&selected.hash12));
     assert!(stdout.contains(selected.canonical_git_root.as_str()));
     assert!(!stdout.contains(&other.hash12));
@@ -394,11 +376,7 @@ fn health_with_no_running_sessions_prints_header_only_table() {
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(Vec::new()));
 
-    let output = harness.agentbox_output(&["health"]);
-
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = harness.agentbox_success_stdout(&["health"]);
     assert!(stdout.starts_with("ID"));
     assert!(stdout.contains("CANONICAL GIT ROOT"));
     assert!(stdout.contains("RUNTIME"));
@@ -417,11 +395,9 @@ fn health_json_with_no_running_sessions_prints_empty_array() {
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(Vec::new()));
 
-    let output = harness.agentbox_output(&["health", "--output=json"]);
+    let stdout = harness.agentbox_success_stdout(&["health", "--output=json"]);
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "[]\n");
+    assert_eq!(stdout, "[]\n");
 }
 
 fn assert_no_box_drawing_borders(table: &str) {

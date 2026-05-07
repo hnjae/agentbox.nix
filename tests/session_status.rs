@@ -230,7 +230,7 @@ fn existing_git_root_path_that_resolves_to_different_repo_marks_orphaned() {
     let workspace = tempfile::tempdir().unwrap();
     let stored_repo = workspace.path().join("stored-repo");
     fs::create_dir(&stored_repo).unwrap();
-    init_git_repo(&stored_repo);
+    support::init_git_repo(&stored_repo);
 
     let stored_root = Utf8Path::from_path(stored_repo.canonicalize().unwrap().as_path())
         .unwrap()
@@ -238,7 +238,7 @@ fn existing_git_root_path_that_resolves_to_different_repo_marks_orphaned() {
     let (ps, inspect) = managed_container("replaced-repo", &stored_root, true, true);
 
     fs::remove_dir_all(stored_repo.join(".git")).unwrap();
-    init_git_repo(workspace.path());
+    support::init_git_repo(workspace.path());
 
     let sessions =
         discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
@@ -278,15 +278,4 @@ fn status_for(
         .find(|session| session.container_name == container_name)
         .map(|session| session.status)
         .unwrap()
-}
-
-fn init_git_repo(path: &std::path::Path) {
-    fs::create_dir_all(path.join(".git/refs/heads")).unwrap();
-    fs::write(path.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
-    fs::write(
-        path.join(".git/config"),
-        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = true\n",
-    )
-    .unwrap();
-    fs::write(path.join(".gitignore"), "\n").unwrap();
 }
