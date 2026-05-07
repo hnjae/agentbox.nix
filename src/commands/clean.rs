@@ -14,7 +14,7 @@ use crate::metadata::{
     LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_IMAGE_CONTEXT_HASH,
     LABEL_RUNTIME, default_runtime_image_label_filter,
 };
-use crate::podman::{Podman, PodmanContainerInspect, PodmanImage};
+use crate::podman::{Podman, PodmanContainerInspect, PodmanImage, PodmanVolume};
 use crate::prompt;
 use crate::runtime::{RuntimeKind, default_image};
 use crate::{Error, Result};
@@ -69,6 +69,27 @@ struct CleanPlan {
     skipped: Vec<SkippedResource>,
 }
 
+impl CleanPlan {
+    fn from_inventory(scope: CleanScope, inventory: &CleanInventory) -> Self {
+        let usage = ResourceUsage::from_containers(&inventory.containers);
+        let mut plan = CleanPlan::default();
+
+        if scope.images {
+            add_default_runtime_image_candidates(
+                &inventory.default_runtime_images,
+                &usage,
+                &mut plan,
+            );
+        }
+
+        if scope.volumes {
+            add_cache_volume_candidates(&inventory.volumes, &usage, &mut plan);
+        }
+
+        plan
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CleanCandidate {
     DefaultRuntimeImage { runtime: RuntimeKind, image: String },
@@ -114,19 +135,38 @@ impl CleanCandidate {
 }
 
 fn build_clean_plan(podman: &Podman, scope: CleanScope) -> Result<CleanPlan> {
-    let containers = inspect_all_containers(podman)?;
-    let usage = ResourceUsage::from_containers(&containers);
-    let mut plan = CleanPlan::default();
+    let inventory = CleanInventory::from_podman(podman, scope)?;
 
-    if scope.images {
-        add_default_runtime_image_candidates(podman, &usage, &mut plan)?;
+    Ok(CleanPlan::from_inventory(scope, &inventory))
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct CleanInventory {
+    containers: Vec<PodmanContainerInspect>,
+    default_runtime_images: Vec<DefaultRuntimeImageCandidate>,
+    volumes: Vec<PodmanVolume>,
+}
+
+impl CleanInventory {
+    fn from_podman(podman: &Podman, scope: CleanScope) -> Result<Self> {
+        let containers = inspect_all_containers(podman)?;
+        let default_runtime_images = if scope.images {
+            default_runtime_image_candidates(podman)?
+        } else {
+            Vec::new()
+        };
+        let volumes = if scope.volumes {
+            podman.volumes()?
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self {
+            containers,
+            default_runtime_images,
+            volumes,
+        })
     }
-
-    if scope.volumes {
-        add_cache_volume_candidates(podman, &usage, &mut plan)?;
-    }
-
-    Ok(plan)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -165,45 +205,28 @@ impl ResourceUsage {
     }
 }
 
-fn add_default_runtime_image_candidates(
-    podman: &Podman,
-    usage: &ResourceUsage,
-    plan: &mut CleanPlan,
-) -> Result<()> {
-    let mut seen = BTreeSet::new();
+fn default_runtime_image_candidates(podman: &Podman) -> Result<Vec<DefaultRuntimeImageCandidate>> {
+    let mut candidates = labeled_default_runtime_images(podman)?;
+    candidates.extend(legacy_default_runtime_image_candidates(podman)?);
 
-    for candidate in labeled_default_runtime_images(podman)? {
-        if seen.insert(candidate.image.clone()) {
-            add_default_runtime_image_candidate(candidate.runtime, candidate.image, usage, plan);
-        }
-    }
-
-    for runtime in RuntimeKind::variants().iter().copied() {
-        let image = default_image::legacy_default_image(runtime);
-        if podman.image_exists(image)? && seen.insert(image.to_string()) {
-            add_default_runtime_image_candidate(runtime, image.to_string(), usage, plan);
-        }
-    }
-
-    Ok(())
+    Ok(candidates)
 }
 
-fn add_default_runtime_image_candidate(
-    runtime: RuntimeKind,
-    image: String,
-    usage: &ResourceUsage,
-    plan: &mut CleanPlan,
-) {
-    if let Some(container_id) = usage.image_user(&image) {
-        plan.skipped.push(SkippedResource {
-            kind: ResourceKind::Image,
-            name: image,
-            reason: format!("used by container `{container_id}`"),
-        });
-    } else {
-        plan.candidates
-            .push(CleanCandidate::DefaultRuntimeImage { runtime, image });
+fn legacy_default_runtime_image_candidates(
+    podman: &Podman,
+) -> Result<Vec<DefaultRuntimeImageCandidate>> {
+    let mut candidates = Vec::new();
+    for runtime in RuntimeKind::variants().iter().copied() {
+        let image = default_image::legacy_default_image(runtime);
+        if podman.image_exists(image)? {
+            candidates.push(DefaultRuntimeImageCandidate {
+                runtime,
+                image: image.to_string(),
+            });
+        }
     }
+
+    Ok(candidates)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,18 +285,53 @@ fn labeled_default_runtime_image_candidates(
         .collect()
 }
 
-fn add_cache_volume_candidates(
-    podman: &Podman,
+fn add_default_runtime_image_candidates(
+    candidates: &[DefaultRuntimeImageCandidate],
     usage: &ResourceUsage,
     plan: &mut CleanPlan,
-) -> Result<()> {
-    for volume in podman.volumes()? {
-        if is_agentbox_cache_volume_name(&volume.name) {
-            add_cache_volume_candidate(volume.name, usage, plan);
+) {
+    let mut seen = BTreeSet::new();
+
+    for candidate in candidates {
+        if seen.insert(candidate.image.clone()) {
+            add_default_runtime_image_candidate(
+                candidate.runtime,
+                candidate.image.clone(),
+                usage,
+                plan,
+            );
         }
     }
+}
 
-    Ok(())
+fn add_default_runtime_image_candidate(
+    runtime: RuntimeKind,
+    image: String,
+    usage: &ResourceUsage,
+    plan: &mut CleanPlan,
+) {
+    if let Some(container_id) = usage.image_user(&image) {
+        plan.skipped.push(SkippedResource {
+            kind: ResourceKind::Image,
+            name: image,
+            reason: format!("used by container `{container_id}`"),
+        });
+    } else {
+        plan.candidates
+            .push(CleanCandidate::DefaultRuntimeImage { runtime, image });
+    }
+}
+
+fn add_cache_volume_candidates(
+    volumes: &[PodmanVolume],
+    usage: &ResourceUsage,
+    plan: &mut CleanPlan,
+) {
+    for volume in volumes {
+        if is_agentbox_cache_volume_name(&volume.name) {
+            add_cache_volume_candidate(volume.name.clone(), usage, plan);
+        }
+    }
 }
 
 fn add_cache_volume_candidate(name: String, usage: &ResourceUsage, plan: &mut CleanPlan) {
@@ -438,36 +496,35 @@ mod tests {
     }
 
     #[test]
-    fn clean_plan_helpers_skip_used_resources_and_keep_unused_candidates() {
-        let usage = ResourceUsage {
-            image_users: BTreeMap::from([(
-                RuntimeKind::Opencode.default_image(),
-                "running-opencode".to_string(),
-            )]),
-            volume_users: BTreeMap::from([(
-                USED_VOLUME.to_string(),
-                "running-opencode".to_string(),
-            )]),
-        };
-        let mut plan = CleanPlan::default();
-
+    fn clean_plan_from_inventory_skips_used_resources_and_keeps_unused_candidates() {
         let opencode_image = RuntimeKind::Opencode.default_image();
         let codex_image = RuntimeKind::Codex.default_image();
+        let inventory = CleanInventory {
+            containers: vec![inspect_container(
+                "running-opencode",
+                &opencode_image,
+                &[USED_VOLUME],
+            )],
+            default_runtime_images: vec![
+                DefaultRuntimeImageCandidate {
+                    runtime: RuntimeKind::Opencode,
+                    image: opencode_image.clone(),
+                },
+                DefaultRuntimeImageCandidate {
+                    runtime: RuntimeKind::Codex,
+                    image: codex_image.clone(),
+                },
+            ],
+            volumes: vec![volume(USED_VOLUME), volume(UNUSED_VOLUME)],
+        };
 
-        add_default_runtime_image_candidate(
-            RuntimeKind::Opencode,
-            opencode_image.clone(),
-            &usage,
-            &mut plan,
+        let plan = CleanPlan::from_inventory(
+            CleanScope {
+                images: true,
+                volumes: true,
+            },
+            &inventory,
         );
-        add_default_runtime_image_candidate(
-            RuntimeKind::Codex,
-            codex_image.clone(),
-            &usage,
-            &mut plan,
-        );
-        add_cache_volume_candidate(USED_VOLUME.to_string(), &usage, &mut plan);
-        add_cache_volume_candidate(UNUSED_VOLUME.to_string(), &usage, &mut plan);
 
         assert_eq!(
             plan.candidates,
@@ -495,6 +552,40 @@ mod tests {
                     reason: "mounted by container `running-opencode`".to_string(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn clean_plan_deduplicates_labeled_and_legacy_image_references() {
+        let image = RuntimeKind::Opencode.default_image();
+        let inventory = CleanInventory {
+            default_runtime_images: vec![
+                DefaultRuntimeImageCandidate {
+                    runtime: RuntimeKind::Opencode,
+                    image: image.clone(),
+                },
+                DefaultRuntimeImageCandidate {
+                    runtime: RuntimeKind::Opencode,
+                    image: image.clone(),
+                },
+            ],
+            ..CleanInventory::default()
+        };
+
+        let plan = CleanPlan::from_inventory(
+            CleanScope {
+                images: true,
+                volumes: false,
+            },
+            &inventory,
+        );
+
+        assert_eq!(
+            plan.candidates,
+            vec![CleanCandidate::DefaultRuntimeImage {
+                runtime: RuntimeKind::Opencode,
+                image,
+            }]
         );
     }
 
@@ -564,6 +655,18 @@ mod tests {
                 networks: BTreeMap::new(),
                 ports: BTreeMap::new(),
             },
+        }
+    }
+
+    fn volume(name: &str) -> PodmanVolume {
+        PodmanVolume {
+            name: name.to_string(),
+            driver: None,
+            mountpoint: None,
+            created_at: None,
+            labels: BTreeMap::new(),
+            scope: None,
+            options: BTreeMap::new(),
         }
     }
 }
