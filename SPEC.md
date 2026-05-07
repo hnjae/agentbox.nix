@@ -815,6 +815,8 @@ Rules:
   workspace session.
 - The mounted runtime cache volume stores Nix cache and evaluation artifacts
   that should survive later sessions for the same canonical git root.
+- A bind mount at `/home/user/.cache/nix` does not satisfy the runtime cache
+  volume requirement; the mount must be a Podman-managed named volume.
 - The mounted runtime cache volume is owned or remapped so the runtime user can
   create cache files in it, including when a prior session created the volume
   under a different rootless Podman user namespace mapping.
@@ -1012,8 +1014,9 @@ Required drift behavior:
 - Missing or malformed managed-container metadata: mark the session as `failed`
   and require explicit cleanup or recreation before the session can be used
   again.
-- Missing runtime cache volume mount for an existing session: fail clearly and
-  require explicit container recreation.
+- Missing runtime cache volume mount for an existing session, including a bind
+  mount where the named volume is expected: fail clearly and require explicit
+  container recreation.
 - Missing or inconsistent attach endpoint metadata or published port data: mark
   the session as `failed` and require explicit cleanup or recreation before the
   session can be attached.
