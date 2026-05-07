@@ -19,6 +19,8 @@ use crate::{Error, Result};
 
 use super::runtime::remove_default_runtime_image_state_if_image;
 
+const PODMAN_VOLUME_MOUNT_KIND: &str = "volume";
+
 pub fn run(args: CleanArgs) -> Result<()> {
     let podman = Podman::new();
     let scope = CleanScope::from_args(&args);
@@ -217,14 +219,24 @@ impl ResourceUsage {
         let mut usage = Self::default();
 
         for container in containers {
-            usage.mark_used(CleanResource::image(&container.image_name), &container.id);
+            usage.mark_image_used(&container.image_name, &container.id);
 
             for mount in &container.mounts {
-                usage.mark_used(CleanResource::volume(&mount.source), &container.id);
+                if mount.kind == PODMAN_VOLUME_MOUNT_KIND {
+                    usage.mark_volume_used(&mount.source, &container.id);
+                }
             }
         }
 
         usage
+    }
+
+    fn mark_image_used(&mut self, image: &str, container_id: &str) {
+        self.mark_used(CleanResource::image(image), container_id);
+    }
+
+    fn mark_volume_used(&mut self, volume: &str, container_id: &str) {
+        self.mark_used(CleanResource::volume(volume), container_id);
     }
 
     fn mark_used(&mut self, resource: CleanResource, container_id: &str) {
@@ -512,6 +524,21 @@ mod tests {
             usage.user(&CleanResource::volume(UNUSED_VOLUME)),
             Some("second")
         );
+    }
+
+    #[test]
+    fn resource_usage_ignores_bind_mount_sources_when_indexing_volumes() {
+        let mut container = inspect_container("bind-user", "image", &[]);
+        container.mounts.push(PodmanContainerMount {
+            kind: "bind".to_string(),
+            source: USED_VOLUME.to_string(),
+            destination: "/workspace".to_string(),
+            rw: true,
+        });
+
+        let usage = ResourceUsage::from_containers(&[container]);
+
+        assert_eq!(usage.user(&CleanResource::volume(USED_VOLUME)), None);
     }
 
     #[test]
