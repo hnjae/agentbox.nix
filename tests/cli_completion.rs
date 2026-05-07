@@ -182,6 +182,20 @@ fn completion_scripts_offer_ls_and_health_output_formats() {
 }
 
 #[test]
+fn completion_scripts_offer_run_connect_flag() {
+    let bash = capture_completion_script_shell("bash");
+    assert!(bash.contains("--runtime --connect -c"));
+
+    let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("--connect[connect after the new session is ready]"));
+    assert!(zsh.contains("-c[connect after the new session is ready]"));
+
+    let fish = capture_completion_script_shell("fish");
+    assert!(fish.contains("__fish_seen_subcommand_from run"));
+    assert!(fish.contains("-s c -l connect"));
+}
+
+#[test]
 fn completion_scripts_offer_stop_all() {
     let bash = capture_completion_script_shell("bash");
     assert!(bash.contains("--force --all"));
@@ -314,6 +328,7 @@ fn installed_manpages_include_referenced_subcommands() {
     let run = fs::read_to_string(directory.path().join("agentbox-run.1")).unwrap();
     assert!(run.contains(".TH agentbox-run 1"));
     assert!(run.contains("Runtime to launch for this run"));
+    assert!(run.contains("Connect after the new session is ready"));
 }
 
 fn capture_completion_script() -> String {

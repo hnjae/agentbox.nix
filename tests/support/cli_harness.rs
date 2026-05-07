@@ -364,6 +364,7 @@ fn fake_client_script(name: &str) -> String {
 set -eu
 
 log_path=${{AGENTBOX_TEST_LOG:-}}
+fixtures=${{AGENTBOX_TEST_FIXTURES:-}}
 
 lock_state() {{
   lock_path=${{AGENTBOX_TEST_LOCK_PATH:-}}
@@ -377,6 +378,13 @@ lock_state() {{
 
 if [ -n "$log_path" ]; then
   printf '{name} lock=%s args=%s cwd=%s\n' "$(lock_state)" "$*" "$(pwd)" >> "$log_path"
+fi
+
+if [ -n "$fixtures" ] && [ -f "$fixtures/{name}.exit" ]; then
+  if [ -f "$fixtures/{name}.stderr" ]; then
+    cat "$fixtures/{name}.stderr" >&2
+  fi
+  exit "$(tr -d '\n' < "$fixtures/{name}.exit")"
 fi
 "#
     )

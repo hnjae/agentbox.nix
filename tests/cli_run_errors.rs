@@ -90,6 +90,36 @@ fn existing_managed_session_suggests_connect_before_image_work() {
 }
 
 #[test]
+fn run_with_connect_still_fails_when_a_managed_session_already_exists() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "existing-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "existing-id",
+        &opencode_workspace_inspect_fixture(workspace, true, true),
+    );
+
+    run_command(&harness, target, &["--connect"])
+        .failure()
+        .stderr(predicates::str::contains(format!(
+            "agentbox connect {}",
+            target.display()
+        )))
+        .stderr(predicates::str::contains(&workspace.container_name));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
+    assert!(!log.iter().any(|line| line.starts_with("opencode ")));
+    assert!(!log.iter().any(|line| line.starts_with("image ")));
+    assert!(!log.iter().any(|line| line.starts_with("build ")));
+}
+
+#[test]
 fn duplicate_sessions_fail_closed() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
@@ -666,6 +696,56 @@ fn failed_session_with_cache_bind_mount_requires_recreation() {
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "inspect"]);
+}
+
+#[test]
+fn run_with_connect_reports_client_failure_without_cleaning_up_ready_session() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Opencode.default_image();
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("opencode", "client exploded", 42);
+    let endpoint = support::ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    run_command(&harness, target, &["--connect"])
+        .failure()
+        .stderr(predicates::str::contains("client exploded"))
+        .stderr(predicates::str::contains(
+            "failed to connect to newly created managed session",
+        ))
+        .stderr(predicates::str::contains("The session remains running"))
+        .stderr(predicates::str::contains(format!(
+            "agentbox connect {}",
+            target.display()
+        )))
+        .stderr(predicates::str::contains(format!(
+            "agentbox stop {}",
+            target.display()
+        )));
+    endpoint.wait();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "volume", "run", "inspect", "opencode"]
+    );
+    assert!(!log.iter().any(|line| line.starts_with("stop ")));
+    assert!(!log.iter().any(|line| line.starts_with("rm ")));
+    assert!(
+        !log.iter()
+            .any(|line| line.starts_with("volume ") && line.contains("args=rm "))
+    );
 }
 
 fn install_harness() -> Harness {

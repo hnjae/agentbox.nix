@@ -64,6 +64,7 @@ fn core_commands_parse_into_expected_variants() {
         run.command,
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Opencode),
+            connect: false,
             directory: "/tmp/workspace".into(),
         })
     );
@@ -383,9 +384,34 @@ fn run_accepts_runtime_selection() {
         cli.command,
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Codex),
+            connect: false,
             directory: "/tmp/workspace".into(),
         })
     );
+}
+
+#[test]
+fn run_accepts_connect_flag() {
+    for flag in ["--connect", "-c"] {
+        let cli = Cli::try_parse_from([
+            "agentbox",
+            "run",
+            flag,
+            "--runtime",
+            "codex",
+            "/tmp/workspace",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Run(RunArgs {
+                runtime: Some(RuntimeKind::Codex),
+                connect: true,
+                directory: "/tmp/workspace".into(),
+            })
+        );
+    }
 }
 
 #[test]
@@ -396,6 +422,7 @@ fn run_accepts_missing_runtime_for_prompting() {
         cli.command,
         Command::Run(RunArgs {
             runtime: None,
+            connect: false,
             directory: "/tmp/workspace".into(),
         })
     );

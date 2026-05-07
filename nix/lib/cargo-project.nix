@@ -10,6 +10,7 @@ rec {
       repoRoot = toString ../..;
       assetsRoot = "${repoRoot}/assets";
       imageRoot = "${assetsRoot}/image";
+      completionRoot = "${repoRoot}/src/commands/completion";
       testFixturesRoot = "${repoRoot}/tests/fixtures";
     in
     pkgs.lib.cleanSourceWith {
@@ -24,8 +25,13 @@ rec {
             || pkgs.lib.hasPrefix "${imageRoot}/" pathString;
           isTestFixture =
             pathString == testFixturesRoot || pkgs.lib.hasPrefix "${testFixturesRoot}/" pathString;
+          isCompletionTemplate =
+            pathString == completionRoot || pkgs.lib.hasPrefix "${completionRoot}/" pathString;
         in
-        craneLib.filterCargoSources path type || isEmbeddedImageAsset || isTestFixture;
+        craneLib.filterCargoSources path type
+        || isEmbeddedImageAsset
+        || isTestFixture
+        || isCompletionTemplate;
     };
 
   # Common arguments can be set here to avoid repeating them later

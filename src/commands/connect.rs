@@ -118,7 +118,10 @@ fn report_launch_directory_notice(workspace: &WorkspaceIdentity, launch_director
     ));
 }
 
-fn run_host_client(process_runner: &ProcessRunner, client: &RuntimeInvocation) -> Result<()> {
+pub(super) fn run_host_client(
+    process_runner: &ProcessRunner,
+    client: &RuntimeInvocation,
+) -> Result<()> {
     let argv = &client.argv;
     let Some((program, args)) = argv.split_first() else {
         return Err(Error::msg("runtime host client command is empty"));

@@ -38,8 +38,8 @@ _agentbox() {
         run)
             if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--runtime" ]]; then
                 COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
-            elif [[ "$cur" == --* ]]; then
-                COMPREPLY=( $(compgen -W "--runtime" -- "$cur") )
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--runtime --connect -c" -- "$cur") )
             fi
             ;;
         ls)

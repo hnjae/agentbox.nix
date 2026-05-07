@@ -51,7 +51,10 @@ _agentbox() {
       if (( CURRENT > 2 && "$words[CURRENT-1]" == "--runtime" )); then
         _values 'runtime' @RUNTIME_VALUES@
       else
-        _values 'option' '--runtime[select runtime]'
+        _values 'option' \
+          '--runtime[select runtime]' \
+          '--connect[connect after the new session is ready]' \
+          '-c[connect after the new session is ready]'
       fi
       ;;
     ls)

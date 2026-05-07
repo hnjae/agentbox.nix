@@ -144,6 +144,10 @@ pub struct RunArgs {
     #[arg(long, value_enum)]
     pub runtime: Option<RuntimeKind>,
 
+    /// Connect after the new session is ready.
+    #[arg(short = 'c', long = "connect")]
+    pub connect: bool,
+
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
 }

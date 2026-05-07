@@ -247,6 +247,53 @@ fn run_launches_codex_server_in_yolo_mode() {
     assert!(state.contains("\"installed_version\": \"0.99.0\""));
 }
 
+#[test]
+fn run_with_connect_runs_runtime_client_after_server_is_ready() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Opencode.default_image();
+    let harness = Harness::new();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .args(["run", "--connect", "--runtime", "opencode"])
+        .arg(target);
+
+    let expected_endpoint = format!("http://127.0.0.1:{}", endpoint.port());
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(
+            predicate::str::contains(format!(
+                "INFO: managed session `{}` for `{}` is ready at `{expected_endpoint}`; connecting",
+                workspace.container_name, workspace.canonical_git_root,
+            ))
+            .and(predicate::str::contains("use `agentbox connect`").not()),
+        );
+    endpoint.wait();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "image", "volume", "run", "inspect", "opencode"]
+    );
+    assert!(log[5].contains("lock=held"));
+    assert!(log[5].contains(&format!("attach {expected_endpoint}")));
+    assert!(log[5].contains(&format!("cwd={}", workspace.canonical_target)));
+}
+
 fn assert_runtime_user_args(run: &str) {
     let gid = current_primary_gid().to_string();
     assert!(run.contains(&format!("--userns keep-id:uid=1000,gid={gid}")));
