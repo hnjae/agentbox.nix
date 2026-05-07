@@ -230,7 +230,7 @@ fn stop_exact_git_root_matches(
             )));
         }
 
-        RootedSessionCleanupMode::SelectedSessions.cleanup(&locked, &sessions)
+        cleanup_selected_sessions(&locked, &sessions)
     })?;
 
     finish_cleanup(git_root.as_str(), &failures)
@@ -323,7 +323,7 @@ fn lockable_stable_id_matches(
 fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<ContainerCleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
-    cleanup_rooted_session_groups(partition.rooted, RootedSessionCleanupMode::SelectedSessions)
+    cleanup_selected_rooted_session_groups(partition.rooted)
 }
 
 fn cleanup_all_running_matches(
@@ -331,10 +331,7 @@ fn cleanup_all_running_matches(
 ) -> Result<Vec<ContainerCleanupFailure>> {
     let partition = partition_sessions_by_git_root(sessions);
 
-    let mut failures = cleanup_rooted_session_groups(
-        partition.rooted,
-        RootedSessionCleanupMode::RunningExactMatches,
-    )?;
+    let mut failures = cleanup_running_exact_matches_for_rooted_groups(partition.rooted)?;
 
     if !partition.unrooted.is_empty() {
         let podman = Podman::new();
@@ -347,51 +344,58 @@ fn cleanup_all_running_matches(
     Ok(failures)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RootedSessionCleanupMode {
-    SelectedSessions,
-    RunningExactMatches,
-}
-
-impl RootedSessionCleanupMode {
-    fn cleanup(
-        self,
-        locked: &LockedGitRoot<'_>,
-        sessions: &[SessionRecord],
-    ) -> Result<Vec<ContainerCleanupFailure>> {
-        match self {
-            Self::SelectedSessions => {
-                Ok(cleanup_managed_containers(locked.podman(), sessions.iter()))
-            }
-            Self::RunningExactMatches => {
-                let sessions =
-                    exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
-                Ok(cleanup_managed_containers(
-                    locked.podman(),
-                    sessions
-                        .iter()
-                        .filter(|session| session.container_running()),
-                ))
-            }
-        }
-    }
-}
-
-fn cleanup_rooted_session_groups(
+fn cleanup_selected_rooted_session_groups(
     groups: Vec<SessionGroup>,
-    mode: RootedSessionCleanupMode,
 ) -> Result<Vec<ContainerCleanupFailure>> {
     let mut failures = Vec::new();
 
     for group in groups {
         let git_root = group.canonical_git_root;
         let sessions = group.sessions;
-        let mut group_failures =
-            with_locked_git_root(&git_root, |locked| mode.cleanup(&locked, &sessions))?;
+        let mut group_failures = with_locked_git_root(&git_root, |locked| {
+            cleanup_selected_sessions(&locked, &sessions)
+        })?;
         failures.append(&mut group_failures);
     }
 
     Ok(failures)
+}
+
+fn cleanup_selected_sessions(
+    locked: &LockedGitRoot<'_>,
+    sessions: &[SessionRecord],
+) -> Result<Vec<ContainerCleanupFailure>> {
+    Ok(cleanup_managed_containers(locked.podman(), sessions.iter()))
+}
+
+fn cleanup_running_exact_matches_for_rooted_groups(
+    groups: Vec<SessionGroup>,
+) -> Result<Vec<ContainerCleanupFailure>> {
+    let mut failures = Vec::new();
+
+    for group in groups {
+        let git_root = group.canonical_git_root;
+        let mut group_failures = with_locked_git_root(&git_root, |locked| {
+            cleanup_running_exact_matches_for_locked_root(&locked)
+        })?;
+        failures.append(&mut group_failures);
+    }
+
+    Ok(failures)
+}
+
+fn cleanup_running_exact_matches_for_locked_root(
+    locked: &LockedGitRoot<'_>,
+) -> Result<Vec<ContainerCleanupFailure>> {
+    // Re-discover under the git-root lock so `stop --all` only removes
+    // containers that are still exact matches when cleanup starts.
+    let sessions = exact_git_root_matches(locked.discover_sessions()?, locked.git_root());
+    Ok(cleanup_managed_containers(
+        locked.podman(),
+        sessions
+            .iter()
+            .filter(|session| session.container_running()),
+    ))
 }
 
 fn finish_cleanup(identity: &str, failures: &[ContainerCleanupFailure]) -> Result<()> {
