@@ -12,7 +12,7 @@ containers.
 
 The MVP is workspace-centric rather than name-centric:
 
-- `agentbox run [--runtime <opencode|codex>] <directory>`
+- `agentbox run [--connect|-c] [--runtime <opencode|codex>] <directory>`
 - `agentbox runtime update <opencode|codex>`
 - `agentbox connect [directory]`
 - `agentbox ls`
@@ -20,10 +20,12 @@ The MVP is workspace-centric rather than name-centric:
 - `agentbox stop [target]...`
 - `agentbox clean`
 
-`agentbox run [--runtime <opencode|codex>] <directory>` resolves `<directory>`
-to its canonical git root and launches one managed workspace session for that
-repository as a detached runtime server container. The container starts the
-selected runtime server for that workspace. If `--runtime` is omitted in an
+`agentbox run [--connect|-c] [--runtime <opencode|codex>] <directory>`
+resolves `<directory>` to its canonical git root and launches one managed
+workspace session for that repository as a detached runtime server container.
+The container starts the selected runtime server for that workspace. If
+`--connect` is set, `run` connects with the runtime host-side client after the
+new runtime server endpoint is ready. If `--runtime` is omitted in an
 interactive terminal, `run` prompts for the runtime before validating runtime
 prerequisites or starting a container.
 
@@ -219,12 +221,14 @@ Global output rules:
   lines. `connect` runs the runtime host client with inherited stdio and does
   not wrap the client output as logs.
 
-### `agentbox run [--runtime <opencode|codex>] <directory>`
+### `agentbox run [--connect|-c] [--runtime <opencode|codex>] <directory>`
 
 `run` launches a new workspace session as a detached runtime server.
 
 Optional flag:
 
+- `--connect`, `-c`: connect with the runtime host-side client after the new
+  session is ready
 - `--runtime <opencode|codex>`
 
 Expected behavior:
@@ -255,8 +259,12 @@ Expected behavior:
     server starts with the launch directory's `direnv` environment.
 11. Wait until the runtime server endpoint is ready for connection or the
     container exits.
-12. Report that the discovered attach endpoint is ready and suggest
-    `agentbox connect <directory>`.
+12. If `--connect` is absent, report that the discovered attach endpoint is
+    ready and suggest `agentbox connect <directory>`.
+13. If `--connect` is present, report that the discovered attach endpoint is
+    ready and execute the runtime host client command from the session's launch
+    directory with stdio inherited, using the same client command behavior as
+    `agentbox connect`.
 
 Progress and diagnostics:
 
@@ -275,6 +283,10 @@ Runtime rules:
 
 - `run` accepts only `opencode` and `codex` in the MVP.
 - `--runtime` selects the runtime for the new session when it is present.
+- `--connect` does not change session identity, runtime selection, container
+  startup, endpoint readiness checks, or existing-session handling.
+- If `--connect` is set and a managed session already exists for the resolved
+  git root, `run` still fails before reusing or connecting to that session.
 - When `--runtime` is absent in an interactive terminal, the runtime prompt is
   rendered on stderr and the final success message is an `INFO` log on stderr.
 - Canceling the runtime prompt with Escape exits non-zero with
@@ -294,6 +306,10 @@ Runtime rules:
 - If a managed session already exists for the resolved git root, `run` fails
   before reusing or comparing any stored runtime value.
 - `--runtime` does not change session identity.
+- If the host client launched by `run --connect` exits unsuccessfully or cannot
+  be started, `run --connect` exits non-zero and reports that the managed
+  session remains running so the user can retry `agentbox connect <directory>`
+  or stop it with `agentbox stop <directory>`.
 
 Image rules:
 
