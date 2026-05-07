@@ -1,6 +1,8 @@
 use crate::prompt;
 use crate::session::SessionRecord;
 
+use super::session_output::SessionDisplay;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SessionTargetKind {
     ConnectRoot,
@@ -19,14 +21,12 @@ impl SessionTargetKind {
             Self::StableId if session.has_stable_id() => session.stable_id()?,
             _ => return None,
         };
+        let display = SessionDisplay::from_session(session);
 
         Some(SessionTargetCandidate {
             value,
-            canonical_git_root: session
-                .canonical_git_root()
-                .map(|root| root.as_str())
-                .unwrap_or("unknown"),
-            runtime: session.runtime().unwrap_or("unknown"),
+            canonical_git_root: display.canonical_git_root_or_unknown(),
+            runtime: display.runtime_or_unknown(),
             status: session.status.as_str(),
         })
     }

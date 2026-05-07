@@ -29,7 +29,6 @@ pub use discovery::{
     discover_sessions_for_git_root_from_ps,
 };
 pub use endpoint::discover_attach_endpoint_from_inspect;
-pub(crate) use record::SessionDisplay;
 pub use record::{SessionGroup, SessionMetadata, SessionRecord};
 pub(crate) use selection::{run_command_hint, select_single_session, select_stable_id_prefix};
 

@@ -8,7 +8,7 @@ use crate::session::{SessionRecord, discover_managed_sessions, sorted_session_re
 
 use super::output;
 use super::session_output::{
-    SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
+    SessionDisplay, SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
 };
 
 pub fn run(args: LsArgs) -> Result<()> {
@@ -34,7 +34,7 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
     let mut table = output::table(["ID", "CANONICAL GIT ROOT", "RUNTIME", "STATUS", "ENDPOINT"]);
 
     for session in sorted_session_refs_by_identity(sessions) {
-        let display = session.display();
+        let display = SessionDisplay::from_session(session);
         table.add_row([
             Cell::new(display.id_or_unknown()),
             Cell::new(display.canonical_git_root_or_unknown()),

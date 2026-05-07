@@ -7,13 +7,13 @@ use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::{HostRuntimeHealthProbe, RuntimeHealth, RuntimeHealthProbe};
 use crate::session::{
-    SessionDisplay, SessionRecord, discover_managed_sessions, select_stable_id_prefix,
+    SessionRecord, discover_managed_sessions, select_stable_id_prefix,
     sort_session_refs_by_identity,
 };
 
 use super::output;
 use super::session_output::{
-    SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
+    SessionDisplay, SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
 };
 
 pub fn run(args: HealthArgs) -> Result<()> {
@@ -115,7 +115,7 @@ fn health_rows<'a>(
 }
 
 fn health_row<'a>(session: &'a SessionRecord, probe: &impl RuntimeHealthProbe) -> HealthRow<'a> {
-    let display = session.display();
+    let display = SessionDisplay::from_session(session);
 
     let health = match (session.runtime_kind(), session.attach_endpoint.as_ref()) {
         (Some(runtime), Some(endpoint)) => probe.check(runtime, endpoint),
