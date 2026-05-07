@@ -144,7 +144,6 @@ mod tests {
             container_id: format!("{container_name}-id"),
             container_name: container_name.to_string(),
             metadata: SessionMetadata::from_labels(&labels),
-            runtime_kind: None,
             attach_endpoint: None,
             container_running: false,
             status: SessionStatus::failed_unknown(),

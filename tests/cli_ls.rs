@@ -7,7 +7,7 @@ use agentbox::metadata::{
     LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
     LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
-use agentbox::runtime::{AttachEndpoint, RuntimeKind};
+use agentbox::runtime::AttachEndpoint;
 use agentbox::session::{SessionMetadata, SessionRecord, SessionStatus};
 use clap::Parser;
 
@@ -146,7 +146,6 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
         container_id: format!("{name}-id"),
         container_name: name.to_string(),
         metadata: metadata(root, name),
-        runtime_kind: Some(RuntimeKind::Opencode),
         attach_endpoint: Some(AttachEndpoint {
             scheme: "http".to_string(),
             host_ip: "127.0.0.1".to_string(),

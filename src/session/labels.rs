@@ -150,10 +150,6 @@ impl SessionLabelReport {
             .copied()
             .map_err(|error| error.session_failure())
     }
-
-    pub(super) fn runtime_kind(&self) -> Option<RuntimeKind> {
-        self.attach_labels().ok().map(AttachLabels::runtime)
-    }
 }
 
 impl SessionMetadata {

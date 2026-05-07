@@ -165,7 +165,6 @@ mod tests {
             container_id: "container-id".to_string(),
             container_name: "broken-container".to_string(),
             metadata: SessionMetadata::from_labels(&BTreeMap::new()),
-            runtime_kind: None,
             attach_endpoint: None,
             container_running: true,
             status: SessionStatus::Running,

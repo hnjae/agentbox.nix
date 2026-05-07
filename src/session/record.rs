@@ -23,7 +23,6 @@ pub struct SessionRecord {
     pub container_id: String,
     pub container_name: String,
     pub metadata: SessionMetadata,
-    pub runtime_kind: Option<RuntimeKind>,
     pub attach_endpoint: Option<AttachEndpoint>,
     pub container_running: bool,
     pub status: SessionStatus,
@@ -61,7 +60,10 @@ impl SessionRecord {
     }
 
     pub fn runtime_kind(&self) -> Option<RuntimeKind> {
-        self.runtime_kind
+        self.metadata
+            .attach_labels()
+            .ok()
+            .map(|labels| labels.runtime())
     }
 
     pub fn container_running(&self) -> bool {
