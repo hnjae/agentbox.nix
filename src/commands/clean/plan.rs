@@ -8,66 +8,35 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::cli::CleanArgs;
-use crate::diagnostic;
-use crate::metadata::{DefaultRuntimeImageMetadata, default_runtime_image_label_filter};
-use crate::podman::{Podman, PodmanContainerInspect, PodmanImage, PodmanVolume};
-use crate::prompt;
-use crate::runtime::{RuntimeKind, default_image};
+use crate::podman::{PodmanContainerInspect, PodmanVolume};
+use crate::runtime::RuntimeKind;
 use crate::workspace::is_agentbox_workspace_resource_name;
-use crate::{Error, Result};
-
-use super::runtime::remove_default_runtime_image_state_if_image;
 
 const PODMAN_VOLUME_MOUNT_KIND: &str = "volume";
 
-pub fn run(args: CleanArgs) -> Result<()> {
-    let podman = Podman::new();
-    let scope = CleanScope::from_args(&args);
-    let plan = build_clean_plan(&podman, scope)?;
-
-    if args.dry_run {
-        diagnostic::info(render_plan(&plan));
-        return Ok(());
-    }
-
-    if plan.candidates.is_empty() {
-        diagnostic::info("nothing to clean");
-        return Ok(());
-    }
-
-    diagnostic::info(render_plan(&plan));
-    if !args.yes && !confirm_interactive()? {
-        diagnostic::warning("aborted");
-        return Ok(());
-    }
-
-    apply_clean_plan(&podman, &plan)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct CleanScope {
-    images: bool,
-    volumes: bool,
+pub(super) struct CleanScope {
+    pub(super) images: bool,
+    pub(super) volumes: bool,
 }
 
 impl CleanScope {
-    fn from_args(args: &CleanArgs) -> Self {
+    pub(super) fn from_flags(images: bool, volumes: bool) -> Self {
         Self {
-            images: args.images || !args.volumes,
-            volumes: args.volumes || !args.images,
+            images: images || !volumes,
+            volumes: volumes || !images,
         }
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct CleanPlan {
-    candidates: Vec<CleanCandidate>,
-    skipped: Vec<SkippedResource>,
+pub(super) struct CleanPlan {
+    pub(super) candidates: Vec<CleanCandidate>,
+    pub(super) skipped: Vec<SkippedResource>,
 }
 
 impl CleanPlan {
-    fn from_inventory(scope: CleanScope, inventory: &CleanInventory) -> Self {
+    pub(super) fn from_inventory(scope: CleanScope, inventory: &CleanInventory) -> Self {
         let usage = ResourceUsage::from_containers(&inventory.containers);
         let mut plan = CleanPlan::default();
 
@@ -88,7 +57,7 @@ impl CleanPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum CleanCandidate {
+pub(super) enum CleanCandidate {
     DefaultRuntimeImage {
         runtime: RuntimeKind,
         resource: CleanResource,
@@ -99,25 +68,25 @@ enum CleanCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SkippedResource {
-    resource: CleanResource,
-    reason: String,
+pub(super) struct SkippedResource {
+    pub(super) resource: CleanResource,
+    pub(super) reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct CleanResource {
+pub(super) struct CleanResource {
     kind: ResourceKind,
     name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ResourceKind {
+pub(super) enum ResourceKind {
     Image,
     Volume,
 }
 
 impl ResourceKind {
-    fn as_str(self) -> &'static str {
+    pub(super) fn as_str(self) -> &'static str {
         match self {
             Self::Image => "image",
             Self::Volume => "volume",
@@ -141,11 +110,11 @@ impl CleanResource {
         }
     }
 
-    fn kind(&self) -> ResourceKind {
+    pub(super) fn kind(&self) -> ResourceKind {
         self.kind
     }
 
-    fn name(&self) -> &str {
+    pub(super) fn name(&self) -> &str {
         &self.name
     }
 }
@@ -159,54 +128,32 @@ impl CleanCandidate {
         Self::CacheVolume { resource }
     }
 
-    fn resource(&self) -> &CleanResource {
+    pub(super) fn resource(&self) -> &CleanResource {
         match self {
             Self::DefaultRuntimeImage { resource, .. } | Self::CacheVolume { resource } => resource,
         }
     }
 
-    fn kind(&self) -> ResourceKind {
+    pub(super) fn kind(&self) -> ResourceKind {
         self.resource().kind()
     }
 
-    fn name(&self) -> &str {
+    pub(super) fn name(&self) -> &str {
         self.resource().name()
     }
 }
 
-fn build_clean_plan(podman: &Podman, scope: CleanScope) -> Result<CleanPlan> {
-    let inventory = CleanInventory::from_podman(podman, scope)?;
-
-    Ok(CleanPlan::from_inventory(scope, &inventory))
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct CleanInventory {
-    containers: Vec<PodmanContainerInspect>,
-    default_runtime_images: Vec<DefaultRuntimeImageCandidate>,
-    volumes: Vec<PodmanVolume>,
+pub(super) struct CleanInventory {
+    pub(super) containers: Vec<PodmanContainerInspect>,
+    pub(super) default_runtime_images: Vec<DefaultRuntimeImageCandidate>,
+    pub(super) volumes: Vec<PodmanVolume>,
 }
 
-impl CleanInventory {
-    fn from_podman(podman: &Podman, scope: CleanScope) -> Result<Self> {
-        let containers = inspect_all_containers(podman)?;
-        let default_runtime_images = if scope.images {
-            default_runtime_image_candidates(podman)?
-        } else {
-            Vec::new()
-        };
-        let volumes = if scope.volumes {
-            podman.volumes()?
-        } else {
-            Vec::new()
-        };
-
-        Ok(Self {
-            containers,
-            default_runtime_images,
-            volumes,
-        })
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DefaultRuntimeImageCandidate {
+    pub(super) runtime: RuntimeKind,
+    pub(super) image: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -248,64 +195,6 @@ impl ResourceUsage {
     fn user(&self, resource: &CleanResource) -> Option<&str> {
         self.users.get(resource).map(String::as_str)
     }
-}
-
-fn default_runtime_image_candidates(podman: &Podman) -> Result<Vec<DefaultRuntimeImageCandidate>> {
-    let mut candidates = labeled_default_runtime_images(podman)?;
-    candidates.extend(legacy_default_runtime_image_candidates(podman)?);
-
-    Ok(candidates)
-}
-
-fn legacy_default_runtime_image_candidates(
-    podman: &Podman,
-) -> Result<Vec<DefaultRuntimeImageCandidate>> {
-    let mut candidates = Vec::new();
-    for runtime in RuntimeKind::variants().iter().copied() {
-        let image = default_image::legacy_default_image(runtime);
-        if podman.image_exists(image)? {
-            candidates.push(DefaultRuntimeImageCandidate {
-                runtime,
-                image: image.to_string(),
-            });
-        }
-    }
-
-    Ok(candidates)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DefaultRuntimeImageCandidate {
-    runtime: RuntimeKind,
-    image: String,
-}
-
-fn labeled_default_runtime_images(podman: &Podman) -> Result<Vec<DefaultRuntimeImageCandidate>> {
-    let images = podman.images_with_label(&default_runtime_image_label_filter())?;
-    Ok(images
-        .iter()
-        .flat_map(labeled_default_runtime_image_candidates)
-        .collect())
-}
-
-fn labeled_default_runtime_image_candidates(
-    image: &PodmanImage,
-) -> Vec<DefaultRuntimeImageCandidate> {
-    let Some(metadata) = DefaultRuntimeImageMetadata::from_labels(&image.labels) else {
-        return Vec::new();
-    };
-    let runtime = metadata.runtime();
-    let context_hash = metadata.image_context_hash();
-
-    image
-        .references()
-        .into_iter()
-        .filter(|reference| {
-            default_image::is_content_hash_default_image_ref(runtime, reference)
-                && reference.ends_with(context_hash)
-        })
-        .map(|image| DefaultRuntimeImageCandidate { runtime, image })
-        .collect()
 }
 
 fn add_default_runtime_image_candidates(
@@ -381,123 +270,14 @@ fn add_candidate_or_skip(
     }
 }
 
-fn inspect_all_containers(podman: &Podman) -> Result<Vec<PodmanContainerInspect>> {
-    podman
-        .ps_all()?
-        .into_iter()
-        .map(|container| podman.inspect_one(&container.id))
-        .collect()
-}
-
-fn render_plan(plan: &CleanPlan) -> String {
-    let mut lines = Vec::new();
-
-    if !plan.candidates.is_empty() {
-        lines.push("cleanup candidates:".to_string());
-        lines.extend(
-            plan.candidates
-                .iter()
-                .map(|candidate| format!("- {} `{}`", candidate.kind().as_str(), candidate.name())),
-        );
-    }
-
-    if !plan.skipped.is_empty() {
-        lines.push("skipped:".to_string());
-        lines.extend(skipped_lines(&plan.skipped));
-    }
-
-    if lines.is_empty() {
-        "nothing to clean\n".to_string()
-    } else {
-        format!("{}\n", lines.join("\n"))
-    }
-}
-
-fn skipped_lines(skipped: &[SkippedResource]) -> impl Iterator<Item = String> + '_ {
-    skipped.iter().map(|resource| {
-        format!(
-            "- {} `{}`: {}",
-            resource.resource.kind().as_str(),
-            resource.resource.name(),
-            resource.reason
-        )
-    })
-}
-
-fn confirm_interactive() -> Result<bool> {
-    prompt::confirm(
-        "Proceed?",
-        false,
-        "agentbox clean requires --yes or --dry-run when stdin or stderr is not a TTY",
-    )
-}
-
-fn apply_clean_plan(podman: &Podman, plan: &CleanPlan) -> Result<()> {
-    let mut failures = Vec::new();
-
-    for candidate in &plan.candidates {
-        match remove_candidate(podman, candidate) {
-            Ok(()) => diagnostic::info(format!(
-                "removed {} `{}`",
-                candidate.kind().as_str(),
-                candidate.name()
-            )),
-            Err(error) => failures.push(DeleteFailure {
-                resource: candidate.resource().clone(),
-                error: error.to_string(),
-            }),
-        }
-    }
-
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::msg(render_delete_failures(&failures)))
-    }
-}
-
-fn remove_candidate(podman: &Podman, candidate: &CleanCandidate) -> Result<()> {
-    match candidate {
-        CleanCandidate::DefaultRuntimeImage { runtime, resource } => {
-            podman.remove_image(resource.name())?;
-            remove_default_runtime_image_state_if_image(*runtime, resource.name())?;
-            Ok(())
-        }
-        CleanCandidate::CacheVolume { resource } => podman.remove_volume(resource.name()),
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DeleteFailure {
-    resource: CleanResource,
-    error: String,
-}
-
-fn render_delete_failures(failures: &[DeleteFailure]) -> String {
-    let details = failures
-        .iter()
-        .map(|failure| {
-            format!(
-                "{} `{}` ({})",
-                failure.resource.kind().as_str(),
-                failure.resource.name(),
-                failure.error
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
-
-    format!("partial clean failed; failed resources: {details}")
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
     use crate::podman::{
-        PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
-        PodmanHostConfig, PodmanNetworkSettings,
+        PodmanContainerConfig, PodmanContainerMount, PodmanContainerState, PodmanHostConfig,
+        PodmanNetworkSettings,
     };
 
     const USED_VOLUME: &str = "agentbox-used-abcdef123456";
