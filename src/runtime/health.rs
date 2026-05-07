@@ -16,32 +16,38 @@ use super::spec::{AttachEndpoint, RuntimeHealthCheck, RuntimeHealthResponsePolic
 const ENDPOINT_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RuntimeHealth {
-    healthy: bool,
-    reason: String,
+pub(crate) enum RuntimeHealth {
+    Healthy,
+    Unhealthy { reason: String },
 }
 
 impl RuntimeHealth {
     fn healthy() -> Self {
-        Self {
-            healthy: true,
-            reason: "ok".to_string(),
-        }
+        Self::Healthy
     }
 
-    fn unhealthy(reason: impl Into<String>) -> Self {
-        Self {
-            healthy: false,
+    pub(crate) fn unhealthy(reason: impl Into<String>) -> Self {
+        Self::Unhealthy {
             reason: reason.into(),
         }
     }
 
     pub(crate) fn is_healthy(&self) -> bool {
-        self.healthy
+        matches!(self, Self::Healthy)
+    }
+
+    pub(crate) fn status_str(&self) -> &'static str {
+        match self {
+            Self::Healthy => "healthy",
+            Self::Unhealthy { .. } => "unhealthy",
+        }
     }
 
     pub(crate) fn reason(&self) -> &str {
-        &self.reason
+        match self {
+            Self::Healthy => "ok",
+            Self::Unhealthy { reason } => reason,
+        }
     }
 }
 

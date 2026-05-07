@@ -14,9 +14,7 @@ mod kind;
 mod profile;
 mod spec;
 
-#[cfg(test)]
-pub(crate) use health::RuntimeHealth;
-pub(crate) use health::{HostRuntimeHealthProbe, RuntimeHealthProbe};
+pub(crate) use health::{HostRuntimeHealthProbe, RuntimeHealth, RuntimeHealthProbe};
 pub use kind::RuntimeKind;
 pub(crate) use profile::{RuntimeHostStateMount, RuntimeHostStateSource};
 pub use spec::{

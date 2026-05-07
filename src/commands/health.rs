@@ -5,7 +5,7 @@ use crate::Error;
 use crate::cli::{HealthArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
-use crate::runtime::{HostRuntimeHealthProbe, RuntimeHealthProbe};
+use crate::runtime::{HostRuntimeHealthProbe, RuntimeHealth, RuntimeHealthProbe};
 use crate::session::{
     SessionDisplay, SessionRecord, discover_managed_sessions, select_stable_id_prefix,
     sort_session_refs_by_identity,
@@ -49,8 +49,8 @@ fn render_table(rows: &[HealthRow<'_>]) -> String {
             Cell::new(row.display.id_or_unknown()),
             Cell::new(row.display.canonical_git_root_or_unknown()),
             Cell::new(row.display.runtime_or_unknown()),
-            Cell::new(row.health.as_str()),
-            Cell::new(&row.reason),
+            Cell::new(row.health.status_str()),
+            Cell::new(row.health.reason()),
             Cell::new(row.display.endpoint_or_unknown()),
         ]);
     }
@@ -67,23 +67,7 @@ fn render_json(rows: &[HealthRow<'_>]) -> Result<String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct HealthRow<'a> {
     display: SessionDisplay<'a>,
-    health: HealthStatus,
-    reason: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HealthStatus {
-    Healthy,
-    Unhealthy,
-}
-
-impl HealthStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Healthy => "healthy",
-            Self::Unhealthy => "unhealthy",
-        }
-    }
+    health: RuntimeHealth,
 }
 
 fn selected_health_sessions<'a>(
@@ -130,30 +114,13 @@ fn health_rows<'a>(
 fn health_row<'a>(session: &'a SessionRecord, probe: &impl RuntimeHealthProbe) -> HealthRow<'a> {
     let display = session.display();
 
-    let (health, reason) = match (session.runtime_kind(), session.attach_endpoint.as_ref()) {
-        (Some(runtime), Some(endpoint)) => {
-            let health = probe.check(runtime, endpoint);
-            if health.is_healthy() {
-                (HealthStatus::Healthy, "ok".to_string())
-            } else {
-                (HealthStatus::Unhealthy, health.reason().to_string())
-            }
-        }
-        (None, _) => (
-            HealthStatus::Unhealthy,
-            "missing runtime metadata".to_string(),
-        ),
-        (_, None) => (
-            HealthStatus::Unhealthy,
-            "missing attach endpoint".to_string(),
-        ),
+    let health = match (session.runtime_kind(), session.attach_endpoint.as_ref()) {
+        (Some(runtime), Some(endpoint)) => probe.check(runtime, endpoint),
+        (None, _) => RuntimeHealth::unhealthy("missing runtime metadata"),
+        (_, None) => RuntimeHealth::unhealthy("missing attach endpoint"),
     };
 
-    HealthRow {
-        display,
-        health,
-        reason,
-    }
+    HealthRow { display, health }
 }
 
 #[derive(Debug, Serialize)]
@@ -173,8 +140,8 @@ impl<'row, 'session: 'row> From<&'row HealthRow<'session>> for HealthJsonRow<'ro
             id: row.display.id(),
             canonical_git_root: row.display.canonical_git_root_str(),
             runtime: row.display.runtime(),
-            health: row.health.as_str(),
-            reason: &row.reason,
+            health: row.health.status_str(),
+            reason: row.health.reason(),
             endpoint: row.display.endpoint(),
             container_name: row.display.container_name(),
         }
