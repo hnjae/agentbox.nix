@@ -92,15 +92,25 @@ impl CleanPlan {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CleanCandidate {
-    DefaultRuntimeImage { runtime: RuntimeKind, image: String },
-    CacheVolume { name: String },
+    DefaultRuntimeImage {
+        runtime: RuntimeKind,
+        resource: CleanResource,
+    },
+    CacheVolume {
+        resource: CleanResource,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SkippedResource {
+    resource: CleanResource,
+    reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CleanResource {
     kind: ResourceKind,
     name: String,
-    reason: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,19 +128,52 @@ impl ResourceKind {
     }
 }
 
-impl CleanCandidate {
-    fn kind(&self) -> ResourceKind {
-        match self {
-            Self::DefaultRuntimeImage { .. } => ResourceKind::Image,
-            Self::CacheVolume { .. } => ResourceKind::Volume,
+impl CleanResource {
+    fn image(name: impl Into<String>) -> Self {
+        Self::new(ResourceKind::Image, name)
+    }
+
+    fn volume(name: impl Into<String>) -> Self {
+        Self::new(ResourceKind::Volume, name)
+    }
+
+    fn new(kind: ResourceKind, name: impl Into<String>) -> Self {
+        Self {
+            kind,
+            name: name.into(),
         }
     }
 
+    fn kind(&self) -> ResourceKind {
+        self.kind
+    }
+
     fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl CleanCandidate {
+    fn default_runtime_image(runtime: RuntimeKind, resource: CleanResource) -> Self {
+        Self::DefaultRuntimeImage { runtime, resource }
+    }
+
+    fn cache_volume(resource: CleanResource) -> Self {
+        Self::CacheVolume { resource }
+    }
+
+    fn resource(&self) -> &CleanResource {
         match self {
-            Self::DefaultRuntimeImage { image, .. } => image,
-            Self::CacheVolume { name } => name,
+            Self::DefaultRuntimeImage { resource, .. } | Self::CacheVolume { resource } => resource,
         }
+    }
+
+    fn kind(&self) -> ResourceKind {
+        self.resource().kind()
+    }
+
+    fn name(&self) -> &str {
+        self.resource().name()
     }
 }
 
@@ -308,15 +351,15 @@ fn add_default_runtime_image_candidate(
     usage: &ResourceUsage,
     plan: &mut CleanPlan,
 ) {
-    if let Some(container_id) = usage.image_user(&image) {
+    let resource = CleanResource::image(image);
+    if let Some(container_id) = usage.image_user(resource.name()) {
         plan.skipped.push(SkippedResource {
-            kind: ResourceKind::Image,
-            name: image,
+            resource,
             reason: format!("used by container `{container_id}`"),
         });
     } else {
         plan.candidates
-            .push(CleanCandidate::DefaultRuntimeImage { runtime, image });
+            .push(CleanCandidate::default_runtime_image(runtime, resource));
     }
 }
 
@@ -333,14 +376,14 @@ fn add_cache_volume_candidates(
 }
 
 fn add_cache_volume_candidate(name: String, usage: &ResourceUsage, plan: &mut CleanPlan) {
-    if let Some(container_id) = usage.volume_user(&name) {
+    let resource = CleanResource::volume(name);
+    if let Some(container_id) = usage.volume_user(resource.name()) {
         plan.skipped.push(SkippedResource {
-            kind: ResourceKind::Volume,
-            name,
+            resource,
             reason: format!("mounted by container `{container_id}`"),
         });
     } else {
-        plan.candidates.push(CleanCandidate::CacheVolume { name });
+        plan.candidates.push(CleanCandidate::cache_volume(resource));
     }
 }
 
@@ -391,8 +434,8 @@ fn skipped_lines(skipped: &[SkippedResource]) -> impl Iterator<Item = String> + 
     skipped.iter().map(|resource| {
         format!(
             "- {} `{}`: {}",
-            resource.kind.as_str(),
-            resource.name.as_str(),
+            resource.resource.kind().as_str(),
+            resource.resource.name(),
             resource.reason
         )
     })
@@ -417,8 +460,7 @@ fn apply_clean_plan(podman: &Podman, plan: &CleanPlan) -> Result<()> {
                 candidate.name()
             )),
             Err(error) => failures.push(DeleteFailure {
-                kind: candidate.kind(),
-                name: candidate.name().to_string(),
+                resource: candidate.resource().clone(),
                 error: error.to_string(),
             }),
         }
@@ -433,19 +475,18 @@ fn apply_clean_plan(podman: &Podman, plan: &CleanPlan) -> Result<()> {
 
 fn remove_candidate(podman: &Podman, candidate: &CleanCandidate) -> Result<()> {
     match candidate {
-        CleanCandidate::DefaultRuntimeImage { runtime, image } => {
-            podman.remove_image(image)?;
-            remove_default_runtime_image_state_if_image(*runtime, image)?;
+        CleanCandidate::DefaultRuntimeImage { runtime, resource } => {
+            podman.remove_image(resource.name())?;
+            remove_default_runtime_image_state_if_image(*runtime, resource.name())?;
             Ok(())
         }
-        CleanCandidate::CacheVolume { name } => podman.remove_volume(name),
+        CleanCandidate::CacheVolume { resource } => podman.remove_volume(resource.name()),
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DeleteFailure {
-    kind: ResourceKind,
-    name: String,
+    resource: CleanResource,
     error: String,
 }
 
@@ -455,8 +496,8 @@ fn render_delete_failures(failures: &[DeleteFailure]) -> String {
         .map(|failure| {
             format!(
                 "{} `{}` ({})",
-                failure.kind.as_str(),
-                failure.name,
+                failure.resource.kind().as_str(),
+                failure.resource.name(),
                 failure.error
             )
         })
@@ -527,26 +568,22 @@ mod tests {
         assert_eq!(
             plan.candidates,
             vec![
-                CleanCandidate::DefaultRuntimeImage {
-                    runtime: RuntimeKind::Codex,
-                    image: codex_image,
-                },
-                CleanCandidate::CacheVolume {
-                    name: UNUSED_VOLUME.to_string(),
-                },
+                CleanCandidate::default_runtime_image(
+                    RuntimeKind::Codex,
+                    CleanResource::image(codex_image),
+                ),
+                CleanCandidate::cache_volume(CleanResource::volume(UNUSED_VOLUME)),
             ]
         );
         assert_eq!(
             plan.skipped,
             vec![
                 SkippedResource {
-                    kind: ResourceKind::Image,
-                    name: opencode_image,
+                    resource: CleanResource::image(opencode_image),
                     reason: "used by container `running-opencode`".to_string(),
                 },
                 SkippedResource {
-                    kind: ResourceKind::Volume,
-                    name: USED_VOLUME.to_string(),
+                    resource: CleanResource::volume(USED_VOLUME),
                     reason: "mounted by container `running-opencode`".to_string(),
                 },
             ]
@@ -580,10 +617,10 @@ mod tests {
 
         assert_eq!(
             plan.candidates,
-            vec![CleanCandidate::DefaultRuntimeImage {
-                runtime: RuntimeKind::Opencode,
-                image,
-            }]
+            vec![CleanCandidate::default_runtime_image(
+                RuntimeKind::Opencode,
+                CleanResource::image(image)
+            )]
         );
     }
 
