@@ -11,18 +11,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use agentbox::lock::lock_path_in_state_dir;
-use agentbox::metadata::{
-    LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_IMAGE_CONTEXT_HASH,
-    LABEL_RUNTIME,
-};
 use agentbox::runtime::RuntimeKind;
 use agentbox::workspace::WorkspaceIdentity;
 use assert_cmd::Command as AssertCommand;
 use assert_cmd::cargo::cargo_bin;
-use serde_json::json;
 use tempfile::TempDir;
 
-use super::{fake_git_script, path_with_prepend, read_log_lines, write_executable};
+use super::{
+    default_runtime_images_fixture, fake_git_script, path_with_prepend, read_log_lines,
+    write_executable,
+};
 
 pub struct CliHarness {
     fake_bin: TempDir,
@@ -56,7 +54,7 @@ impl CliHarness {
         }
         fs::write(
             fixtures.path().join("images.json"),
-            default_images_fixture(),
+            default_runtime_images_fixture(),
         )
         .unwrap();
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
@@ -310,28 +308,6 @@ fn safe_image_name(image: &str) -> String {
             }
         })
         .collect()
-}
-
-fn default_images_fixture() -> String {
-    let images = RuntimeKind::variants()
-        .iter()
-        .map(|runtime| runtime_image_fixture(*runtime, &runtime.default_image()))
-        .collect::<Vec<_>>();
-    serde_json::to_string(&images).unwrap()
-}
-
-fn runtime_image_fixture(runtime: RuntimeKind, image: &str) -> serde_json::Value {
-    let (repository, tag) = image.rsplit_once(':').unwrap();
-    json!({
-        "Repository": repository,
-        "Tag": tag,
-        "Names": [image],
-        "Labels": {
-            LABEL_DEFAULT_RUNTIME_IMAGE: LABEL_DEFAULT_RUNTIME_IMAGE_VALUE,
-            LABEL_RUNTIME: runtime.as_str(),
-            LABEL_IMAGE_CONTEXT_HASH: runtime.default_image_context_hash(),
-        },
-    })
 }
 
 fn fake_podman_script() -> &'static str {

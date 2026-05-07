@@ -117,7 +117,11 @@ pub fn is_content_hash_default_image_ref(runtime: RuntimeKind, image: &str) -> b
     );
     image
         .strip_prefix(&prefix)
-        .is_some_and(is_short_context_hash)
+        .is_some_and(is_default_image_context_hash)
+}
+
+pub(crate) fn is_default_image_context_hash(value: &str) -> bool {
+    value.len() == IMAGE_CONTEXT_HASH_LEN && value.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 pub fn materialize_default_image_context() -> Result<DefaultImageBuildContext> {
@@ -158,10 +162,6 @@ fn image_context_hash(files: &[EmbeddedDefaultImageFile]) -> String {
     }
 
     hex_lower(&hasher.finalize())[..IMAGE_CONTEXT_HASH_LEN].to_string()
-}
-
-fn is_short_context_hash(value: &str) -> bool {
-    value.len() == IMAGE_CONTEXT_HASH_LEN && value.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 fn hex_lower(bytes: &[u8]) -> String {
@@ -243,6 +243,7 @@ mod tests {
         let hash = default_image_context_hash();
 
         assert_eq!(hash.len(), IMAGE_CONTEXT_HASH_LEN);
+        assert!(is_default_image_context_hash(hash));
         assert_eq!(image, format!("localhost/agentbox-opencode:ctx-{hash}"));
         assert!(is_content_hash_default_image_ref(
             RuntimeKind::Opencode,
@@ -252,5 +253,14 @@ mod tests {
             RuntimeKind::Opencode,
             OPENCODE_LEGACY_DEFAULT_IMAGE
         ));
+    }
+
+    #[test]
+    fn default_image_context_hash_validation_matches_tag_format() {
+        assert!(is_default_image_context_hash("0123456789abcdef"));
+        assert!(is_default_image_context_hash("ABCDEF0123456789"));
+        assert!(!is_default_image_context_hash("0123456789abcde"));
+        assert!(!is_default_image_context_hash("0123456789abcdef0"));
+        assert!(!is_default_image_context_hash("0123456789abcdeg"));
     }
 }

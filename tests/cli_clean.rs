@@ -8,22 +8,17 @@
 
 use std::fs;
 
-use agentbox::metadata::{
-    LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_IMAGE_CONTEXT_HASH,
-    LABEL_RUNTIME,
-};
 use agentbox::prompt;
 use agentbox::runtime::RuntimeKind;
 use predicates::prelude::*;
-use serde_json::json;
 
 #[path = "support/mod.rs"]
 mod support;
 
 use support::{
     CliHarness as Harness, managed_inspect_fixture, managed_ps_entry,
-    opencode_managed_labels as managed_labels, operation_names, ps_fixture,
-    running_workspace_inspect_fixture_with_host_port,
+    opencode_managed_labels as managed_labels, operation_names, podman_images_fixture, ps_fixture,
+    running_workspace_inspect_fixture_with_host_port, runtime_image_fixture, volumes_fixture,
 };
 
 const UNUSED_VOLUME: &str = "agentbox-unused-abcdef123456";
@@ -222,7 +217,7 @@ fn clean_removes_runtime_image_state_after_image_delete() {
 fn clean_removes_unused_labeled_old_hash_images() {
     let harness = Harness::new();
     let old_image = "localhost/agentbox-opencode:ctx-0000000000000000";
-    harness.write_images(&images_fixture(&[runtime_image_fixture(
+    harness.write_images(&podman_images_fixture(&[runtime_image_fixture(
         RuntimeKind::Opencode,
         old_image,
         "0000000000000000",
@@ -250,7 +245,7 @@ fn clean_preserves_runtime_image_state_when_active_image_is_still_in_use() {
     let current_image = RuntimeKind::Opencode.default_image();
     let current_hash = RuntimeKind::Opencode.default_image_context_hash();
     let old_image = "localhost/agentbox-opencode:ctx-0000000000000000";
-    harness.write_images(&images_fixture(&[
+    harness.write_images(&podman_images_fixture(&[
         runtime_image_fixture(RuntimeKind::Opencode, &current_image, current_hash),
         runtime_image_fixture(RuntimeKind::Opencode, old_image, "0000000000000000"),
     ]));
@@ -317,47 +312,6 @@ fn clean_continues_after_delete_failures_and_exits_nonzero() {
     assert!(log.iter().any(|line| {
         line.starts_with("volume ") && line.contains(&format!("args=rm {UNUSED_VOLUME}"))
     }));
-}
-
-fn volumes_fixture(names: &[&str]) -> String {
-    serde_json::to_string(
-        &names
-            .iter()
-            .map(|name| {
-                json!({
-                    "Name": name,
-                    "Driver": "local",
-                    "Mountpoint": format!("/tmp/{name}"),
-                    "Labels": {},
-                    "Scope": "local",
-                    "Options": {},
-                })
-            })
-            .collect::<Vec<_>>(),
-    )
-    .unwrap()
-}
-
-fn images_fixture(images: &[serde_json::Value]) -> String {
-    serde_json::to_string(images).unwrap()
-}
-
-fn runtime_image_fixture(
-    runtime: RuntimeKind,
-    image: &str,
-    context_hash: &str,
-) -> serde_json::Value {
-    let (repository, tag) = image.rsplit_once(':').unwrap();
-    json!({
-        "Repository": repository,
-        "Tag": tag,
-        "Names": [image],
-        "Labels": {
-            LABEL_DEFAULT_RUNTIME_IMAGE: LABEL_DEFAULT_RUNTIME_IMAGE_VALUE,
-            LABEL_RUNTIME: runtime.as_str(),
-            LABEL_IMAGE_CONTEXT_HASH: context_hash,
-        },
-    })
 }
 
 fn runtime_state(runtime: &str, package: &str, image: &str) -> String {

@@ -267,9 +267,7 @@ fn labeled_default_runtime_image_candidates(
         .labels
         .get(LABEL_IMAGE_CONTEXT_HASH)
         .map(String::as_str)
-        .filter(|hash| {
-            hash.len() == 16 && hash.chars().all(|character| character.is_ascii_hexdigit())
-        })
+        .filter(|hash| default_image::is_default_image_context_hash(hash))
     else {
         return Vec::new();
     };

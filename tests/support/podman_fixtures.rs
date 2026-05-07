@@ -11,8 +11,9 @@
 use std::collections::BTreeMap;
 
 use agentbox::metadata::{
-    LABEL_CONTAINER_PORT, LABEL_GIT_ROOT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    ManagedSessionLabelInput, managed_session_labels,
+    LABEL_CONTAINER_PORT, LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE,
+    LABEL_GIT_ROOT_HASH, LABEL_IMAGE_CONTEXT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE,
+    LABEL_RUNTIME, ManagedSessionLabelInput, managed_session_labels,
 };
 use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerState,
@@ -22,7 +23,7 @@ use agentbox::runtime::RuntimeKind;
 use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::{WorkspaceIdentity, git_root_hash12};
 use camino::Utf8Path;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const FIXTURE_CREATED_AT: &str = "2026-04-21 00:00:00 +0000 UTC";
 const FIXTURE_CREATED_RFC3339: &str = "2026-04-21T00:00:00.000000000Z";
@@ -115,6 +116,57 @@ pub fn podman_inspect_fixture() -> &'static str {
 
 pub fn ps_fixture(entries: Vec<Value>) -> String {
     serde_json::to_string(&entries).unwrap()
+}
+
+pub fn podman_images_fixture(images: &[Value]) -> String {
+    serde_json::to_string(images).unwrap()
+}
+
+pub fn default_runtime_images_fixture() -> String {
+    let images = RuntimeKind::variants()
+        .iter()
+        .map(|runtime| {
+            runtime_image_fixture(
+                *runtime,
+                &runtime.default_image(),
+                runtime.default_image_context_hash(),
+            )
+        })
+        .collect::<Vec<_>>();
+    podman_images_fixture(&images)
+}
+
+pub fn runtime_image_fixture(runtime: RuntimeKind, image: &str, context_hash: &str) -> Value {
+    let (repository, tag) = image.rsplit_once(':').unwrap();
+    json!({
+        "Repository": repository,
+        "Tag": tag,
+        "Names": [image],
+        "Labels": {
+            LABEL_DEFAULT_RUNTIME_IMAGE: LABEL_DEFAULT_RUNTIME_IMAGE_VALUE,
+            LABEL_RUNTIME: runtime.as_str(),
+            LABEL_IMAGE_CONTEXT_HASH: context_hash,
+        },
+    })
+}
+
+pub fn volumes_fixture(names: &[&str]) -> String {
+    serde_json::to_string(
+        &names
+            .iter()
+            .map(|name| {
+                json!({
+                    "Name": name,
+                    "Driver": "local",
+                    "Mountpoint": format!("/tmp/{name}"),
+                    "Labels": {},
+                    "Scope": "local",
+                    "Options": {},
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .unwrap()
 }
 
 pub fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
