@@ -281,6 +281,16 @@ Runtime rules:
   `selection canceled`.
 - Interrupting the runtime prompt with Ctrl-C exits non-zero with
   `selection interrupted`.
+- After container launch has started, interrupting `run` with Ctrl-C before the
+  final success message exits non-zero and triggers best-effort cleanup for
+  resources created by that `run` invocation.
+- Ctrl-C cleanup attempts to stop and remove the managed container created by
+  the interrupted `run`.
+- Ctrl-C cleanup removes the workspace cache volume only when that volume did
+  not exist before the interrupted container launch.
+- Ctrl-C cleanup does not remove the selected runtime's default image.
+- If Ctrl-C cleanup cannot fully stop the container or remove an eligible cache
+  volume, `run` reports a partial cleanup warning or error.
 - If a managed session already exists for the resolved git root, `run` fails
   before reusing or comparing any stored runtime value.
 - `--runtime` does not change session identity.
