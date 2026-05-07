@@ -257,10 +257,6 @@ impl AttachLabels {
         Ok(Self { runtime, attach })
     }
 
-    pub(super) fn runtime(self) -> RuntimeKind {
-        self.runtime
-    }
-
     pub(super) fn scheme(self) -> &'static str {
         self.attach.scheme
     }

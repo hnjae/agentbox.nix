@@ -60,10 +60,7 @@ impl SessionRecord {
     }
 
     pub fn runtime_kind(&self) -> Option<RuntimeKind> {
-        self.metadata
-            .attach_labels()
-            .ok()
-            .map(|labels| labels.runtime())
+        self.metadata.runtime_kind()
     }
 
     pub fn container_running(&self) -> bool {
@@ -158,6 +155,10 @@ impl SessionMetadata {
         self.label(LABEL_RUNTIME)
     }
 
+    pub(crate) fn runtime_kind(&self) -> Option<RuntimeKind> {
+        self.runtime()?.parse().ok()
+    }
+
     pub(crate) fn launch_directory(&self) -> Option<&Utf8Path> {
         self.label(LABEL_LAUNCH_DIRECTORY).map(Utf8Path::new)
     }
@@ -175,4 +176,34 @@ impl SessionMetadata {
 pub struct SessionGroup {
     pub canonical_git_root: Utf8PathBuf,
     pub sessions: Vec<SessionRecord>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::metadata::{LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT};
+
+    #[test]
+    fn runtime_kind_only_depends_on_the_runtime_label() {
+        let metadata = SessionMetadata::from_labels(&BTreeMap::from([
+            (LABEL_RUNTIME.to_string(), RuntimeKind::Opencode.to_string()),
+            (LABEL_ATTACH_SCHEME.to_string(), "ftp".to_string()),
+            (LABEL_CONTAINER_PORT.to_string(), "not-a-port".to_string()),
+            (
+                LABEL_CONTAINER_LISTEN_IP.to_string(),
+                "127.0.0.1".to_string(),
+            ),
+        ]));
+        let session = SessionRecord {
+            container_id: "container-id".to_string(),
+            container_name: "agentbox-example".to_string(),
+            metadata,
+            attach_endpoint: None,
+            container_running: false,
+            status: SessionStatus::failed_unknown(),
+        };
+
+        assert_eq!(session.runtime_kind(), Some(RuntimeKind::Opencode));
+        assert!(session.metadata.attach_labels().is_err());
+    }
 }
