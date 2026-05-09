@@ -61,10 +61,16 @@ const CODEX_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTe
     HostClientCommandArg::AttachEndpoint,
 ]);
 
-const OPENCODE_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[RuntimeDefaultEnv {
-    name: "OPENCODE_CONFIG_CONTENT",
-    value: r#"{"autoupdate":false}"#,
-}];
+const OPENCODE_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[
+    RuntimeDefaultEnv {
+        name: "OPENCODE_CONFIG_CONTENT",
+        value: r#"{"autoupdate":false}"#,
+    },
+    RuntimeDefaultEnv {
+        name: "OPENCODE_PERMISSION",
+        value: r#"{"*":"allow"}"#,
+    },
+];
 const CODEX_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[];
 
 const OPENCODE_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[

@@ -110,6 +110,7 @@ fn run_creates_starts_serves_waits_and_suggests_connect_for_a_new_session() {
     assert!(log[4].contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
     assert!(log[4].contains("--publish 127.0.0.1::4096"));
     assert!(log[4].contains("--env OPENCODE_CONFIG_CONTENT={\"autoupdate\":false}"));
+    assert!(log[4].contains("--env OPENCODE_PERMISSION={\"*\":\"allow\"}"));
     assert!(log[4].contains(&format!(
         "type=bind,src={},dst=/home/user/.config/opencode",
         harness.home_path().join(".config/opencode").display()

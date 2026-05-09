@@ -113,6 +113,10 @@ fn opencode_create_spec_matches_mvp_contract() {
         spec.default_env.get("OPENCODE_CONFIG_CONTENT"),
         Some(&r#"{"autoupdate":false}"#.to_string())
     );
+    assert_eq!(
+        spec.default_env.get("OPENCODE_PERMISSION"),
+        Some(&r#"{"*":"allow"}"#.to_string())
+    );
 
     assert_eq!(spec.mounts[0].kind, RuntimeMountKind::Bind);
     assert_eq!(spec.mounts[0].source, workspace.canonical_git_root);
