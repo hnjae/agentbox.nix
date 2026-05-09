@@ -937,6 +937,8 @@ OpenCode sessions:
 - run with `OPENCODE_CONFIG_CONTENT={"autoupdate":false}` so OpenCode
   auto-update behavior does not change the installed runtime version inside the
   managed image or mutate host configuration
+- run with `OPENCODE_PERMISSION='{"*":"allow"}'` so OpenCode receives an allow
+  permission map for every permission key
 
 Codex sessions:
 
