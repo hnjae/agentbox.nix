@@ -87,26 +87,6 @@ fn host_preflight_errors_are_actionable() {
 
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
-            snapshot.host.direnv.required = true;
-            snapshot.host.direnv.available = false;
-        }),
-        Some(target),
-        RuntimeKind::Opencode,
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("`.envrc` applies to `/workspace/demo/nested`")
-    );
-    assert!(
-        error
-            .to_string()
-            .contains("install `direnv` or add it to PATH")
-    );
-
-    let error = check_host_prerequisites_with_snapshot(
-        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.nix.has_daemon_socket = false
         }),
         Some(target),
@@ -208,6 +188,21 @@ fn host_preflight_errors_are_actionable() {
             .to_string()
             .contains("Host OpenCode data directory is not readable and writable")
     );
+}
+
+#[test]
+fn host_preflight_does_not_require_host_direnv_for_envrc() {
+    let target = Utf8Path::new("/workspace/demo/nested");
+
+    check_host_prerequisites_with_snapshot(
+        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
+            snapshot.host.direnv.required = true;
+            snapshot.host.direnv.available = false;
+        }),
+        Some(target),
+        RuntimeKind::Opencode,
+    )
+    .expect("host preflight should not require host-side direnv");
 }
 
 fn connect_side_drift_errors_are_actionable() {

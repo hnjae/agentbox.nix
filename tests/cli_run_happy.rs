@@ -173,6 +173,162 @@ fn run_wraps_server_command_with_direnv_when_envrc_applies() {
 }
 
 #[test]
+fn run_prefers_envrc_over_devenv_and_flake() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
+    fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+    harness.mark_dev_shell(fixture.repo.path(), "nested");
+
+    let log = run_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains("direnv exec . opencode serve --hostname 0.0.0.0 --port 4096"));
+    assert!(!run.contains("devenv shell"));
+    assert!(!run.contains("nix develop"));
+    assert!(!log.iter().any(|line| line.starts_with("nix ")));
+}
+
+#[test]
+fn run_uses_parent_devenv_without_changing_container_workdir() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+
+    let log = run_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains(&format!("--workdir {}", fixture.workspace.canonical_target)));
+    assert!(run.contains(&format!(
+        "devenv shell --no-tui --from path:{} -- opencode serve --hostname 0.0.0.0 --port 4096",
+        fixture.workspace.canonical_git_root
+    )));
+    assert!(!log.iter().any(|line| line.starts_with("nix ")));
+}
+
+#[test]
+fn run_uses_target_flake_default_dev_shell() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+    harness.mark_dev_shell(&fixture.target, "default");
+
+    let log = run_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "nix", "image", "volume", "run", "inspect"]
+    );
+    assert!(run.contains(&format!(
+        "nix develop --no-write-lock-file path:{}#default --command opencode serve --hostname 0.0.0.0 --port 4096",
+        fixture.workspace.canonical_target
+    )));
+}
+
+#[test]
+fn run_uses_parent_flake_basename_dev_shell_before_default() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+    harness.mark_dev_shell(fixture.repo.path(), "nested");
+
+    let log = run_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "nix", "image", "volume", "run", "inspect"]
+    );
+    assert!(run.contains(&format!(
+        "nix develop --no-write-lock-file path:{}#nested --command opencode serve --hostname 0.0.0.0 --port 4096",
+        fixture.workspace.canonical_git_root
+    )));
+}
+
+#[test]
+fn run_falls_back_to_parent_flake_default_dev_shell() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+    harness.mark_dev_shell(fixture.repo.path(), "default");
+
+    let log = run_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "nix", "nix", "image", "volume", "run", "inspect"]
+    );
+    assert!(run.contains(&format!(
+        "nix develop --no-write-lock-file path:{}#default --command opencode serve --hostname 0.0.0.0 --port 4096",
+        fixture.workspace.canonical_git_root
+    )));
+}
+
+#[test]
+fn run_dev_env_none_disables_all_automatic_wrappers() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
+    fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+    harness.mark_dev_shell(fixture.repo.path(), "nested");
+
+    let log = run_opencode_success(&fixture, &harness, &["--dev-env", "none"]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
+    assert!(!run.contains("direnv exec ."));
+    assert!(!run.contains("devenv shell"));
+    assert!(!run.contains("nix develop"));
+    assert!(!log.iter().any(|line| line.starts_with("nix ")));
+}
+
+#[test]
+fn run_uses_no_wrapper_when_flake_has_no_candidate_dev_shell() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+
+    let log = run_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "nix", "image", "volume", "run", "inspect"]
+    );
+    assert!(run.contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
+    assert!(!run.contains("nix develop"));
+}
+
+#[test]
+fn run_fails_clearly_when_flake_evaluation_fails() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+    harness.fail_nix_eval(&fixture.target, "flake exploded\n");
+
+    let mut command = harness.locked_agentbox_command(&fixture.workspace);
+    command
+        .args(["run", "--runtime", "opencode"])
+        .arg(&fixture.target);
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "failed to evaluate dev shell `path:{}`#default",
+            fixture.workspace.canonical_target
+        )))
+        .stderr(predicate::str::contains("flake exploded"));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "nix"]);
+}
+
+#[test]
 fn run_launches_codex_server_in_yolo_mode() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
@@ -437,4 +593,38 @@ fn run_reports_default_image_build_failures_clearly() {
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "image", "build"]);
+}
+
+fn run_opencode_success(
+    fixture: &support::TempWorkspace,
+    harness: &Harness,
+    extra_args: &[&str],
+) -> Vec<String> {
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &fixture.workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            &fixture.workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(&fixture.workspace);
+    command
+        .args(["run", "--runtime", "opencode"])
+        .args(extra_args)
+        .arg(&fixture.target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    harness.read_log()
+}
+
+fn podman_run_command(log: &[String]) -> &str {
+    log.iter()
+        .find(|line| line.starts_with("run "))
+        .expect("expected podman run invocation")
 }

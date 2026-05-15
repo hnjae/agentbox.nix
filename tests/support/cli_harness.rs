@@ -62,6 +62,7 @@ impl CliHarness {
         fs::write(fixtures.path().join("volumes.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("git"), fake_git_script());
         write_executable(fake_bin.path().join("direnv"), fake_direnv_script());
+        write_executable(fake_bin.path().join("nix"), fake_nix_script());
         write_executable(fake_bin.path().join("podman"), fake_podman_script());
         write_executable(
             fake_bin.path().join("npm"),
@@ -142,6 +143,27 @@ impl CliHarness {
 
     pub fn write_logs(&self, name: &str, logs: &str) {
         fs::write(self.fixtures.path().join(format!("logs-{name}.txt")), logs).unwrap();
+    }
+
+    pub fn mark_dev_shell(&self, flake_root: &Path, attr: &str) {
+        fs::write(
+            self.fixtures
+                .path()
+                .join(dev_shell_fixture_name(flake_root, attr)),
+            "present\n",
+        )
+        .unwrap();
+    }
+
+    pub fn fail_nix_eval(&self, flake_root: &Path, stderr: &str) {
+        fs::write(
+            self.fixtures.path().join(format!(
+                "nix-eval-fail-{}.stderr",
+                safe_path_name(flake_root)
+            )),
+            stderr,
+        )
+        .unwrap();
     }
 
     pub fn mark_missing_during_cleanup(&self) {
@@ -371,8 +393,24 @@ fn safe_image_name(image: &str) -> String {
         .collect()
 }
 
+fn dev_shell_fixture_name(flake_root: &Path, attr: &str) -> String {
+    format!(
+        "devshell-{}-{}",
+        safe_path_name(flake_root),
+        safe_image_name(attr)
+    )
+}
+
+fn safe_path_name(path: &Path) -> String {
+    safe_image_name(&path.to_string_lossy())
+}
+
 fn fake_podman_script() -> &'static str {
     include_str!("../fixtures/bin/podman.sh")
+}
+
+fn fake_nix_script() -> &'static str {
+    include_str!("../fixtures/bin/nix.sh")
 }
 
 fn fake_client_script(name: &str) -> String {
