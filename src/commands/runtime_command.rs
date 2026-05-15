@@ -29,6 +29,18 @@ pub(crate) fn foreground_runtime_command(
     )
 }
 
+pub(crate) fn codex_exec_runtime_command(
+    target: &Utf8Path,
+    dev_env: &DevEnvironment,
+    codex_args: Vec<String>,
+) -> RuntimeInvocation {
+    let mut argv = RuntimeKind::Codex.foreground_command().argv;
+    argv.push("exec".to_string());
+    argv.extend(codex_args);
+
+    RuntimeInvocation::new(dev_env.wrap_argv(argv), target.to_path_buf())
+}
+
 fn host_client_runtime_command(
     runtime: RuntimeKind,
     endpoint: &AttachEndpoint,

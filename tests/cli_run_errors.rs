@@ -128,6 +128,43 @@ fn run_fails_when_a_managed_session_already_exists() {
 }
 
 #[test]
+fn exec_fails_when_a_managed_session_already_exists() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "existing-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "existing-id",
+        &opencode_workspace_inspect_fixture(workspace, true, true),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("exec").arg(target).args(["--", "fix-tests"]);
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(format!(
+            "agentbox connect {}",
+            target.display()
+        )))
+        .stderr(predicates::str::contains(format!(
+            "agentbox stop {}",
+            target.display()
+        )))
+        .stderr(predicates::str::contains(&workspace.container_name));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
+    assert!(!log.iter().any(|line| line.starts_with("image ")));
+    assert!(!log.iter().any(|line| line.starts_with("run ")));
+}
+
+#[test]
 fn start_with_connect_still_fails_when_a_managed_session_already_exists() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
@@ -174,6 +211,29 @@ fn run_propagates_foreground_podman_exit_code() {
         .failure()
         .code(42)
         .stderr(predicates::str::contains("runtime exited"))
+        .stderr(predicates::str::contains("ERROR:").not());
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image", "run"]);
+}
+
+#[test]
+fn exec_propagates_foreground_podman_exit_code() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("run", "codex exec exited\n", 42);
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("exec").arg(target).args(["--", "fix-tests"]);
+
+    command
+        .assert()
+        .failure()
+        .code(42)
+        .stderr(predicates::str::contains("codex exec exited"))
         .stderr(predicates::str::contains("ERROR:").not());
 
     let log = harness.read_log();

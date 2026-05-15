@@ -7,9 +7,9 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::cli::{
-    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, HealthArgs,
-    LsArgs, OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StartArgs,
-    StopArgs,
+    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, ExecArgs,
+    HealthArgs, LsArgs, OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs,
+    StartArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
@@ -24,6 +24,7 @@ fn help_lists_core_commands() {
 
     command.assert().success().stdout(
         predicate::str::contains("run")
+            .and(predicate::str::contains("exec"))
             .and(predicate::str::contains("start"))
             .and(predicate::str::contains("runtime"))
             .and(predicate::str::contains("connect"))
@@ -54,6 +55,17 @@ fn unknown_subcommand_fails() {
 fn core_commands_parse_into_expected_variants() {
     let run = Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode", "/tmp/workspace"])
         .unwrap();
+    let exec = Cli::try_parse_from([
+        "agentbox",
+        "exec",
+        "--dev-env",
+        "none",
+        "/tmp/workspace",
+        "--",
+        "--json",
+        "fix-tests",
+    ])
+    .unwrap();
     let start = Cli::try_parse_from([
         "agentbox",
         "start",
@@ -83,6 +95,14 @@ fn core_commands_parse_into_expected_variants() {
         connect.command,
         Command::Connect(ConnectArgs {
             directory: Some("/tmp/workspace".into()),
+        })
+    );
+    assert_eq!(
+        exec.command,
+        Command::Exec(ExecArgs {
+            dev_env: DevEnvMode::None,
+            directory: "/tmp/workspace".into(),
+            codex_args: vec!["--json".to_string(), "fix-tests".to_string()],
         })
     );
     assert_eq!(
@@ -138,6 +158,32 @@ fn core_commands_parse_into_expected_variants() {
             shell: CompletionShell::Bash,
         })
     );
+}
+
+#[test]
+fn exec_accepts_empty_codex_args() {
+    let cli = Cli::try_parse_from(["agentbox", "exec", "/tmp/workspace"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Exec(ExecArgs {
+            dev_env: DevEnvMode::Auto,
+            directory: "/tmp/workspace".into(),
+            codex_args: Vec::new(),
+        })
+    );
+}
+
+#[test]
+fn exec_requires_double_dash_before_codex_args() {
+    let bare_arg_error =
+        Cli::try_parse_from(["agentbox", "exec", "/tmp/workspace", "fix-tests"]).unwrap_err();
+    let codex_flag_error =
+        Cli::try_parse_from(["agentbox", "exec", "/tmp/workspace", "--model", "gpt-5"])
+            .unwrap_err();
+
+    assert_eq!(bare_arg_error.exit_code(), 2);
+    assert_eq!(codex_flag_error.exit_code(), 2);
 }
 
 #[test]

@@ -44,6 +44,13 @@ _agentbox() {
                 COMPREPLY=( $(compgen -W "--runtime --dev-env" -- "$cur") )
             fi
             ;;
+        exec)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--dev-env" ]]; then
+                COMPREPLY=( $(compgen -W "@DEV_ENV_VALUES@" -- "$cur") )
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--dev-env" -- "$cur") )
+            fi
+            ;;
         start)
             if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--runtime" ]]; then
                 COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )

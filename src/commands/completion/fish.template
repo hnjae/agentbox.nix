@@ -33,6 +33,7 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l images -d "Con
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l volumes -d "Consider workspace cache volumes"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l dev-env -r -a "@DEV_ENV_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from exec" -l dev-env -r -a "@DEV_ENV_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from start" -l runtime -r -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from start" -l dev-env -r -a "@DEV_ENV_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from start" -s c -l connect -d "Connect after the new session is ready"

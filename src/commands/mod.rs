@@ -13,6 +13,7 @@ pub mod clean;
 pub mod completion;
 pub mod connect;
 mod container_cleanup;
+pub mod exec;
 pub mod health;
 pub mod ls;
 mod output;
@@ -31,6 +32,7 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
 
     match command {
         Command::Run(args) => run::run(args, verbose),
+        Command::Exec(args) => exec::run(args, verbose),
         Command::Start(args) => start::run(args, verbose),
         Command::Runtime(args) => runtime::run(args, verbose),
         Command::Connect(args) => connect::run(args),

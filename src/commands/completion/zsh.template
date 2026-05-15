@@ -58,6 +58,14 @@ _agentbox() {
           '--dev-env[select development environment loading mode]'
       fi
       ;;
+    exec)
+      if (( CURRENT > 2 && "$words[CURRENT-1]" == "--dev-env" )); then
+        _values 'dev env' @DEV_ENV_VALUES@
+      else
+        _values 'option' \
+          '--dev-env[select development environment loading mode]'
+      fi
+      ;;
     start)
       if (( CURRENT > 2 && "$words[CURRENT-1]" == "--runtime" )); then
         _values 'runtime' @RUNTIME_VALUES@

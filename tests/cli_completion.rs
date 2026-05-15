@@ -149,7 +149,7 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(script.contains("run start runtime connect ls health stop clean completion help"));
+    assert!(script.contains("run exec start runtime connect ls health stop clean completion help"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -203,6 +203,26 @@ fn completion_scripts_offer_run_and_start_flags() {
     assert!(!fish.contains("__fish_seen_subcommand_from run\" -s c -l connect"));
     assert!(fish.contains("__fish_seen_subcommand_from start"));
     assert!(fish.contains("__fish_seen_subcommand_from start\" -s c -l connect"));
+}
+
+#[test]
+fn completion_scripts_offer_exec_dev_env_flag_only() {
+    let dev_env_values = DevEnvMode::supported_values().join(" ");
+
+    let bash = capture_completion_script_shell("bash");
+    assert!(bash.contains("exec)"));
+    assert!(bash.contains("compgen -W \"--dev-env\""));
+    assert!(bash.contains(&dev_env_values));
+
+    let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("exec)"));
+    assert!(zsh.contains("--dev-env[select development environment loading mode]"));
+    assert!(zsh.contains(&dev_env_values));
+
+    let fish = capture_completion_script_shell("fish");
+    assert!(fish.contains("__fish_seen_subcommand_from exec"));
+    assert!(fish.contains("__fish_seen_subcommand_from exec\" -l dev-env"));
+    assert!(!fish.contains("__fish_seen_subcommand_from exec\" -l runtime"));
 }
 
 #[test]
@@ -289,6 +309,7 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
 
     assert!(manpage.contains(".TH agentbox 1"));
     assert!(manpage.contains("agentbox\\-run(1)"));
+    assert!(manpage.contains("agentbox\\-exec(1)"));
     assert!(manpage.contains("agentbox\\-start(1)"));
     assert!(manpage.contains("agentbox\\-health(1)"));
     assert!(manpage.contains("agentbox\\-clean(1)"));
@@ -318,6 +339,7 @@ fn installed_manpages_include_referenced_subcommands() {
     for filename in [
         "agentbox.1",
         "agentbox-run.1",
+        "agentbox-exec.1",
         "agentbox-start.1",
         "agentbox-runtime.1",
         "agentbox-connect.1",
@@ -336,6 +358,7 @@ fn installed_manpages_include_referenced_subcommands() {
 
     let agentbox = fs::read_to_string(directory.path().join("agentbox.1")).unwrap();
     assert!(agentbox.contains("agentbox\\-run(1)"));
+    assert!(agentbox.contains("agentbox\\-exec(1)"));
     assert!(agentbox.contains("agentbox\\-start(1)"));
     assert!(agentbox.contains("agentbox\\-health(1)"));
     assert!(agentbox.contains("agentbox\\-clean(1)"));
@@ -345,6 +368,11 @@ fn installed_manpages_include_referenced_subcommands() {
     assert!(run.contains(".TH agentbox-run 1"));
     assert!(run.contains("Runtime to launch for this run"));
     assert!(!run.contains("Connect after the new session is ready"));
+    let exec = fs::read_to_string(directory.path().join("agentbox-exec.1")).unwrap();
+    assert!(exec.contains(".TH agentbox-exec 1"));
+    assert!(exec.contains("Arguments passed to codex exec"));
+    assert!(exec.contains("Development environment loading mode"));
+    assert!(!exec.contains("Runtime to launch"));
     let start = fs::read_to_string(directory.path().join("agentbox-start.1")).unwrap();
     assert!(start.contains(".TH agentbox-start 1"));
     assert!(start.contains("Runtime to launch for this session"));

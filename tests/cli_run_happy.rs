@@ -102,6 +102,61 @@ fn run_launches_codex_foreground_in_yolo_mode_without_server() {
 }
 
 #[test]
+fn exec_launches_codex_exec_foreground_without_managed_metadata() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = Harness::new();
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .args(["exec", "--dev-env", "none"])
+        .arg(target)
+        .args(["--", "--json", "fix-tests"]);
+
+    command.assert().success().stderr(
+        predicate::str::contains("INFO: checking workspace prerequisites")
+            .and(predicate::str::contains(
+                "INFO: checking existing managed sessions",
+            ))
+            .and(predicate::str::contains(
+                "INFO: starting foreground container",
+            ))
+            .and(predicate::str::contains("waiting for").not())
+            .and(predicate::str::contains("is ready at").not()),
+    );
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image", "run"]);
+    let run = podman_run_command(&log);
+    assert_runtime_user_args(run);
+    assert!(run.contains("--rm"));
+    assert!(run.contains("--interactive"));
+    assert!(!run.contains("--detach"));
+    assert!(!run.contains("--tty"));
+    assert!(!run.contains("--publish"));
+    assert!(!run.contains("--label io.agentbox.managed=true"));
+    assert!(!run.contains("--label io.agentbox.attach_scheme"));
+    assert!(!run.contains("--label io.agentbox.container_port"));
+    assert!(run.contains(&format!("--name {}", workspace.container_name)));
+    assert!(run.contains(&format!("--workdir {}", workspace.canonical_target)));
+    assert!(run.contains(&format!(
+        "type=volume,src={},dst=/home/user,U",
+        workspace.container_name
+    )));
+    assert!(run.contains(&format!(
+        "type=bind,src={},dst=/home/user/.codex",
+        harness.home_path().join(".codex").display()
+    )));
+    assert!(run.contains(&format!(
+        " {image} codex --dangerously-bypass-approvals-and-sandbox exec --json fix-tests"
+    )));
+    assert!(!run.contains("app-server"));
+    assert!(!log.iter().any(|line| line.starts_with("codex ")));
+}
+
+#[test]
 fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
@@ -113,6 +168,57 @@ fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
     assert!(run.contains(&format!("--workdir {}", fixture.workspace.canonical_target)));
     assert!(run.contains("direnv exec . opencode"));
     assert!(!run.contains("opencode serve"));
+}
+
+#[test]
+fn exec_wraps_codex_exec_command_with_direnv_when_envrc_applies() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    let harness = Harness::new();
+
+    let log = exec_codex_success(&fixture, &harness, &[], &["fix-tests"]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains(&format!("--workdir {}", fixture.workspace.canonical_target)));
+    assert!(
+        run.contains(
+            "direnv exec . codex --dangerously-bypass-approvals-and-sandbox exec fix-tests"
+        )
+    );
+    assert!(!run.contains("app-server"));
+}
+
+#[test]
+fn exec_wraps_codex_exec_command_with_devenv_when_selected() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+
+    let log = exec_codex_success(&fixture, &harness, &[], &["fix-tests"]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains(&format!(
+        "devenv shell --no-tui --from path:{} -- codex --dangerously-bypass-approvals-and-sandbox exec fix-tests",
+        fixture.workspace.canonical_git_root
+    )));
+    assert!(!run.contains("app-server"));
+}
+
+#[test]
+fn exec_wraps_codex_exec_command_with_nix_develop_when_selected() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+    harness.mark_dev_shell(&fixture.target, "default");
+
+    let log = exec_codex_success(&fixture, &harness, &[], &["fix-tests"]);
+    let run = podman_run_command(&log);
+
+    assert_eq!(operation_names(&log), ["ps", "nix", "image", "run"]);
+    assert!(run.contains(&format!(
+        "nix develop --no-write-lock-file path:{}#default --command codex --dangerously-bypass-approvals-and-sandbox exec fix-tests",
+        fixture.workspace.canonical_target
+    )));
 }
 
 #[test]
@@ -762,6 +868,25 @@ fn run_foreground_opencode_success(
         .args(["run", "--runtime", "opencode"])
         .args(extra_args)
         .arg(&fixture.target);
+
+    command.assert().success();
+
+    harness.read_log()
+}
+
+fn exec_codex_success(
+    fixture: &support::TempWorkspace,
+    harness: &Harness,
+    extra_args: &[&str],
+    codex_args: &[&str],
+) -> Vec<String> {
+    let mut command = harness.locked_agentbox_command(&fixture.workspace);
+    command
+        .arg("exec")
+        .args(extra_args)
+        .arg(&fixture.target)
+        .arg("--")
+        .args(codex_args);
 
     command.assert().success();
 

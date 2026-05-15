@@ -58,6 +58,8 @@ pub struct Cli {
 pub enum Command {
     /// Run a runtime container in the foreground.
     Run(RunArgs),
+    /// Run Codex exec in a foreground container.
+    Exec(ExecArgs),
     /// Start a managed session as a detached runtime server.
     Start(StartArgs),
     /// Manage default runtime images.
@@ -182,6 +184,20 @@ pub struct RunArgs {
 
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct ExecArgs {
+    /// Development environment loading mode.
+    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
+    pub dev_env: DevEnvMode,
+
+    /// Workspace directory inside a git repository.
+    pub directory: PathBuf,
+
+    /// Arguments passed to codex exec.
+    #[arg(value_name = "CODEX_EXEC_ARG", last = true)]
+    pub codex_args: Vec<String>,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
