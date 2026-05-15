@@ -150,7 +150,7 @@ fn run_wraps_foreground_command_with_nix_develop_when_selected() {
 }
 
 #[test]
-fn run_creates_starts_serves_waits_and_suggests_connect_for_a_new_session() {
+fn start_creates_serves_waits_and_suggests_connect_for_a_new_session() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -269,7 +269,7 @@ fn run_creates_starts_serves_waits_and_suggests_connect_for_a_new_session() {
 }
 
 #[test]
-fn run_wraps_server_command_with_direnv_when_envrc_applies() {
+fn start_wraps_server_command_with_direnv_when_envrc_applies() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -302,7 +302,7 @@ fn run_wraps_server_command_with_direnv_when_envrc_applies() {
 }
 
 #[test]
-fn run_prefers_envrc_over_devenv_and_flake() {
+fn start_prefers_envrc_over_devenv_and_flake() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
     fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
@@ -310,7 +310,7 @@ fn run_prefers_envrc_over_devenv_and_flake() {
     let harness = Harness::new();
     harness.mark_dev_shell(fixture.repo.path(), "nested");
 
-    let log = run_opencode_success(&fixture, &harness, &[]);
+    let log = start_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
     assert!(run.contains("direnv exec . opencode serve --hostname 0.0.0.0 --port 4096"));
@@ -320,12 +320,12 @@ fn run_prefers_envrc_over_devenv_and_flake() {
 }
 
 #[test]
-fn run_uses_parent_devenv_without_changing_container_workdir() {
+fn start_uses_parent_devenv_without_changing_container_workdir() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
     let harness = Harness::new();
 
-    let log = run_opencode_success(&fixture, &harness, &[]);
+    let log = start_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
     assert!(run.contains(&format!("--workdir {}", fixture.workspace.canonical_target)));
@@ -337,13 +337,13 @@ fn run_uses_parent_devenv_without_changing_container_workdir() {
 }
 
 #[test]
-fn run_uses_target_flake_default_dev_shell() {
+fn start_uses_target_flake_default_dev_shell() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
     let harness = Harness::new();
     harness.mark_dev_shell(&fixture.target, "default");
 
-    let log = run_opencode_success(&fixture, &harness, &[]);
+    let log = start_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
     assert_eq!(
@@ -357,13 +357,13 @@ fn run_uses_target_flake_default_dev_shell() {
 }
 
 #[test]
-fn run_uses_parent_flake_basename_dev_shell_before_default() {
+fn start_uses_parent_flake_basename_dev_shell_before_default() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
     let harness = Harness::new();
     harness.mark_dev_shell(fixture.repo.path(), "nested");
 
-    let log = run_opencode_success(&fixture, &harness, &[]);
+    let log = start_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
     assert_eq!(
@@ -377,13 +377,13 @@ fn run_uses_parent_flake_basename_dev_shell_before_default() {
 }
 
 #[test]
-fn run_falls_back_to_parent_flake_default_dev_shell() {
+fn start_falls_back_to_parent_flake_default_dev_shell() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
     let harness = Harness::new();
     harness.mark_dev_shell(fixture.repo.path(), "default");
 
-    let log = run_opencode_success(&fixture, &harness, &[]);
+    let log = start_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
     assert_eq!(
@@ -397,7 +397,7 @@ fn run_falls_back_to_parent_flake_default_dev_shell() {
 }
 
 #[test]
-fn run_dev_env_none_disables_all_automatic_wrappers() {
+fn start_dev_env_none_disables_all_automatic_wrappers() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
     fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
@@ -405,7 +405,7 @@ fn run_dev_env_none_disables_all_automatic_wrappers() {
     let harness = Harness::new();
     harness.mark_dev_shell(fixture.repo.path(), "nested");
 
-    let log = run_opencode_success(&fixture, &harness, &["--dev-env", "none"]);
+    let log = start_opencode_success(&fixture, &harness, &["--dev-env", "none"]);
     let run = podman_run_command(&log);
 
     assert!(run.contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
@@ -416,12 +416,12 @@ fn run_dev_env_none_disables_all_automatic_wrappers() {
 }
 
 #[test]
-fn run_uses_no_wrapper_when_flake_has_no_candidate_dev_shell() {
+fn start_uses_no_wrapper_when_flake_has_no_candidate_dev_shell() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
     let harness = Harness::new();
 
-    let log = run_opencode_success(&fixture, &harness, &[]);
+    let log = start_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
     assert_eq!(
@@ -433,7 +433,7 @@ fn run_uses_no_wrapper_when_flake_has_no_candidate_dev_shell() {
 }
 
 #[test]
-fn run_fails_clearly_when_flake_evaluation_fails() {
+fn start_fails_clearly_when_flake_evaluation_fails() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
     let harness = Harness::new();
@@ -458,7 +458,7 @@ fn run_fails_clearly_when_flake_evaluation_fails() {
 }
 
 #[test]
-fn run_launches_codex_server_in_yolo_mode() {
+fn start_launches_codex_server_in_yolo_mode() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -535,7 +535,7 @@ fn run_launches_codex_server_in_yolo_mode() {
 }
 
 #[test]
-fn run_with_connect_runs_runtime_client_after_server_is_ready() {
+fn start_with_connect_runs_runtime_client_after_server_is_ready() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -594,7 +594,7 @@ fn current_primary_gid() -> libc::gid_t {
 }
 
 #[test]
-fn run_skips_build_when_default_image_already_exists_locally() {
+fn start_skips_build_when_default_image_already_exists_locally() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -627,7 +627,7 @@ fn run_skips_build_when_default_image_already_exists_locally() {
 }
 
 #[test]
-fn run_builds_current_hash_image_when_only_legacy_local_image_exists() {
+fn start_builds_current_hash_image_when_only_legacy_local_image_exists() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -662,7 +662,7 @@ fn run_builds_current_hash_image_when_only_legacy_local_image_exists() {
 }
 
 #[test]
-fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
+fn start_verbose_traces_podman_commands_and_forwards_non_json_output() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -700,7 +700,7 @@ fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
 }
 
 #[test]
-fn run_reports_default_image_build_failures_clearly() {
+fn start_reports_default_image_build_failures_clearly() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -724,7 +724,7 @@ fn run_reports_default_image_build_failures_clearly() {
     assert_eq!(operation_names(&log), ["ps", "image", "build"]);
 }
 
-fn run_opencode_success(
+fn start_opencode_success(
     fixture: &support::TempWorkspace,
     harness: &Harness,
     extra_args: &[&str],

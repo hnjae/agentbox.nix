@@ -55,7 +55,7 @@ fn prompt_selection_errors_are_stable() {
 }
 
 #[test]
-fn existing_managed_session_suggests_connect_before_image_work() {
+fn start_existing_managed_session_suggests_connect_before_image_work() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -69,7 +69,7 @@ fn existing_managed_session_suggests_connect_before_image_work() {
         &opencode_workspace_inspect_fixture(workspace, true, true),
     );
 
-    let assert = run_command(&harness, target, &[]);
+    let assert = start_command(&harness, target, &[]);
 
     assert
         .failure()
@@ -128,7 +128,7 @@ fn run_fails_when_a_managed_session_already_exists() {
 }
 
 #[test]
-fn run_with_connect_still_fails_when_a_managed_session_already_exists() {
+fn start_with_connect_still_fails_when_a_managed_session_already_exists() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -142,7 +142,7 @@ fn run_with_connect_still_fails_when_a_managed_session_already_exists() {
         &opencode_workspace_inspect_fixture(workspace, true, true),
     );
 
-    run_command(&harness, target, &["--connect"])
+    start_command(&harness, target, &["--connect"])
         .failure()
         .stderr(predicates::str::contains(format!(
             "agentbox connect {}",
@@ -181,7 +181,7 @@ fn run_propagates_foreground_podman_exit_code() {
 }
 
 #[test]
-fn duplicate_sessions_fail_closed() {
+fn start_duplicate_sessions_fail_closed() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -217,7 +217,7 @@ fn duplicate_sessions_fail_closed() {
         ),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "duplicate managed sessions exist",
@@ -231,7 +231,7 @@ fn duplicate_sessions_fail_closed() {
 }
 
 #[test]
-fn unsupported_runtime_label_requires_cleanup_or_recreation() {
+fn start_unsupported_runtime_label_requires_cleanup_or_recreation() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -257,7 +257,7 @@ fn unsupported_runtime_label_requires_cleanup_or_recreation() {
         ),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "unsupported or malformed `io.agentbox.runtime` label",
@@ -268,7 +268,7 @@ fn unsupported_runtime_label_requires_cleanup_or_recreation() {
 }
 
 #[test]
-fn hash_collision_fails_closed() {
+fn start_hash_collision_fails_closed() {
     let fixture = support::temp_workspace("nested");
     let other_repo = support::temp_git_repo();
     let target = fixture.target.as_path();
@@ -291,7 +291,7 @@ fn hash_collision_fails_closed() {
         ),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains("managed identity collision"))
         .stderr(predicates::str::contains(
@@ -304,7 +304,7 @@ fn hash_collision_fails_closed() {
 }
 
 #[test]
-fn create_name_conflict_reports_the_conflicting_root() {
+fn start_create_name_conflict_reports_the_conflicting_root() {
     let fixture = support::temp_workspace("nested");
     let other_repo = support::temp_git_repo();
     let target = fixture.target.as_path();
@@ -328,7 +328,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
         ),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(format!(
             "container name `{}` is already used by managed session",
@@ -347,7 +347,7 @@ fn create_name_conflict_reports_the_conflicting_root() {
 }
 
 #[test]
-fn create_name_conflict_reports_conflicting_root_even_with_malformed_runtime_label() {
+fn start_create_name_conflict_reports_conflicting_root_even_with_malformed_runtime_label() {
     let fixture = support::temp_workspace("nested");
     let other_repo = support::temp_git_repo();
     let target = fixture.target.as_path();
@@ -374,7 +374,7 @@ fn create_name_conflict_reports_conflicting_root_even_with_malformed_runtime_lab
         ),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(format!(
             "container name `{}` is already used by managed session",
@@ -393,7 +393,7 @@ fn create_name_conflict_reports_conflicting_root_even_with_malformed_runtime_lab
 }
 
 #[test]
-fn create_name_conflict_reports_conflicting_root_even_with_missing_launch_directory() {
+fn start_create_name_conflict_reports_conflicting_root_even_with_missing_launch_directory() {
     let fixture = support::temp_workspace("nested");
     let other_repo = support::temp_git_repo();
     let target = fixture.target.as_path();
@@ -414,7 +414,7 @@ fn create_name_conflict_reports_conflicting_root_even_with_missing_launch_direct
         &managed_inspect_fixture(&workspace.container_name, other_root, true, labels),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(format!(
             "container name `{}` is already used by managed session",
@@ -433,7 +433,7 @@ fn create_name_conflict_reports_conflicting_root_even_with_missing_launch_direct
 }
 
 #[test]
-fn create_name_conflict_with_malformed_runtime_label_reports_specific_drift() {
+fn start_create_name_conflict_with_malformed_runtime_label_reports_specific_drift() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -457,7 +457,7 @@ fn create_name_conflict_with_malformed_runtime_label_reports_specific_drift() {
         ),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "unsupported or malformed `io.agentbox.runtime` label",
@@ -474,7 +474,7 @@ fn create_name_conflict_with_malformed_runtime_label_reports_specific_drift() {
 }
 
 #[test]
-fn run_start_failure_includes_container_logs_when_available() {
+fn start_failure_includes_container_logs_when_available() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -483,7 +483,7 @@ fn run_start_failure_includes_container_logs_when_available() {
     harness.fail_operation("run", "container failed to start", 125);
     harness.write_logs(&workspace.container_name, "runtime boot failed\n");
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "failed to start the runtime server command",
@@ -502,7 +502,7 @@ fn run_start_failure_includes_container_logs_when_available() {
 }
 
 #[test]
-fn run_readiness_failure_includes_container_logs_when_available() {
+fn start_readiness_failure_includes_container_logs_when_available() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -514,7 +514,7 @@ fn run_readiness_failure_includes_container_logs_when_available() {
     );
     harness.write_logs(&workspace.container_name, "runtime crashed before listen\n");
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
             "exited before the `opencode` runtime server became reachable",
@@ -533,7 +533,7 @@ fn run_readiness_failure_includes_container_logs_when_available() {
 }
 
 #[test]
-fn run_sigint_during_readiness_stops_container_and_removes_new_cache_volume() {
+fn start_sigint_during_readiness_stops_container_and_removes_new_cache_volume() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -549,7 +549,7 @@ fn run_sigint_during_readiness_stops_container_and_removes_new_cache_volume() {
         ),
     );
 
-    let output = interrupt_run_after_first_inspect(&harness, workspace, target);
+    let output = interrupt_start_after_first_inspect(&harness, workspace, target);
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
@@ -584,7 +584,7 @@ fn run_sigint_during_readiness_stops_container_and_removes_new_cache_volume() {
 }
 
 #[test]
-fn run_sigint_during_readiness_preserves_preexisting_cache_volume() {
+fn start_sigint_during_readiness_preserves_preexisting_cache_volume() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -601,7 +601,7 @@ fn run_sigint_during_readiness_preserves_preexisting_cache_volume() {
         ),
     );
 
-    let output = interrupt_run_after_first_inspect(&harness, workspace, target);
+    let output = interrupt_start_after_first_inspect(&harness, workspace, target);
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
@@ -624,7 +624,7 @@ fn run_sigint_during_readiness_preserves_preexisting_cache_volume() {
 }
 
 #[test]
-fn run_sigint_reports_partial_cleanup_when_cache_volume_removal_fails() {
+fn start_sigint_reports_partial_cleanup_when_cache_volume_removal_fails() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -641,7 +641,7 @@ fn run_sigint_reports_partial_cleanup_when_cache_volume_removal_fails() {
         ),
     );
 
-    let output = interrupt_run_after_first_inspect(&harness, workspace, target);
+    let output = interrupt_start_after_first_inspect(&harness, workspace, target);
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
@@ -652,7 +652,7 @@ fn run_sigint_reports_partial_cleanup_when_cache_volume_removal_fails() {
 }
 
 #[test]
-fn failed_session_with_missing_labels_requires_cleanup_or_recreation() {
+fn start_failed_session_with_missing_labels_requires_cleanup_or_recreation() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -685,7 +685,7 @@ fn failed_session_with_missing_labels_requires_cleanup_or_recreation() {
         ),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains("missing required session labels"))
         .stderr(predicates::str::contains(
@@ -697,7 +697,7 @@ fn failed_session_with_missing_labels_requires_cleanup_or_recreation() {
 }
 
 #[test]
-fn failed_session_with_missing_cache_mount_requires_recreation() {
+fn start_failed_session_with_missing_cache_mount_requires_recreation() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -715,7 +715,7 @@ fn failed_session_with_missing_cache_mount_requires_recreation() {
         &opencode_workspace_inspect_fixture(workspace, true, false),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains("missing required cache mount"))
         .stderr(predicates::str::contains(
@@ -730,7 +730,7 @@ fn failed_session_with_missing_cache_mount_requires_recreation() {
 }
 
 #[test]
-fn failed_session_with_cache_bind_mount_requires_recreation() {
+fn start_failed_session_with_cache_bind_mount_requires_recreation() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -748,7 +748,7 @@ fn failed_session_with_cache_bind_mount_requires_recreation() {
         &opencode_workspace_inspect_fixture_with_cache_bind(workspace),
     );
 
-    run_command(&harness, target, &[])
+    start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains("missing required cache mount"))
         .stderr(predicates::str::contains(
@@ -760,7 +760,7 @@ fn failed_session_with_cache_bind_mount_requires_recreation() {
 }
 
 #[test]
-fn run_with_connect_reports_client_failure_without_cleaning_up_ready_session() {
+fn start_with_connect_reports_client_failure_without_cleaning_up_ready_session() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -779,7 +779,7 @@ fn run_with_connect_reports_client_failure_without_cleaning_up_ready_session() {
         ),
     );
 
-    run_command(&harness, target, &["--connect"])
+    start_command(&harness, target, &["--connect"])
         .failure()
         .stderr(predicates::str::contains("client exploded"))
         .stderr(predicates::str::contains(
@@ -813,7 +813,7 @@ fn install_harness() -> Harness {
     Harness::new()
 }
 
-fn run_command(
+fn start_command(
     harness: &Harness,
     target: &Path,
     extra_args: &[&str],
@@ -829,7 +829,7 @@ fn labels_with_runtime(
     labels
 }
 
-fn interrupt_run_after_first_inspect(
+fn interrupt_start_after_first_inspect(
     harness: &Harness,
     workspace: &agentbox::workspace::WorkspaceIdentity,
     target: &Path,
