@@ -34,10 +34,10 @@ use support::{
 fn missing_runtime_requires_tty_for_prompting() {
     let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
 
-    command.args(["run", "/tmp/workspace"]);
+    command.args(["start", "/tmp/workspace"]);
 
     command.assert().failure().stderr(predicates::str::contains(
-        "agentbox run requires --runtime when stdin or stderr is not a TTY",
+        "agentbox start requires --runtime when stdin or stderr is not a TTY",
     ));
 }
 
@@ -425,7 +425,7 @@ fn run_start_failure_includes_container_logs_when_available() {
     run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
-            "failed to run the runtime server command",
+            "failed to start the runtime server command",
         ))
         .stderr(predicates::str::contains(format!(
             "podman logs --tail 80 {}",
@@ -492,7 +492,7 @@ fn run_sigint_during_readiness_stops_container_and_removes_new_cache_volume() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("run interrupted before managed session"));
+    assert!(stderr.contains("start interrupted before managed session"));
     assert!(stderr.contains("removed newly-created cache volume"));
     assert!(stderr.contains("default runtime image was left untouched"));
 
@@ -544,7 +544,7 @@ fn run_sigint_during_readiness_preserves_preexisting_cache_volume() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("run interrupted before managed session"));
+    assert!(stderr.contains("start interrupted before managed session"));
     assert!(stderr.contains("preserved existing cache volume"));
 
     let log = harness.read_log();
@@ -757,7 +757,7 @@ fn run_command(
     target: &Path,
     extra_args: &[&str],
 ) -> assert_cmd::assert::Assert {
-    harness.run_assert_with_args(target, extra_args)
+    harness.start_assert_with_args(target, extra_args)
 }
 
 fn labels_with_runtime(
@@ -775,7 +775,7 @@ fn interrupt_run_after_first_inspect(
 ) -> Output {
     let mut command = harness.locked_agentbox_process_command(workspace);
     command
-        .args(["run", "--runtime", "opencode"])
+        .args(["start", "--runtime", "opencode"])
         .arg(target)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

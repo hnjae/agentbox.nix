@@ -60,6 +60,19 @@ _agentbox() {
           '-c[connect after the new session is ready]'
       fi
       ;;
+    start)
+      if (( CURRENT > 2 && "$words[CURRENT-1]" == "--runtime" )); then
+        _values 'runtime' @RUNTIME_VALUES@
+      elif (( CURRENT > 2 && "$words[CURRENT-1]" == "--dev-env" )); then
+        _values 'dev env' @DEV_ENV_VALUES@
+      else
+        _values 'option' \
+          '--runtime[select runtime]' \
+          '--dev-env[select development environment loading mode]' \
+          '--connect[connect after the new session is ready]' \
+          '-c[connect after the new session is ready]'
+      fi
+      ;;
     ls)
       if [[ $CURRENT -gt 2 && ( "$words[CURRENT-1]" == "--output" || "$words[CURRENT-1]" == "-o" ) ]]; then
         _values 'output' @OUTPUT_VALUES@

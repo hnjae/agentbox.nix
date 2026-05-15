@@ -22,6 +22,7 @@ mod runtime_command;
 mod server_readiness;
 mod session_output;
 mod session_targets;
+pub mod start;
 pub mod stop;
 mod workspace_flow;
 
@@ -30,6 +31,7 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
 
     match command {
         Command::Run(args) => run::run(args, verbose),
+        Command::Start(args) => start::run(args, verbose),
         Command::Runtime(args) => runtime::run(args, verbose),
         Command::Connect(args) => connect::run(args),
         Command::Ls(args) => ls::run(args),

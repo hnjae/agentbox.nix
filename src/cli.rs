@@ -56,8 +56,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    /// Run a managed session as a detached runtime server.
+    /// Run a runtime container in the foreground.
     Run(RunArgs),
+    /// Start a managed session as a detached runtime server.
+    Start(StartArgs),
     /// Manage default runtime images.
     Runtime(RuntimeArgs),
     /// Connect to a running managed session.
@@ -171,6 +173,24 @@ impl fmt::Display for DevEnvMode {
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RunArgs {
     /// Runtime to launch for this run.
+    #[arg(long, value_enum)]
+    pub runtime: Option<RuntimeKind>,
+
+    /// Development environment loading mode.
+    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
+    pub dev_env: DevEnvMode,
+
+    /// Connect after the new session is ready.
+    #[arg(short = 'c', long = "connect")]
+    pub connect: bool,
+
+    /// Workspace directory inside a git repository.
+    pub directory: PathBuf,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct StartArgs {
+    /// Runtime to launch for this session.
     #[arg(long, value_enum)]
     pub runtime: Option<RuntimeKind>,
 

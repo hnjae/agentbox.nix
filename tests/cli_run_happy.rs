@@ -41,7 +41,7 @@ fn run_creates_starts_serves_waits_and_suggests_connect_for_a_new_session() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(target);
+    command.args(["start", "--runtime", "opencode"]).arg(target);
 
     let expected_endpoint = format!("http://127.0.0.1:{}", endpoint.port());
     command
@@ -160,7 +160,7 @@ fn run_wraps_server_command_with_direnv_when_envrc_applies() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(target);
+    command.args(["start", "--runtime", "opencode"]).arg(target);
 
     command.assert().success();
     endpoint.wait();
@@ -312,7 +312,7 @@ fn run_fails_clearly_when_flake_evaluation_fails() {
 
     let mut command = harness.locked_agentbox_command(&fixture.workspace);
     command
-        .args(["run", "--runtime", "opencode"])
+        .args(["start", "--runtime", "opencode"])
         .arg(&fixture.target);
 
     command
@@ -349,7 +349,7 @@ fn run_launches_codex_server_in_yolo_mode() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.args(["run", "--runtime", "codex"]).arg(target);
+    command.args(["start", "--runtime", "codex"]).arg(target);
 
     let expected_endpoint = format!("ws://127.0.0.1:{}", endpoint.port());
     command
@@ -425,7 +425,7 @@ fn run_with_connect_runs_runtime_client_after_server_is_ready() {
 
     let mut command = harness.locked_agentbox_command(workspace);
     command
-        .args(["run", "--connect", "--runtime", "opencode"])
+        .args(["start", "--connect", "--runtime", "opencode"])
         .arg(target);
 
     let expected_endpoint = format!("http://127.0.0.1:{}", endpoint.port());
@@ -483,7 +483,7 @@ fn run_skips_build_when_default_image_already_exists_locally() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(target);
+    command.args(["start", "--runtime", "opencode"]).arg(target);
 
     command.assert().success();
     endpoint.wait();
@@ -518,7 +518,7 @@ fn run_builds_current_hash_image_when_only_legacy_local_image_exists() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(target);
+    command.args(["start", "--runtime", "opencode"]).arg(target);
 
     command.assert().success();
     endpoint.wait();
@@ -553,7 +553,7 @@ fn run_verbose_traces_podman_commands_and_forwards_non_json_output() {
 
     let mut command = harness.locked_agentbox_command(workspace);
     command
-        .args(["--verbose", "run", "--runtime", "opencode"])
+        .args(["--verbose", "start", "--runtime", "opencode"])
         .arg(target);
 
     command.assert().success().stderr(
@@ -581,7 +581,7 @@ fn run_reports_default_image_build_failures_clearly() {
     harness.fail_operation("build", "podman build exploded", 125);
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.args(["run", "--runtime", "opencode"]).arg(target);
+    command.args(["start", "--runtime", "opencode"]).arg(target);
 
     command
         .assert()
@@ -613,7 +613,7 @@ fn run_opencode_success(
 
     let mut command = harness.locked_agentbox_command(&fixture.workspace);
     command
-        .args(["run", "--runtime", "opencode"])
+        .args(["start", "--runtime", "opencode"])
         .args(extra_args)
         .arg(&fixture.target);
 

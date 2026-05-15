@@ -279,6 +279,19 @@ impl CliHarness {
         command.assert()
     }
 
+    pub fn start_assert_with_args(
+        &self,
+        target: &Path,
+        extra_args: &[&str],
+    ) -> assert_cmd::assert::Assert {
+        let mut command = self.agentbox_command();
+        command
+            .args(["start", "--runtime", "opencode"])
+            .args(extra_args)
+            .arg(target);
+        command.assert()
+    }
+
     pub fn connect_assert(&self, target: &Path) -> assert_cmd::assert::Assert {
         let mut command = self.agentbox_command();
         command.arg("connect").arg(target);

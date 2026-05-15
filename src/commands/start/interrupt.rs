@@ -26,7 +26,7 @@ impl RunInterrupt {
         let signal_id = signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&flag))
             .map_err(|error| {
                 Error::msg(format!(
-                    "failed to install SIGINT cleanup handler for `agentbox run`: {error}"
+                    "failed to install SIGINT cleanup handler for `agentbox start`: {error}"
                 ))
             })?;
 
@@ -127,7 +127,7 @@ impl InterruptedRunCleanup {
 
     fn render(&self, workspace: &WorkspaceIdentity, cache_volume_existed_before: bool) -> String {
         let mut message = format!(
-            "run interrupted before managed session `{}` for `{}` became ready",
+            "start interrupted before managed session `{}` for `{}` became ready",
             workspace.container_name, workspace.canonical_git_root,
         );
 
@@ -177,7 +177,7 @@ mod tests {
 
         assert_eq!(
             cleanup.render(&workspace, true),
-            "run interrupted before managed session `agentbox-demo` for `/workspace/demo` became ready; cleaned up managed container `agentbox-demo` and preserved existing cache volume `agentbox-demo`; default runtime image was left untouched",
+            "start interrupted before managed session `agentbox-demo` for `/workspace/demo` became ready; cleaned up managed container `agentbox-demo` and preserved existing cache volume `agentbox-demo`; default runtime image was left untouched",
         );
     }
 
@@ -191,7 +191,7 @@ mod tests {
 
         assert_eq!(
             cleanup.render(&workspace, false),
-            "run interrupted before managed session `agentbox-demo` for `/workspace/demo` became ready; cleaned up managed container `agentbox-demo` and removed newly-created cache volume `agentbox-demo`; default runtime image was left untouched",
+            "start interrupted before managed session `agentbox-demo` for `/workspace/demo` became ready; cleaned up managed container `agentbox-demo` and removed newly-created cache volume `agentbox-demo`; default runtime image was left untouched",
         );
     }
 
@@ -208,7 +208,7 @@ mod tests {
 
         assert_eq!(
             cleanup.render(&workspace, false),
-            "run interrupted before managed session `agentbox-demo` for `/workspace/demo` became ready; partial cleanup failed: container still exists after cleanup; cache volume removal failed: denied; default runtime image was left untouched",
+            "start interrupted before managed session `agentbox-demo` for `/workspace/demo` became ready; partial cleanup failed: container still exists after cleanup; cache volume removal failed: denied; default runtime image was left untouched",
         );
     }
 

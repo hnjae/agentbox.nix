@@ -8,7 +8,8 @@
 
 use agentbox::cli::{
     CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, HealthArgs,
-    LsArgs, OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StopArgs,
+    LsArgs, OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StartArgs,
+    StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
@@ -23,6 +24,7 @@ fn help_lists_core_commands() {
 
     command.assert().success().stdout(
         predicate::str::contains("run")
+            .and(predicate::str::contains("start"))
             .and(predicate::str::contains("runtime"))
             .and(predicate::str::contains("connect"))
             .and(predicate::str::contains("attach").not())
@@ -52,6 +54,15 @@ fn unknown_subcommand_fails() {
 fn core_commands_parse_into_expected_variants() {
     let run = Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode", "/tmp/workspace"])
         .unwrap();
+    let start = Cli::try_parse_from([
+        "agentbox",
+        "start",
+        "--connect",
+        "--runtime",
+        "opencode",
+        "/tmp/workspace",
+    ])
+    .unwrap();
     let connect = Cli::try_parse_from(["agentbox", "connect", "/tmp/workspace"]).unwrap();
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
     let health = Cli::try_parse_from(["agentbox", "health"]).unwrap();
@@ -73,6 +84,15 @@ fn core_commands_parse_into_expected_variants() {
         connect.command,
         Command::Connect(ConnectArgs {
             directory: Some("/tmp/workspace".into()),
+        })
+    );
+    assert_eq!(
+        start.command,
+        Command::Start(StartArgs {
+            runtime: Some(RuntimeKind::Opencode),
+            dev_env: DevEnvMode::Auto,
+            connect: true,
+            directory: "/tmp/workspace".into(),
         })
     );
     assert_eq!(
@@ -449,7 +469,7 @@ fn run_accepts_connect_flag() {
     for flag in ["--connect", "-c"] {
         let cli = Cli::try_parse_from([
             "agentbox",
-            "run",
+            "start",
             flag,
             "--runtime",
             "codex",
@@ -459,7 +479,7 @@ fn run_accepts_connect_flag() {
 
         assert_eq!(
             cli.command,
-            Command::Run(RunArgs {
+            Command::Start(StartArgs {
                 runtime: Some(RuntimeKind::Codex),
                 dev_env: DevEnvMode::Auto,
                 connect: true,

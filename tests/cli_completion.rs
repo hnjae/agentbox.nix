@@ -149,7 +149,7 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(script.contains("run runtime connect ls health stop clean completion help"));
+    assert!(script.contains("run start runtime connect ls health stop clean completion help"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -200,6 +200,7 @@ fn completion_scripts_offer_run_connect_flag() {
     assert!(fish.contains("-l dev-env"));
     assert!(fish.contains(&dev_env_values));
     assert!(fish.contains("-s c -l connect"));
+    assert!(fish.contains("__fish_seen_subcommand_from start"));
 }
 
 #[test]
@@ -286,6 +287,7 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
 
     assert!(manpage.contains(".TH agentbox 1"));
     assert!(manpage.contains("agentbox\\-run(1)"));
+    assert!(manpage.contains("agentbox\\-start(1)"));
     assert!(manpage.contains("agentbox\\-health(1)"));
     assert!(manpage.contains("agentbox\\-clean(1)"));
     assert!(!manpage.contains("agentbox\\-help(1)"));
@@ -314,6 +316,7 @@ fn installed_manpages_include_referenced_subcommands() {
     for filename in [
         "agentbox.1",
         "agentbox-run.1",
+        "agentbox-start.1",
         "agentbox-runtime.1",
         "agentbox-connect.1",
         "agentbox-ls.1",
@@ -331,6 +334,7 @@ fn installed_manpages_include_referenced_subcommands() {
 
     let agentbox = fs::read_to_string(directory.path().join("agentbox.1")).unwrap();
     assert!(agentbox.contains("agentbox\\-run(1)"));
+    assert!(agentbox.contains("agentbox\\-start(1)"));
     assert!(agentbox.contains("agentbox\\-health(1)"));
     assert!(agentbox.contains("agentbox\\-clean(1)"));
     assert!(!agentbox.contains("agentbox\\-help(1)"));
@@ -339,6 +343,10 @@ fn installed_manpages_include_referenced_subcommands() {
     assert!(run.contains(".TH agentbox-run 1"));
     assert!(run.contains("Runtime to launch for this run"));
     assert!(run.contains("Connect after the new session is ready"));
+    let start = fs::read_to_string(directory.path().join("agentbox-start.1")).unwrap();
+    assert!(start.contains(".TH agentbox-start 1"));
+    assert!(start.contains("Runtime to launch for this session"));
+    assert!(start.contains("Connect after the new session is ready"));
 }
 
 fn capture_completion_script() -> String {
