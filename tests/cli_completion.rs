@@ -10,7 +10,7 @@ use std::fs;
 
 use assert_cmd::Command as AssertCommand;
 
-use agentbox::cli::{CompletionShell, OutputFormat};
+use agentbox::cli::{CompletionShell, DevEnvMode, OutputFormat};
 use agentbox::metadata::LABEL_ATTACH_SCHEME;
 use agentbox::runtime::RuntimeKind;
 
@@ -183,15 +183,22 @@ fn completion_scripts_offer_ls_and_health_output_formats() {
 
 #[test]
 fn completion_scripts_offer_run_connect_flag() {
+    let dev_env_values = DevEnvMode::supported_values().join(" ");
+
     let bash = capture_completion_script_shell("bash");
-    assert!(bash.contains("--runtime --connect -c"));
+    assert!(bash.contains("--runtime --dev-env --connect -c"));
+    assert!(bash.contains(&dev_env_values));
 
     let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("--dev-env[select development environment loading mode]"));
+    assert!(zsh.contains(&dev_env_values));
     assert!(zsh.contains("--connect[connect after the new session is ready]"));
     assert!(zsh.contains("-c[connect after the new session is ready]"));
 
     let fish = capture_completion_script_shell("fish");
     assert!(fish.contains("__fish_seen_subcommand_from run"));
+    assert!(fish.contains("-l dev-env"));
+    assert!(fish.contains(&dev_env_values));
     assert!(fish.contains("-s c -l connect"));
 }
 
@@ -245,6 +252,7 @@ fn completion_scripts_offer_clean_flags() {
 #[test]
 fn completion_scripts_expand_shared_value_placeholders() {
     let runtime_values = RuntimeKind::supported_values().join(" ");
+    let dev_env_values = DevEnvMode::supported_values().join(" ");
     let output_values = OutputFormat::supported_values().join(" ");
     let shell_values = CompletionShell::supported_values().join(" ");
 
@@ -253,6 +261,7 @@ fn completion_scripts_expand_shared_value_placeholders() {
 
         for placeholder in [
             "@RUNTIME_VALUES@",
+            "@DEV_ENV_VALUES@",
             "@OUTPUT_VALUES@",
             "@SHELL_VALUES@",
             "@SUBCOMMAND_NAMES@",
@@ -265,6 +274,7 @@ fn completion_scripts_expand_shared_value_placeholders() {
         }
 
         assert!(script.contains(&runtime_values));
+        assert!(script.contains(&dev_env_values));
         assert!(script.contains(&output_values));
         assert!(script.contains(&shell_values));
     }

@@ -1,7 +1,7 @@
 use clap::CommandFactory;
 use std::path::Path;
 
-use crate::cli::{Cli, CompletionRootCommand, CompletionShell, OutputFormat};
+use crate::cli::{Cli, CompletionRootCommand, CompletionShell, DevEnvMode, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
@@ -82,6 +82,7 @@ fn fish_script() -> String {
 fn completion_script(template: &str) -> String {
     let subcommands = completion_subcommands();
     let runtime_values = RuntimeKind::supported_values().join(" ");
+    let dev_env_values = DevEnvMode::supported_values().join(" ");
     let output_values = OutputFormat::supported_values().join(" ");
     let shell_values = CompletionShell::supported_values().join(" ");
     let subcommand_names = completion_subcommand_names(&subcommands);
@@ -89,6 +90,7 @@ fn completion_script(template: &str) -> String {
 
     template
         .replace("@RUNTIME_VALUES@", &runtime_values)
+        .replace("@DEV_ENV_VALUES@", &dev_env_values)
         .replace("@OUTPUT_VALUES@", &output_values)
         .replace("@SHELL_VALUES@", &shell_values)
         .replace("@SUBCOMMAND_NAMES@", &subcommand_names)

@@ -32,6 +32,7 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l yes -d "Delete
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l images -d "Consider default runtime images"
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l volumes -d "Consider workspace cache volumes"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l dev-env -r -a "@DEV_ENV_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -s c -l connect -d "Connect after the new session is ready"
 complete -c agentbox -f -n "__fish_seen_subcommand_from runtime" -a "update"
 complete -c agentbox -f -n "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update" -a "@RUNTIME_VALUES@"

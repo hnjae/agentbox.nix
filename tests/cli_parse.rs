@@ -7,8 +7,8 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::cli::{
-    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, HealthArgs, LsArgs,
-    OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StopArgs,
+    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, HealthArgs,
+    LsArgs, OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
@@ -64,6 +64,7 @@ fn core_commands_parse_into_expected_variants() {
         run.command,
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Opencode),
+            dev_env: DevEnvMode::Auto,
             connect: false,
             directory: "/tmp/workspace".into(),
         })
@@ -207,6 +208,58 @@ fn global_verbose_flag_is_available_before_or_after_subcommands() {
 
     assert!(before.verbose);
     assert!(after.verbose);
+}
+
+#[test]
+fn run_accepts_dev_env_modes_and_defaults_to_auto() {
+    let defaulted =
+        Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode", "/tmp/workspace"])
+            .unwrap();
+    let none = Cli::try_parse_from([
+        "agentbox",
+        "run",
+        "--runtime",
+        "opencode",
+        "--dev-env",
+        "none",
+        "/tmp/workspace",
+    ])
+    .unwrap();
+
+    assert!(matches!(
+        defaulted.command,
+        Command::Run(RunArgs {
+            dev_env: DevEnvMode::Auto,
+            ..
+        })
+    ));
+    assert!(matches!(
+        none.command,
+        Command::Run(RunArgs {
+            dev_env: DevEnvMode::None,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn run_rejects_unknown_dev_env_mode() {
+    let error = Cli::try_parse_from([
+        "agentbox",
+        "run",
+        "--runtime",
+        "opencode",
+        "--dev-env",
+        "shell",
+        "/tmp/workspace",
+    ])
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 2);
+    assert!(
+        error.to_string().contains("invalid value 'shell'"),
+        "expected clap to reject unsupported dev-env modes"
+    );
 }
 
 #[test]
@@ -384,6 +437,7 @@ fn run_accepts_runtime_selection() {
         cli.command,
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Codex),
+            dev_env: DevEnvMode::Auto,
             connect: false,
             directory: "/tmp/workspace".into(),
         })
@@ -407,6 +461,7 @@ fn run_accepts_connect_flag() {
             cli.command,
             Command::Run(RunArgs {
                 runtime: Some(RuntimeKind::Codex),
+                dev_env: DevEnvMode::Auto,
                 connect: true,
                 directory: "/tmp/workspace".into(),
             })
@@ -422,6 +477,7 @@ fn run_accepts_missing_runtime_for_prompting() {
         cli.command,
         Command::Run(RunArgs {
             runtime: None,
+            dev_env: DevEnvMode::Auto,
             connect: false,
             directory: "/tmp/workspace".into(),
         })

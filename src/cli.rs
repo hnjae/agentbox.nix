@@ -138,11 +138,45 @@ impl fmt::Display for OutputFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+pub enum DevEnvMode {
+    Auto,
+    None,
+}
+
+impl DevEnvMode {
+    fn variants() -> &'static [Self] {
+        <Self as ValueEnum>::value_variants()
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::None => "none",
+        }
+    }
+
+    pub fn supported_values() -> Vec<&'static str> {
+        Self::variants().iter().map(|mode| mode.as_str()).collect()
+    }
+}
+
+impl fmt::Display for DevEnvMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RunArgs {
     /// Runtime to launch for this run.
     #[arg(long, value_enum)]
     pub runtime: Option<RuntimeKind>,
+
+    /// Development environment loading mode.
+    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
+    pub dev_env: DevEnvMode,
 
     /// Connect after the new session is ready.
     #[arg(short = 'c', long = "connect")]

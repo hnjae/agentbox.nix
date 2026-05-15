@@ -50,9 +50,12 @@ _agentbox() {
     run)
       if (( CURRENT > 2 && "$words[CURRENT-1]" == "--runtime" )); then
         _values 'runtime' @RUNTIME_VALUES@
+      elif (( CURRENT > 2 && "$words[CURRENT-1]" == "--dev-env" )); then
+        _values 'dev env' @DEV_ENV_VALUES@
       else
         _values 'option' \
           '--runtime[select runtime]' \
+          '--dev-env[select development environment loading mode]' \
           '--connect[connect after the new session is ready]' \
           '-c[connect after the new session is ready]'
       fi
