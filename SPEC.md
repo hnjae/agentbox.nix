@@ -12,7 +12,7 @@ containers.
 
 The MVP is workspace-centric rather than name-centric:
 
-- `agentbox run [--connect|-c] [--runtime <opencode|codex>] <directory>`
+- `agentbox run [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>`
 - `agentbox runtime update <opencode|codex>`
 - `agentbox connect [directory]`
 - `agentbox ls`
@@ -20,14 +20,16 @@ The MVP is workspace-centric rather than name-centric:
 - `agentbox stop [target]...`
 - `agentbox clean`
 
-`agentbox run [--connect|-c] [--runtime <opencode|codex>] <directory>`
+`agentbox run [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>`
 resolves `<directory>` to its canonical git root and launches one managed
 workspace session for that repository as a detached runtime server container.
-The container starts the selected runtime server for that workspace. If
-`--connect` is set, `run` connects with the runtime host-side client after the
-new runtime server endpoint is ready. If `--runtime` is omitted in an
-interactive terminal, `run` prompts for the runtime before validating runtime
-prerequisites or starting a container.
+The container starts the selected runtime server for that workspace. By
+default, `run` automatically starts the server through the applicable
+development environment for the launch directory; `--dev-env none` disables that
+automatic wrapping. If `--connect` is set, `run` connects with the runtime
+host-side client after the new runtime server endpoint is ready. If `--runtime`
+is omitted in an interactive terminal, `run` prompts for the runtime before
+validating runtime prerequisites or starting a container.
 
 `agentbox connect [directory]` discovers the running server endpoint for the
 resolved repository or selected session and runs the running session's runtime
@@ -68,8 +70,6 @@ Conditionally required host tools:
 - `npm` when `agentbox` must resolve the latest runtime npm package version
   for initial default image creation, a default runtime image rebuild after the
   embedded image build context changes, or `agentbox runtime update <runtime>`
-- `direnv` when a matching `.envrc` applies to the directory whose environment
-  is used by the command: the `run` target directory for server startup
 
 For `run` and `connect`, `<directory>` must resolve to an existing directory
 inside a git repository. A non-git target fails clearly; the MVP does not create
@@ -221,7 +221,7 @@ Global output rules:
   lines. `connect` runs the runtime host client with inherited stdio and does
   not wrap the client output as logs.
 
-### `agentbox run [--connect|-c] [--runtime <opencode|codex>] <directory>`
+### `agentbox run [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>`
 
 `run` launches a new workspace session as a detached runtime server.
 
@@ -230,6 +230,9 @@ Optional flag:
 - `--connect`, `-c`: connect with the runtime host-side client after the new
   session is ready
 - `--runtime <opencode|codex>`
+- `--dev-env <auto|none>`: choose whether `run` automatically starts the
+  runtime server through the applicable development environment. The default is
+  `auto`.
 
 Expected behavior:
 
@@ -255,8 +258,10 @@ Expected behavior:
    directory and start detached `podman run --rm` with the required labels,
    mounts, default runtime image, local-only published attach endpoint, and
    launch-directory working directory.
-10. Start the selected runtime server for the session. If `direnv` applies, the
-    server starts with the launch directory's `direnv` environment.
+10. Start the selected runtime server for the session. With the default
+    `--dev-env auto`, the server starts through the selected development
+    environment wrapper, if one applies. With `--dev-env none`, the server
+    command starts directly.
 11. Wait until the runtime server endpoint is ready for connection or the
     container exits.
 12. If `--connect` is absent, report that the discovered attach endpoint is
@@ -283,6 +288,10 @@ Runtime rules:
 
 - `run` accepts only `opencode` and `codex` in the MVP.
 - `--runtime` selects the runtime for the new session when it is present.
+- `--dev-env auto` is the default and enables automatic development
+  environment loading for the server command.
+- `--dev-env none` disables automatic development environment loading for the
+  server command.
 - `--connect` does not change session identity, runtime selection, container
   startup, endpoint readiness checks, or existing-session handling.
 - If `--connect` is set and a managed session already exists for the resolved
@@ -489,8 +498,8 @@ Expected behavior:
     directory, report that the requested directory was used only to identify the
     workspace and that `connect` is using the stored launch directory.
 13. Execute the runtime host client command from the stored launch directory with
-    stdio inherited, without re-evaluating `.envrc` or wrapping the client in
-    `direnv`.
+    stdio inherited, without re-evaluating or wrapping the client in any
+    development environment.
 
 Rules:
 
@@ -509,8 +518,8 @@ Rules:
 - The host client process current working directory is the running session's
   stored launch directory.
 - The host client process uses the host environment of the `agentbox connect`
-  invocation; `connect` does not re-evaluate `.envrc` from the requested
-  directory or stored launch directory.
+  invocation; `connect` does not re-evaluate `.envrc`, `devenv.nix`, or
+  `flake.nix` from the requested directory or stored launch directory.
 - For Codex sessions, the host client command includes
   `--dangerously-bypass-approvals-and-sandbox` when connecting with `--remote`,
   matching Codex 0.128.0 behavior that requires the YOLO flag on both the
@@ -902,31 +911,79 @@ Rules:
   configuration or data directories.
 - Codex sessions do not receive the OpenCode passthrough mounts.
 
-### Direnv
+### Dev Environment Loading
 
-When a command uses a directory with `direnv`, the affected runtime process is
-launched with the environment produced for the directory that command actually
-uses.
+When `run` uses the default `--dev-env auto`, it starts the runtime server
+through the first applicable development environment provider for the launch
+directory. The provider priority is:
+
+1. `direnv`
+2. `devenv`
+3. `nix develop`
+4. no wrapper
 
 Rules:
 
-- `direnv` evaluation happens relative to the effective command directory, not
-  forcibly at the git root.
-- `run` starts the runtime server in the target directory's `direnv`
-  environment when a matching `.envrc` applies.
+- `run` records and uses the canonical target directory as the runtime server
+  working directory even when a development environment wrapper is selected.
+- `run --dev-env none` disables automatic development environment loading and
+  starts the runtime server command directly.
+- Only the selected provider is used. If the selected provider command is
+  missing, blocked, exits unsuccessfully, or otherwise fails during runtime
+  server startup, the session startup fails through the normal container startup
+  error path and `run` does not silently try a lower-priority provider.
+- Development environment provider commands are executed inside the runtime
+  container. `agentbox` does not require host-side `direnv` or `devenv`.
 - `connect` starts the runtime host client directly from the stored launch
-  directory and does not re-evaluate `.envrc`.
-- When `run` launches a session, the server environment is fixed by the
-  launch directory used for that `run`.
+  directory and does not re-evaluate `.envrc`, `devenv.nix`, or `flake.nix`.
+- When `run` launches a session, the server environment is fixed by the launch
+  directory and development environment selection used for that `run`.
 - `connect` to an already-running session does not reevaluate or replace the
   server environment.
-- The MVP does not persist host-side direnv state for running-session
-  compatibility checks.
+- The MVP does not persist development environment selection or state for
+  running-session compatibility checks.
 - The MVP does not compare a different requested connect directory against the
-  earlier `run` direnv context for that running session.
-- If `.envrc` is present but `direnv` is unavailable, blocked, or fails to load
-  during `run`, the affected `run` fails clearly.
-- If no `.envrc` applies, the runtime server launches normally.
+  earlier `run` development environment context for that running session.
+
+`direnv` selection:
+
+- A matching `.envrc` applies when `.envrc` exists in the canonical target
+  directory or in any ancestor up to and including the canonical git root.
+- If a matching `.envrc` applies, `run --dev-env auto` starts the runtime server
+  as `direnv exec . <server argv>` from the canonical target directory.
+
+`devenv` selection:
+
+- `devenv` is considered only when no matching `.envrc` applies.
+- The selected `devenv.nix` is the closest `devenv.nix` found in the canonical
+  target directory or in any ancestor up to and including the canonical git
+  root.
+- If a `devenv.nix` is selected, `run --dev-env auto` starts the runtime server
+  as `devenv shell --no-tui --from path:<root> -- <server argv>`, where
+  `<root>` is the directory containing the selected `devenv.nix`.
+
+`nix develop` selection:
+
+- `nix develop` is considered only when no matching `.envrc` or `devenv.nix`
+  applies.
+- The selected flake is the closest `flake.nix` found in the canonical target
+  directory or in any ancestor up to and including the canonical git root.
+- Automatic flake selection considers only `devShells.<system>.<attr>`.
+  `packages` and `legacyPackages` are not automatic development environment
+  candidates.
+- If the selected `flake.nix` is in the canonical target directory, `run
+  --dev-env auto` looks for the `default` dev shell.
+- If the selected `flake.nix` is in a parent directory of the canonical target
+  directory, `run --dev-env auto` first looks for a dev shell named
+  `basename(<directory>)`, then falls back to `default`.
+- If a candidate dev shell exists, `run --dev-env auto` starts the runtime
+  server as `nix develop --no-write-lock-file path:<flake_root>#<attr>
+  --command <server argv>`.
+- If the selected flake can be evaluated but none of the candidate dev shells
+  exists, `run --dev-env auto` starts the runtime server command directly.
+- If automatic flake evaluation itself fails for reasons other than a missing
+  candidate dev shell attribute, `run` fails clearly before starting a
+  container.
 
 ### Runtime Server And Client Behavior
 
@@ -1098,7 +1155,9 @@ Required error cases:
 - missing host `npm` when a runtime npm version must be resolved
 - unusable runtime profile path under the XDG state or HOME fallback location
 - runtime image setup failure
-- `direnv` unavailable, blocked, or failing when a matching `.envrc` applies
+- selected development environment wrapper unavailable, blocked, or failing
+  during runtime server startup
+- automatic flake evaluation failure while resolving a `nix develop` wrapper
 - workspace or host Nix permission problems that prevent required access
 - `clean` run from non-TTY stdin without `--yes` or `--dry-run`
 - partial `clean` deletion failures
