@@ -40,6 +40,7 @@ pub fn main() -> ExitCode {
     match try_main() {
         Ok(()) => ExitCode::SUCCESS,
         Err(Error::Cli(error)) => error.exit(),
+        Err(Error::ExitCode(code)) => ExitCode::from(code),
         Err(error) => {
             diagnostic::error(error.to_string());
             ExitCode::FAILURE

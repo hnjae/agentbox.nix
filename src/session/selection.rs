@@ -90,7 +90,7 @@ pub(crate) fn run_command_hint(runtime: Option<&str>, workspace: &WorkspaceIdent
         .map(str::to_string)
         .unwrap_or_else(RuntimeKind::supported_values_placeholder);
     format!(
-        "agentbox run --runtime {runtime} {}",
+        "agentbox start --runtime {runtime} {}",
         workspace.requested_target
     )
 }

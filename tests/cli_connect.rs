@@ -267,7 +267,7 @@ fn connect_to_a_stopped_session_reports_the_running_only_model() {
         .failure()
         .stderr(predicates::str::contains("is not running"))
         .stderr(predicates::str::contains(format!(
-            "agentbox run --runtime opencode {}",
+            "agentbox start --runtime opencode {}",
             target.display()
         )))
         .stderr(predicates::str::contains(format!(
@@ -291,7 +291,7 @@ fn labels_with_launch_directory(
 }
 
 #[test]
-fn connect_without_an_existing_session_suggests_run() {
+fn connect_without_an_existing_session_suggests_start() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -305,7 +305,7 @@ fn connect_without_an_existing_session_suggests_run() {
         .assert()
         .failure()
         .stderr(predicates::str::contains(format!(
-            "use `agentbox run --runtime <opencode|codex> {}` to create one",
+            "use `agentbox start --runtime <opencode|codex> {}` to create one",
             target.display()
         )));
 

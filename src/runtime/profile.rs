@@ -16,7 +16,8 @@ use crate::preflight::{
 };
 
 use super::command::{
-    HostClientCommandArg, HostClientCommandTemplate, ServerCommandArg, ServerCommandTemplate,
+    DirectCommandArg, DirectCommandTemplate, HostClientCommandArg, HostClientCommandTemplate,
+    ServerCommandArg, ServerCommandTemplate,
 };
 use super::default_image::{self, DefaultImageBuildContext};
 use super::kind::RuntimeKind;
@@ -44,6 +45,8 @@ const OPENCODE_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientComman
     HostClientCommandArg::Literal("attach"),
     HostClientCommandArg::AttachEndpoint,
 ]);
+const OPENCODE_FOREGROUND_COMMAND: DirectCommandTemplate =
+    DirectCommandTemplate::new(&[DirectCommandArg::Literal("opencode")]);
 
 const CODEX_SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
     ServerCommandArg::Literal("codex"),
@@ -59,6 +62,10 @@ const CODEX_HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTe
     HostClientCommandArg::Literal(CODEX_YOLO_FLAG),
     HostClientCommandArg::Literal("--remote"),
     HostClientCommandArg::AttachEndpoint,
+]);
+const CODEX_FOREGROUND_COMMAND: DirectCommandTemplate = DirectCommandTemplate::new(&[
+    DirectCommandArg::Literal("codex"),
+    DirectCommandArg::Literal(CODEX_YOLO_FLAG),
 ]);
 
 const OPENCODE_DEFAULT_ENV: &[RuntimeDefaultEnv] = &[
@@ -126,6 +133,7 @@ const OPENCODE_PROFILE: RuntimeProfile = RuntimeProfile {
     default_env: OPENCODE_DEFAULT_ENV,
     server_command: OPENCODE_SERVER_COMMAND,
     host_client_command: OPENCODE_HOST_CLIENT_COMMAND,
+    foreground_command: OPENCODE_FOREGROUND_COMMAND,
 };
 
 const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
@@ -150,6 +158,7 @@ const CODEX_PROFILE: RuntimeProfile = RuntimeProfile {
     default_env: CODEX_DEFAULT_ENV,
     server_command: CODEX_SERVER_COMMAND,
     host_client_command: CODEX_HOST_CLIENT_COMMAND,
+    foreground_command: CODEX_FOREGROUND_COMMAND,
 };
 
 const RUNTIME_PROFILES: &[RuntimeProfile] = &[OPENCODE_PROFILE, CODEX_PROFILE];
@@ -166,6 +175,7 @@ pub(super) struct RuntimeProfile {
     pub(super) default_env: &'static [RuntimeDefaultEnv],
     pub(super) server_command: ServerCommandTemplate,
     pub(super) host_client_command: HostClientCommandTemplate,
+    pub(super) foreground_command: DirectCommandTemplate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

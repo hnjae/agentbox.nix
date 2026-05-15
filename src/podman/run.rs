@@ -16,6 +16,35 @@ pub(super) fn run_detached_args(
     host_gid: libc::gid_t,
 ) -> Vec<String> {
     let mut args = PodmanArgs::from(["run", "--detach", "--rm"]);
+    append_common_run_args(&mut args, container_name, spec, host_gid);
+    args.into_vec()
+}
+
+pub(super) fn run_foreground_args(
+    container_name: &str,
+    spec: &RuntimeRunSpec,
+    host_gid: libc::gid_t,
+    use_tty: bool,
+) -> Vec<String> {
+    let mut args = PodmanArgs::from(["run", "--rm", "--interactive"]);
+    if use_tty {
+        args.flag("--tty");
+    }
+    append_common_run_args(&mut args, container_name, spec, host_gid);
+    args.into_vec()
+}
+
+pub(super) fn current_primary_gid() -> libc::gid_t {
+    // SAFETY: getgid has no preconditions and only returns the current process real GID.
+    unsafe { libc::getgid() }
+}
+
+fn append_common_run_args(
+    args: &mut PodmanArgs,
+    container_name: &str,
+    spec: &RuntimeRunSpec,
+    host_gid: libc::gid_t,
+) {
     let gid = host_gid.to_string();
     args.option("--name", container_name);
     args.option("--userns", format!("keep-id:uid=1000,gid={gid}"));
@@ -47,12 +76,6 @@ pub(super) fn run_detached_args(
 
     args.flag(create.image.as_str());
     args.extend(create.command.iter().map(String::as_str));
-    args.into_vec()
-}
-
-pub(super) fn current_primary_gid() -> libc::gid_t {
-    // SAFETY: getgid has no preconditions and only returns the current process real GID.
-    unsafe { libc::getgid() }
 }
 
 fn render_mount(mount: &RuntimeMount) -> String {
@@ -145,6 +168,56 @@ mod tests {
                 "0.0.0.0",
                 "--port",
                 "4096",
+            ])
+        );
+    }
+
+    #[test]
+    fn run_foreground_args_are_unmanaged_and_interactive() {
+        let spec = RuntimeRunSpec::new(
+            RuntimeCreateSpec {
+                image: "localhost/agentbox-opencode:ctx-0123456789abcdef".to_string(),
+                labels: BTreeMap::new(),
+                mounts: vec![
+                    RuntimeMount::read_only_bind("/workspace", "/workspace"),
+                    RuntimeMount::volume("agentbox-cache", "/home/user"),
+                ],
+                command: strings(["opencode"]),
+                default_env: BTreeMap::from([(
+                    "OPENCODE_CONFIG_CONTENT".to_string(),
+                    r#"{"autoupdate":false}"#.to_string(),
+                )]),
+                network_enabled: true,
+                published_ports: Vec::new(),
+            },
+            "/workspace",
+        );
+
+        assert_eq!(
+            run_foreground_args("agentbox-demo", &spec, 1234, true),
+            strings([
+                "run",
+                "--rm",
+                "--interactive",
+                "--tty",
+                "--name",
+                "agentbox-demo",
+                "--userns",
+                "keep-id:uid=1000,gid=1234",
+                "--user",
+                "user:1234",
+                "--group-add",
+                "keep-groups",
+                "--workdir",
+                "/workspace",
+                "--mount",
+                "type=bind,src=/workspace,dst=/workspace,ro",
+                "--mount",
+                "type=volume,src=agentbox-cache,dst=/home/user,U",
+                "--env",
+                r#"OPENCODE_CONFIG_CONTENT={"autoupdate":false}"#,
+                "localhost/agentbox-opencode:ctx-0123456789abcdef",
+                "opencode",
             ])
         );
     }

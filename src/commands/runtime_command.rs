@@ -18,6 +18,17 @@ pub(crate) fn server_runtime_command(
     )
 }
 
+pub(crate) fn foreground_runtime_command(
+    runtime: RuntimeKind,
+    target: &Utf8Path,
+    dev_env: &DevEnvironment,
+) -> RuntimeInvocation {
+    RuntimeInvocation::new(
+        dev_env.wrap_argv(runtime.foreground_command().argv),
+        target.to_path_buf(),
+    )
+}
+
 fn host_client_runtime_command(
     runtime: RuntimeKind,
     endpoint: &AttachEndpoint,

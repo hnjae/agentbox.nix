@@ -12,6 +12,8 @@ use camino::Utf8Path;
 pub enum Error {
     #[error("{0}")]
     Cli(#[from] clap::Error),
+    #[error("process exited with code {0}")]
+    ExitCode(u8),
     #[error("{0}")]
     Message(String),
     #[error(transparent)]

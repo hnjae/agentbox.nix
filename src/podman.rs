@@ -7,7 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
-use std::process::Command;
+use std::process::{Command, ExitStatus, Stdio};
 
 use camino::Utf8Path;
 use serde::de::DeserializeOwned;
@@ -195,6 +195,27 @@ impl Podman {
             command.args(run::run_detached_args(container_name, spec, host_gid));
         })
         .map(|_| ())
+    }
+
+    pub fn run_foreground(
+        &self,
+        container_name: &str,
+        spec: &RuntimeRunSpec,
+        use_tty: bool,
+    ) -> Result<ExitStatus> {
+        let host_gid = run::current_primary_gid();
+        let mut command = self.podman_command(|command| {
+            command.args(run::run_foreground_args(
+                container_name,
+                spec,
+                host_gid,
+                use_tty,
+            ));
+            command.stdin(Stdio::inherit());
+            command.stdout(Stdio::inherit());
+            command.stderr(Stdio::inherit());
+        })?;
+        self.status(&mut command)
     }
 
     fn podman_command(&self, configure: impl FnOnce(&mut Command)) -> Result<Command> {

@@ -55,9 +55,7 @@ _agentbox() {
       else
         _values 'option' \
           '--runtime[select runtime]' \
-          '--dev-env[select development environment loading mode]' \
-          '--connect[connect after the new session is ready]' \
-          '-c[connect after the new session is ready]'
+          '--dev-env[select development environment loading mode]'
       fi
       ;;
     start)

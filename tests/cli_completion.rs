@@ -182,10 +182,11 @@ fn completion_scripts_offer_ls_and_health_output_formats() {
 }
 
 #[test]
-fn completion_scripts_offer_run_connect_flag() {
+fn completion_scripts_offer_run_and_start_flags() {
     let dev_env_values = DevEnvMode::supported_values().join(" ");
 
     let bash = capture_completion_script_shell("bash");
+    assert!(bash.contains("--runtime --dev-env"));
     assert!(bash.contains("--runtime --dev-env --connect -c"));
     assert!(bash.contains(&dev_env_values));
 
@@ -199,8 +200,9 @@ fn completion_scripts_offer_run_connect_flag() {
     assert!(fish.contains("__fish_seen_subcommand_from run"));
     assert!(fish.contains("-l dev-env"));
     assert!(fish.contains(&dev_env_values));
-    assert!(fish.contains("-s c -l connect"));
+    assert!(!fish.contains("__fish_seen_subcommand_from run\" -s c -l connect"));
     assert!(fish.contains("__fish_seen_subcommand_from start"));
+    assert!(fish.contains("__fish_seen_subcommand_from start\" -s c -l connect"));
 }
 
 #[test]
@@ -342,7 +344,7 @@ fn installed_manpages_include_referenced_subcommands() {
     let run = fs::read_to_string(directory.path().join("agentbox-run.1")).unwrap();
     assert!(run.contains(".TH agentbox-run 1"));
     assert!(run.contains("Runtime to launch for this run"));
-    assert!(run.contains("Connect after the new session is ready"));
+    assert!(!run.contains("Connect after the new session is ready"));
     let start = fs::read_to_string(directory.path().join("agentbox-start.1")).unwrap();
     assert!(start.contains(".TH agentbox-start 1"));
     assert!(start.contains("Runtime to launch for this session"));

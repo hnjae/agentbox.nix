@@ -180,10 +180,6 @@ pub struct RunArgs {
     #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
     pub dev_env: DevEnvMode,
 
-    /// Connect after the new session is ready.
-    #[arg(short = 'c', long = "connect")]
-    pub connect: bool,
-
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
 }

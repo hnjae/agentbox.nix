@@ -76,6 +76,10 @@ impl RuntimeKind {
         profile.host_client_command.render(endpoint)
     }
 
+    pub fn foreground_command(self) -> RuntimeCommand {
+        self.profile().foreground_command.render()
+    }
+
     pub(super) fn profile(self) -> &'static profile::RuntimeProfile {
         profile::runtime_profile(self)
     }

@@ -21,6 +21,135 @@ use support::{
 };
 
 #[test]
+fn run_launches_opencode_foreground_without_managed_metadata() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Opencode.default_image();
+    let context_hash = default_image_context_hash();
+    let harness = Harness::new();
+    harness.mark_default_image_absent();
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
+
+    command.assert().success().stderr(
+        predicate::str::contains("INFO: checking workspace prerequisites")
+            .and(predicate::str::contains(
+                "INFO: checking existing managed sessions",
+            ))
+            .and(predicate::str::contains("INFO: building runtime image"))
+            .and(predicate::str::contains(
+                "INFO: starting foreground container",
+            ))
+            .and(predicate::str::contains("waiting for").not())
+            .and(predicate::str::contains("is ready at").not()),
+    );
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image", "build", "run"]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains("lock=held"));
+    assert!(log[2].contains(&format!("-t {image} -f")));
+    assert!(log[2].contains("--build-arg AGENTBOX_RUNTIME=opencode"));
+    assert!(log[2].contains(&format!(
+        "--label io.agentbox.image_context_hash={context_hash}"
+    )));
+    assert!(run.contains("--rm"));
+    assert!(run.contains("--interactive"));
+    assert!(!run.contains("--detach"));
+    assert!(!run.contains("--tty"));
+    assert!(!run.contains("--publish"));
+    assert!(!run.contains("--label io.agentbox.managed=true"));
+    assert!(!run.contains("--label io.agentbox.attach_scheme"));
+    assert!(!run.contains("--label io.agentbox.container_port"));
+    assert!(run.contains(&format!("--name {}", workspace.container_name)));
+    assert!(run.contains(&format!("--workdir {}", workspace.canonical_target)));
+    assert!(run.contains(&format!(
+        "type=volume,src={},dst=/home/user,U",
+        workspace.container_name
+    )));
+    assert!(run.contains(&format!(" {image} opencode")));
+    assert!(!run.contains("opencode serve"));
+    assert!(!log.iter().any(|line| line.starts_with("inspect ")));
+    assert!(!log.iter().any(|line| line.starts_with("opencode ")));
+}
+
+#[test]
+fn run_launches_codex_foreground_in_yolo_mode_without_server() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = Harness::new();
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "codex"]).arg(target);
+
+    command.assert().success();
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image", "run"]);
+    let run = podman_run_command(&log);
+    assert_runtime_user_args(run);
+    assert!(run.contains(&format!(
+        " {image} codex --dangerously-bypass-approvals-and-sandbox"
+    )));
+    assert!(!run.contains("app-server"));
+    assert!(!run.contains("--publish"));
+    assert!(!run.contains("--label io.agentbox.managed=true"));
+}
+
+#[test]
+fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    let harness = Harness::new();
+
+    let log = run_foreground_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains(&format!("--workdir {}", fixture.workspace.canonical_target)));
+    assert!(run.contains("direnv exec . opencode"));
+    assert!(!run.contains("opencode serve"));
+}
+
+#[test]
+fn run_wraps_foreground_command_with_devenv_when_selected() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+
+    let log = run_foreground_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains(&format!(
+        "devenv shell --no-tui --from path:{} -- opencode",
+        fixture.workspace.canonical_git_root
+    )));
+    assert!(!run.contains("opencode serve"));
+}
+
+#[test]
+fn run_wraps_foreground_command_with_nix_develop_when_selected() {
+    let fixture = support::temp_workspace("nested");
+    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    let harness = Harness::new();
+    harness.mark_dev_shell(&fixture.target, "default");
+
+    let log = run_foreground_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert_eq!(operation_names(&log), ["ps", "nix", "image", "run"]);
+    assert!(run.contains(&format!(
+        "nix develop --no-write-lock-file path:{}#default --command opencode",
+        fixture.workspace.canonical_target
+    )));
+    assert!(!run.contains("opencode serve"));
+}
+
+#[test]
 fn run_creates_starts_serves_waits_and_suggests_connect_for_a_new_session() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
@@ -619,6 +748,22 @@ fn run_opencode_success(
 
     command.assert().success();
     endpoint.wait();
+
+    harness.read_log()
+}
+
+fn run_foreground_opencode_success(
+    fixture: &support::TempWorkspace,
+    harness: &Harness,
+    extra_args: &[&str],
+) -> Vec<String> {
+    let mut command = harness.locked_agentbox_command(&fixture.workspace);
+    command
+        .args(["run", "--runtime", "opencode"])
+        .args(extra_args)
+        .arg(&fixture.target);
+
+    command.assert().success();
 
     harness.read_log()
 }

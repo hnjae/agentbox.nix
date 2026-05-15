@@ -76,7 +76,6 @@ fn core_commands_parse_into_expected_variants() {
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Opencode),
             dev_env: DevEnvMode::Auto,
-            connect: false,
             directory: "/tmp/workspace".into(),
         })
     );
@@ -458,14 +457,13 @@ fn run_accepts_runtime_selection() {
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Codex),
             dev_env: DevEnvMode::Auto,
-            connect: false,
             directory: "/tmp/workspace".into(),
         })
     );
 }
 
 #[test]
-fn run_accepts_connect_flag() {
+fn start_accepts_connect_flag() {
     for flag in ["--connect", "-c"] {
         let cli = Cli::try_parse_from([
             "agentbox",
@@ -490,6 +488,27 @@ fn run_accepts_connect_flag() {
 }
 
 #[test]
+fn run_rejects_connect_flag() {
+    for flag in ["--connect", "-c"] {
+        let error = Cli::try_parse_from([
+            "agentbox",
+            "run",
+            flag,
+            "--runtime",
+            "codex",
+            "/tmp/workspace",
+        ])
+        .unwrap_err();
+
+        assert_eq!(error.exit_code(), 2);
+        assert!(
+            error.to_string().contains("unexpected argument"),
+            "expected clap to reject {flag} for run"
+        );
+    }
+}
+
+#[test]
 fn run_accepts_missing_runtime_for_prompting() {
     let cli = Cli::try_parse_from(["agentbox", "run", "/tmp/workspace"]).unwrap();
 
@@ -498,7 +517,6 @@ fn run_accepts_missing_runtime_for_prompting() {
         Command::Run(RunArgs {
             runtime: None,
             dev_env: DevEnvMode::Auto,
-            connect: false,
             directory: "/tmp/workspace".into(),
         })
     );

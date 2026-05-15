@@ -266,7 +266,7 @@ fn runtime_command_failures_are_actionable() {
         target_subdir: "run-failure",
         failure: FailureSpec::new("run", "container failed to start", 125),
         expected: vec![
-            "failed to run the runtime server command",
+            "failed to start the runtime server command",
             "container failed to start",
             "Verify the runtime image still provides `/entrypoint`",
         ],
@@ -281,7 +281,7 @@ fn runtime_command_failures_are_actionable() {
             126,
         ),
         expected: vec![
-            "failed to run the runtime server command",
+            "failed to start the runtime server command",
             "Missing image-local CA bundle at /etc/ssl/certs/ca-certificates.crt.",
             "Verify the runtime image still provides `/entrypoint`",
         ],
@@ -296,7 +296,7 @@ fn runtime_command_failures_are_actionable() {
             125,
         ),
         expected: vec![
-            "failed to run the runtime server command",
+            "failed to start the runtime server command",
             "Unusable Nix profile state path: /proc/agentbox-state/nix/profile",
             "retry or recreate the session",
         ],
@@ -307,7 +307,7 @@ fn runtime_command_failures_are_actionable() {
         target_subdir: "missing-server-command",
         failure: FailureSpec::new("run", "opencode: not found", 127),
         expected: vec![
-            "failed to run the runtime server command",
+            "failed to start the runtime server command",
             "opencode: not found",
             "Verify the runtime image still provides `/entrypoint` and the expected runtime tools",
         ],
@@ -318,7 +318,7 @@ fn runtime_command_failures_are_actionable() {
         target_subdir: "entrypoint-failure",
         failure: FailureSpec::new("run", "/entrypoint: Permission denied", 126),
         expected: vec![
-            "failed to run the runtime server command",
+            "failed to start the runtime server command",
             "/entrypoint: Permission denied",
             "retry or recreate the session",
         ],
@@ -333,7 +333,7 @@ fn runtime_command_failures_are_actionable() {
             13,
         ),
         expected: vec![
-            "failed to run the runtime server command",
+            "failed to start the runtime server command",
             "Permission denied: /tmp/agentbox-denied/workspace-permission-denied",
             "retry or recreate the session",
         ],
@@ -353,7 +353,7 @@ fn assert_run_failure_case(case: RunFailureCase<'_>) {
         case.failure.exit_code,
     );
 
-    let assert = harness.run_assert(target);
+    let assert = harness.start_assert_with_args(target, &[]);
     let mut assert = assert.failure();
     for expected in case.expected {
         assert = assert.stderr(predicates::str::contains(expected));

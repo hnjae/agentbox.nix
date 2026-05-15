@@ -18,6 +18,7 @@ use agentbox::session::REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
 use agentbox::workspace::git_root_hash12;
 use assert_cmd::Command as AssertCommand;
 use camino::Utf8Path;
+use predicates::prelude::*;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -90,6 +91,43 @@ fn existing_managed_session_suggests_connect_before_image_work() {
 }
 
 #[test]
+fn run_fails_when_a_managed_session_already_exists() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "existing-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "existing-id",
+        &opencode_workspace_inspect_fixture(workspace, true, true),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(format!(
+            "agentbox connect {}",
+            target.display()
+        )))
+        .stderr(predicates::str::contains(format!(
+            "agentbox stop {}",
+            target.display()
+        )))
+        .stderr(predicates::str::contains(&workspace.container_name));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
+    assert!(!log.iter().any(|line| line.starts_with("image ")));
+    assert!(!log.iter().any(|line| line.starts_with("run ")));
+}
+
+#[test]
 fn run_with_connect_still_fails_when_a_managed_session_already_exists() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
@@ -117,6 +155,29 @@ fn run_with_connect_still_fails_when_a_managed_session_already_exists() {
     assert!(!log.iter().any(|line| line.starts_with("opencode ")));
     assert!(!log.iter().any(|line| line.starts_with("image ")));
     assert!(!log.iter().any(|line| line.starts_with("build ")));
+}
+
+#[test]
+fn run_propagates_foreground_podman_exit_code() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("run", "runtime exited\n", 42);
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
+
+    command
+        .assert()
+        .failure()
+        .code(42)
+        .stderr(predicates::str::contains("runtime exited"))
+        .stderr(predicates::str::contains("ERROR:").not());
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "image", "run"]);
 }
 
 #[test]

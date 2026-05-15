@@ -59,6 +59,27 @@ impl RuntimeCommandTemplateArg<RuntimeAttachSpec> for ServerCommandArg {
     }
 }
 
+pub(super) type DirectCommandTemplate = RuntimeCommandTemplate<DirectCommandArg>;
+
+impl RuntimeCommandTemplate<DirectCommandArg> {
+    pub(super) fn render(self) -> RuntimeCommand {
+        self.render_with(&())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum DirectCommandArg {
+    Literal(&'static str),
+}
+
+impl RuntimeCommandTemplateArg<()> for DirectCommandArg {
+    fn render(self, (): &()) -> String {
+        match self {
+            Self::Literal(value) => value.to_string(),
+        }
+    }
+}
+
 pub(super) type HostClientCommandTemplate = RuntimeCommandTemplate<HostClientCommandArg>;
 
 impl RuntimeCommandTemplate<HostClientCommandArg> {
