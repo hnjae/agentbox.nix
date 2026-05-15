@@ -15,9 +15,9 @@ use clap::Parser;
 
 pub mod cli;
 pub mod commands;
+pub mod dev_env;
 pub mod diagnostic;
 mod digest;
-pub mod direnv;
 pub mod error;
 pub mod git;
 pub mod lock;

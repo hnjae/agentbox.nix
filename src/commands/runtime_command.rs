@@ -2,7 +2,7 @@ use std::process::Stdio;
 
 use camino::Utf8Path;
 
-use crate::direnv::wrap_exec_if_envrc_applies;
+use crate::dev_env::DevEnvironment;
 use crate::process::{ProcessRunner, format_status, run_command_status};
 use crate::runtime::{AttachEndpoint, RuntimeInvocation, RuntimeKind};
 use crate::{Error, Result};
@@ -10,10 +10,10 @@ use crate::{Error, Result};
 pub(crate) fn server_runtime_command(
     runtime: RuntimeKind,
     target: &Utf8Path,
-    git_root: &Utf8Path,
+    dev_env: &DevEnvironment,
 ) -> RuntimeInvocation {
     RuntimeInvocation::new(
-        wrap_exec_if_envrc_applies(runtime.server_command().argv, target, git_root),
+        dev_env.wrap_argv(runtime.server_command().argv),
         target.to_path_buf(),
     )
 }

@@ -36,27 +36,20 @@ pub fn check_host_prerequisites_for_runtime(
 
 pub fn check_host_prerequisites_with_snapshot(
     snapshot: &PreflightSnapshot,
-    target_directory: Option<&Utf8Path>,
+    _target_directory: Option<&Utf8Path>,
     runtime: RuntimeKind,
 ) -> Result<PreflightReport> {
-    PreflightCheck {
-        snapshot,
-        target_directory,
-        runtime,
-    }
-    .run()
+    PreflightCheck { snapshot, runtime }.run()
 }
 
 struct PreflightCheck<'a> {
     snapshot: &'a PreflightSnapshot,
-    target_directory: Option<&'a Utf8Path>,
     runtime: RuntimeKind,
 }
 
 impl PreflightCheck<'_> {
     fn run(&self) -> Result<PreflightReport> {
         self.validate_host_tools()?;
-        self.validate_direnv()?;
         self.validate_nix_daemon()?;
         let nix_client_source = self.nix_client_source()?;
         self.validate_nix_config()?;
@@ -82,20 +75,6 @@ impl PreflightCheck<'_> {
             return Err(Error::msg(
                 "`podman` was not found on PATH; install `podman` or add it to PATH",
             ));
-        }
-
-        Ok(())
-    }
-
-    fn validate_direnv(&self) -> Result<()> {
-        if self.snapshot.host.direnv.required && !self.snapshot.host.direnv.available {
-            let target = self
-                .target_directory
-                .map(ToString::to_string)
-                .unwrap_or_else(|| ".".to_string());
-            return Err(Error::msg(format!(
-                "`.envrc` applies to `{target}`, but `direnv` was not found on PATH; install `direnv` or add it to PATH"
-            )));
         }
 
         Ok(())

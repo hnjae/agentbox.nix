@@ -7,6 +7,7 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::cli::RunArgs;
+use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
@@ -50,17 +51,21 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             return Err(existing_session_error(podman, workspace, session));
         }
 
+        let dev_env = DevEnvironment::resolve(
+            args.dev_env,
+            workspace.canonical_target.as_ref(),
+            workspace.canonical_git_root.as_ref(),
+        )?;
+        diagnostic::info(format!("selected development environment: {dev_env}"));
+
         let runtime_version = ensure_default_runtime_image(
             podman,
             runtime,
             workspace.canonical_git_root.as_ref(),
             diagnostic::info,
         )?;
-        let server_run = server_runtime_command(
-            runtime,
-            workspace.canonical_target.as_ref(),
-            workspace.canonical_git_root.as_ref(),
-        );
+        let server_run =
+            server_runtime_command(runtime, workspace.canonical_target.as_ref(), &dev_env);
         let mut run_spec = runtime.run_spec(
             workspace,
             &preflight.host_nix_mounts,
