@@ -10,10 +10,10 @@ use std::io::IsTerminal;
 
 use crate::cli::ExecArgs;
 use crate::diagnostic;
-use crate::runtime::{RuntimeKind, RuntimeRunMode};
+use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
 
-use super::container_launch::{HostClientRequirement, prepare_container_launch};
+use super::container_launch::prepare_foreground_launch;
 use super::launch_policy::exit_code;
 use super::runtime_command::codex_exec_runtime_command;
 use super::workspace_flow::with_locked_workspace;
@@ -24,24 +24,11 @@ pub fn run(args: ExecArgs, verbose: bool) -> Result<()> {
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
         let podman = locked.podman();
-        let preparation = prepare_container_launch(
-            &locked,
-            runtime,
-            args.dev_env,
-            HostClientRequirement::NotRequired,
-        )?;
-        let codex_exec = codex_exec_runtime_command(
-            workspace.canonical_target.as_ref(),
-            &preparation.dev_env,
-            args.codex_args,
-        );
-        let run_spec = runtime.run_spec(
-            RuntimeRunMode::Foreground,
-            workspace,
-            &preparation.preflight.host_nix_mounts,
-            &preparation.preflight.runtime_mounts,
-            codex_exec,
-        );
+        let codex_args = args.codex_args;
+        let preparation = prepare_foreground_launch(&locked, runtime, args.dev_env, |dev_env| {
+            codex_exec_runtime_command(workspace.canonical_target.as_ref(), dev_env, codex_args)
+        })?;
+        let run_spec = preparation.run_spec;
 
         diagnostic::info(format!(
             "starting foreground container `{}` for Codex exec",

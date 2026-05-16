@@ -8,7 +8,6 @@
 
 use crate::cli::StartArgs;
 use crate::diagnostic;
-use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
 use crate::runtime::RuntimeRunSpec;
 use crate::session::classify_create_error_or_else;
@@ -43,13 +42,7 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             args.dev_env,
             ServerLaunchMode::ManagedSession,
         )?;
-        let mut run_spec = preparation.run_spec;
-        if let Some(version) = preparation.runtime_image_version {
-            run_spec
-                .create_mut()
-                .labels
-                .insert(runtime_package_version_label(runtime), version);
-        }
+        let run_spec = preparation.run_spec;
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;
         let cleanup =

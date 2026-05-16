@@ -10,8 +10,9 @@ use crate::Result;
 use crate::cli::DevEnvMode;
 use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
+use crate::metadata::runtime_package_version_label;
 use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime};
-use crate::runtime::{RuntimeKind, RuntimeRunMode, RuntimeRunSpec};
+use crate::runtime::{RuntimeInvocation, RuntimeKind, RuntimeRunMode, RuntimeRunSpec};
 use crate::session::{existing_session_error, select_single_session};
 
 use super::runtime::ensure_default_runtime_image;
@@ -19,20 +20,19 @@ use super::runtime_command::{ensure_host_runtime_client_available, server_runtim
 use super::workspace_flow::LockedWorkspace;
 
 #[derive(Debug)]
-pub(super) struct ContainerLaunchPreparation {
-    pub(super) preflight: PreflightReport,
-    pub(super) dev_env: DevEnvironment,
-    pub(super) runtime_image_version: Option<String>,
+struct ContainerLaunchPreparation {
+    preflight: PreflightReport,
+    dev_env: DevEnvironment,
+    runtime_image_version: Option<String>,
 }
 
 #[derive(Debug)]
-pub(super) struct ServerLaunchPreparation {
+pub(super) struct RuntimeLaunchPreparation {
     pub(super) run_spec: RuntimeRunSpec,
-    pub(super) runtime_image_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum HostClientRequirement {
+enum HostClientRequirement {
     Required,
     NotRequired,
 }
@@ -57,6 +57,10 @@ impl ServerLaunchMode {
             Self::TransientServer => HostClientRequirement::Required,
         }
     }
+
+    fn records_runtime_image_version(self) -> bool {
+        matches!(self, Self::ManagedSession)
+    }
 }
 
 pub(super) fn prepare_server_launch(
@@ -64,7 +68,7 @@ pub(super) fn prepare_server_launch(
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
     mode: ServerLaunchMode,
-) -> Result<ServerLaunchPreparation> {
+) -> Result<RuntimeLaunchPreparation> {
     let workspace = locked.workspace();
     let preparation = prepare_container_launch(
         locked,
@@ -77,21 +81,43 @@ pub(super) fn prepare_server_launch(
         workspace.canonical_target.as_ref(),
         &preparation.dev_env,
     );
-    let run_spec = runtime.run_spec(
+    let mut run_spec = runtime.run_spec(
         mode.runtime_run_mode(),
         workspace,
         &preparation.preflight.host_nix_mounts,
         &preparation.preflight.runtime_mounts,
         server_run,
     );
+    record_runtime_image_version(runtime, &preparation, &mut run_spec, mode);
 
-    Ok(ServerLaunchPreparation {
-        run_spec,
-        runtime_image_version: preparation.runtime_image_version,
-    })
+    Ok(RuntimeLaunchPreparation { run_spec })
 }
 
-pub(super) fn prepare_container_launch(
+pub(super) fn prepare_foreground_launch(
+    locked: &LockedWorkspace<'_>,
+    runtime: RuntimeKind,
+    dev_env_mode: DevEnvMode,
+    invocation: impl FnOnce(&DevEnvironment) -> RuntimeInvocation,
+) -> Result<RuntimeLaunchPreparation> {
+    let workspace = locked.workspace();
+    let preparation = prepare_container_launch(
+        locked,
+        runtime,
+        dev_env_mode,
+        HostClientRequirement::NotRequired,
+    )?;
+    let run_spec = runtime.run_spec(
+        RuntimeRunMode::Foreground,
+        workspace,
+        &preparation.preflight.host_nix_mounts,
+        &preparation.preflight.runtime_mounts,
+        invocation(&preparation.dev_env),
+    );
+
+    Ok(RuntimeLaunchPreparation { run_spec })
+}
+
+fn prepare_container_launch(
     locked: &LockedWorkspace<'_>,
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
@@ -132,4 +158,22 @@ pub(super) fn prepare_container_launch(
         dev_env,
         runtime_image_version,
     })
+}
+
+fn record_runtime_image_version(
+    runtime: RuntimeKind,
+    preparation: &ContainerLaunchPreparation,
+    run_spec: &mut RuntimeRunSpec,
+    mode: ServerLaunchMode,
+) {
+    if !mode.records_runtime_image_version() {
+        return;
+    }
+
+    if let Some(version) = &preparation.runtime_image_version {
+        run_spec
+            .create_mut()
+            .labels
+            .insert(runtime_package_version_label(runtime), version.clone());
+    }
 }
