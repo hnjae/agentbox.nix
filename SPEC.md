@@ -1108,6 +1108,9 @@ Rules:
 - Those Git config values are injected into the container with Git's
   `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment
   variables.
+- Signing-specific Git config values `gpg.format`, `user.signingkey`, and
+  `commit.gpgsign` are injected only when the effective host `gpg.format` is
+  `ssh`; GPG signing configuration is not passed through.
 - `agentbox` does not mount the host Git config files, credential helpers,
   `~/.ssh`, private keys, or GPG agent sockets for commit signing passthrough.
 - If `user.signingkey` is an SSH public key literal, `agentbox` passes that
