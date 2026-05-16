@@ -14,6 +14,7 @@ pub mod completion;
 pub mod connect;
 mod container_cleanup;
 mod container_launch;
+mod detached_server;
 pub mod exec;
 pub mod health;
 mod launch_policy;

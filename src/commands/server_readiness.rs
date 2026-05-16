@@ -21,30 +21,10 @@ pub(super) fn wait_for_server_endpoint(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
     runtime: RuntimeKind,
+    context: ServerEndpointContext,
     interrupted: impl Fn() -> bool,
 ) -> Result<ServerEndpointWait> {
-    ServerEndpointWaiter::production().wait(
-        podman,
-        workspace,
-        runtime,
-        ServerEndpointContext::ManagedSession,
-        interrupted,
-    )
-}
-
-pub(super) fn wait_for_transient_server_endpoint(
-    podman: &Podman,
-    workspace: &WorkspaceIdentity,
-    runtime: RuntimeKind,
-    interrupted: impl Fn() -> bool,
-) -> Result<ServerEndpointWait> {
-    ServerEndpointWaiter::production().wait(
-        podman,
-        workspace,
-        runtime,
-        ServerEndpointContext::TransientRunContainer,
-        interrupted,
-    )
+    ServerEndpointWaiter::production().wait(podman, workspace, runtime, context, interrupted)
 }
 
 #[derive(Debug, Clone)]
@@ -132,7 +112,7 @@ enum ServerEndpointState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ServerEndpointContext {
+pub(super) enum ServerEndpointContext {
     ManagedSession,
     TransientRunContainer,
 }

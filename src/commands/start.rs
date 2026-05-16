@@ -16,11 +16,12 @@ use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::container_launch::{HostClientRequirement, prepare_container_launch};
+use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
 use super::launch_policy::{
     CommandInterrupt, ContainerLogContext, error_with_container_logs, select_runtime,
 };
 use super::runtime_command::{run_host_runtime_client, server_runtime_command};
-use super::server_readiness::{ServerEndpointWait, wait_for_server_endpoint};
+use super::server_readiness::ServerEndpointContext;
 use super::workspace_flow::with_locked_workspace;
 
 mod interrupt;
@@ -62,42 +63,21 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
         }
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;
-        let interrupt = CommandInterrupt::install("start")?;
         let cleanup =
             InterruptedRunCleanupScope::new(podman, workspace, cache_volume_existed_before);
-
-        diagnostic::info(format!(
-            "starting container `{}` for `{}`",
-            workspace.container_name, runtime
-        ));
-        if let Err(error) = podman.run_detached(&workspace.container_name, &run_spec) {
-            cleanup.check_interrupted(&interrupt)?;
-            return Err(classify_run_create_error(
-                podman, workspace, &run_spec, error,
-            ));
-        }
-        cleanup.check_interrupted(&interrupt)?;
-
-        diagnostic::info(format!("waiting for `{runtime}` runtime server"));
-        let endpoint = match wait_for_server_endpoint(podman, workspace, runtime, || {
-            interrupt.interrupted()
-        }) {
-            Ok(ServerEndpointWait::Ready(endpoint)) => endpoint,
-            Ok(ServerEndpointWait::Interrupted) => {
-                return Err(cleanup.interrupted_error());
-            }
-            Err(error) => {
-                return Err(error_with_container_logs(
-                    podman,
-                    workspace,
-                    ContainerLogContext::ManagedSession,
-                    error,
-                ));
-            }
-        };
-        cleanup.check_interrupted(&interrupt)?;
-
-        drop(interrupt);
+        let endpoint = launch_detached_server(
+            podman,
+            workspace,
+            runtime,
+            &run_spec,
+            ManagedServerLifecycle {
+                podman,
+                workspace,
+                run_spec: &run_spec,
+                cleanup,
+            },
+        )?
+        .into_endpoint();
         if args.connect {
             diagnostic::info(format!(
                 "managed session `{}` for `{}` is ready at `{endpoint}`; connecting",
@@ -123,6 +103,45 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
         Ok(())
     })?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ManagedServerLifecycle<'a> {
+    podman: &'a Podman,
+    workspace: &'a WorkspaceIdentity,
+    run_spec: &'a RuntimeRunSpec,
+    cleanup: InterruptedRunCleanupScope<'a>,
+}
+
+impl DetachedServerLifecycle for ManagedServerLifecycle<'_> {
+    fn command_name(&self) -> &'static str {
+        "start"
+    }
+
+    fn launch_description(&self) -> &'static str {
+        "container"
+    }
+
+    fn readiness_context(&self) -> ServerEndpointContext {
+        ServerEndpointContext::ManagedSession
+    }
+
+    fn check_interrupted(&self, interrupt: &CommandInterrupt) -> Result<()> {
+        self.cleanup.check_interrupted(interrupt)
+    }
+
+    fn run_detached_error(&self, error: Error) -> Error {
+        classify_run_create_error(self.podman, self.workspace, self.run_spec, error)
+    }
+
+    fn readiness_error(&self, error: Error) -> Error {
+        error_with_container_logs(
+            self.podman,
+            self.workspace,
+            ContainerLogContext::ManagedSession,
+            error,
+        )
+    }
 }
 
 fn classify_run_create_error(

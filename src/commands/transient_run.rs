@@ -29,6 +29,14 @@ impl<'a> TransientRun<'a> {
         Self { podman, workspace }
     }
 
+    pub(super) fn podman(self) -> &'a Podman {
+        self.podman
+    }
+
+    pub(super) fn workspace(self) -> &'a WorkspaceIdentity {
+        self.workspace
+    }
+
     pub(super) fn check_interrupted(self, interrupt: &CommandInterrupt) -> Result<()> {
         if interrupt.interrupted() {
             Err(self.interrupted_error())
