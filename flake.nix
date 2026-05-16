@@ -6,10 +6,6 @@
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
     crane.url = "https://flakehub.com/f/ipetkov/crane/0.23.3";
-    advisory-db = {
-      url = "github:rustsec/advisory-db";
-      flake = false;
-    };
   };
 
   outputs =
