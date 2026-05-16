@@ -30,7 +30,7 @@ pub use model::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerMountKind,
     PodmanContainerState, PodmanHealth, PodmanHostConfig, PodmanImage, PodmanNamespaces,
     PodmanNetworkEndpoint, PodmanNetworkSettings, PodmanPortBinding, PodmanPsContainer,
-    PodmanPsPort, PodmanVolume,
+    PodmanPsPort, PodmanPublishedPort, PodmanVolume,
 };
 
 const PODMAN_PROGRAM: &str = "podman";

@@ -201,34 +201,18 @@ fn discover_attach_endpoint_from_runtime_inspect(
 ) -> Result<AttachEndpoint> {
     let attach = runtime.attach_spec();
     let port_key = format!("{}/tcp", attach.container_port);
-    let binding = inspect
+    let published_port = inspect
         .network_settings
-        .ports
-        .get(&port_key)
-        .and_then(|bindings| bindings.as_ref())
-        .and_then(|bindings| bindings.iter().find(|binding| binding.host_port.is_some()))
+        .published_tcp_host_port(attach.container_port)?
         .ok_or_else(|| {
             Error::msg(format!(
                 "transient run container has no published attach port for `{port_key}`"
             ))
         })?;
 
-    let host_port = binding
-        .host_port
-        .as_deref()
-        .ok_or_else(|| Error::msg(format!("missing host port for `{port_key}`")))?
-        .parse::<u16>()
-        .map_err(|error| Error::msg(format!("malformed published host port: {error}")))?;
-    let host_ip = binding
-        .host_ip
-        .as_deref()
-        .filter(|host_ip| !host_ip.trim().is_empty())
-        .unwrap_or(crate::runtime::DEFAULT_HOST_ATTACH_IP)
-        .to_string();
-
     Ok(AttachEndpoint {
         scheme: attach.scheme.to_string(),
-        host_ip,
-        host_port,
+        host_ip: published_port.host_ip,
+        host_port: published_port.host_port,
     })
 }
