@@ -14,6 +14,7 @@ use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
 
 use super::container_launch::{HostClientRequirement, prepare_container_launch};
+use super::launch_policy::exit_code;
 use super::runtime_command::codex_exec_runtime_command;
 use super::workspace_flow::with_locked_workspace;
 
@@ -63,8 +64,4 @@ fn use_tty() -> bool {
     std::io::stdin().is_terminal()
         && std::io::stdout().is_terminal()
         && std::io::stderr().is_terminal()
-}
-
-fn exit_code(code: i32) -> Option<u8> {
-    u8::try_from(code).ok()
 }

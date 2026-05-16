@@ -6,48 +6,11 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use crate::commands::container_cleanup::ManagedContainerCleanup;
+use crate::commands::launch_policy::CommandInterrupt;
 use crate::podman::Podman;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
-
-#[derive(Debug)]
-pub(super) struct RunInterrupt {
-    flag: Arc<AtomicBool>,
-    signal_id: Option<signal_hook::SigId>,
-}
-
-impl RunInterrupt {
-    pub(super) fn install() -> Result<Self> {
-        let flag = Arc::new(AtomicBool::new(false));
-        let signal_id = signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&flag))
-            .map_err(|error| {
-                Error::msg(format!(
-                    "failed to install SIGINT cleanup handler for `agentbox start`: {error}"
-                ))
-            })?;
-
-        Ok(Self {
-            flag,
-            signal_id: Some(signal_id),
-        })
-    }
-
-    pub(super) fn interrupted(&self) -> bool {
-        self.flag.load(Ordering::Relaxed)
-    }
-}
-
-impl Drop for RunInterrupt {
-    fn drop(&mut self) {
-        if let Some(signal_id) = self.signal_id.take() {
-            signal_hook::low_level::unregister(signal_id);
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct InterruptedRunCleanupScope<'a> {
@@ -69,7 +32,7 @@ impl<'a> InterruptedRunCleanupScope<'a> {
         }
     }
 
-    pub(super) fn check_interrupted(self, interrupt: &RunInterrupt) -> Result<()> {
+    pub(super) fn check_interrupted(self, interrupt: &CommandInterrupt) -> Result<()> {
         if interrupt.interrupted() {
             Err(self.interrupted_error())
         } else {

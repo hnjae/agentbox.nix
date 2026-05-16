@@ -10,26 +10,28 @@ use crate::cli::StartArgs;
 use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
-use crate::prompt;
-use crate::runtime::RuntimeKind;
 use crate::runtime::RuntimeRunSpec;
 use crate::session::classify_create_error_or_else;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::container_launch::{HostClientRequirement, prepare_container_launch};
+use super::launch_policy::{
+    CommandInterrupt, ContainerLogContext, error_with_container_logs, select_runtime,
+};
 use super::runtime_command::{run_host_runtime_client, server_runtime_command};
 use super::server_readiness::{ServerEndpointWait, wait_for_server_endpoint};
 use super::workspace_flow::with_locked_workspace;
 
 mod interrupt;
 
-use interrupt::{InterruptedRunCleanupScope, RunInterrupt};
-
-const RUN_FAILURE_LOG_TAIL_LINES: usize = 80;
+use interrupt::InterruptedRunCleanupScope;
 
 pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
-    let runtime = selected_runtime(args.runtime)?;
+    let runtime = select_runtime(
+        args.runtime,
+        "agentbox start requires --runtime when stdin or stderr is not a TTY",
+    )?;
 
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
@@ -59,7 +61,7 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
         }
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;
-        let interrupt = RunInterrupt::install()?;
+        let interrupt = CommandInterrupt::install("start")?;
         let cleanup =
             InterruptedRunCleanupScope::new(podman, workspace, cache_volume_existed_before);
 
@@ -83,7 +85,14 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             Ok(ServerEndpointWait::Interrupted) => {
                 return Err(cleanup.interrupted_error());
             }
-            Err(error) => return Err(error_with_container_logs(podman, workspace, error)),
+            Err(error) => {
+                return Err(error_with_container_logs(
+                    podman,
+                    workspace,
+                    ContainerLogContext::ManagedSession,
+                    error,
+                ));
+            }
         };
         cleanup.check_interrupted(&interrupt)?;
 
@@ -115,17 +124,6 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-fn selected_runtime(runtime: Option<RuntimeKind>) -> Result<RuntimeKind> {
-    match runtime {
-        Some(runtime) => Ok(runtime),
-        None => prompt::select_one(
-            "Select runtime",
-            RuntimeKind::variants().to_vec(),
-            "agentbox start requires --runtime when stdin or stderr is not a TTY",
-        ),
-    }
-}
-
 fn classify_run_create_error(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
@@ -139,32 +137,11 @@ fn classify_run_create_error(
         &original_error.to_string(),
     );
     classify_create_error_or_else(podman, workspace, run_spec.create(), wrapped, |error| {
-        error_with_container_logs(podman, workspace, error)
+        error_with_container_logs(
+            podman,
+            workspace,
+            ContainerLogContext::ManagedSession,
+            error,
+        )
     })
-}
-
-fn error_with_container_logs(
-    podman: &Podman,
-    workspace: &WorkspaceIdentity,
-    original_error: Error,
-) -> Error {
-    let container_name = &workspace.container_name;
-    let command = format!("podman logs --tail {RUN_FAILURE_LOG_TAIL_LINES} {container_name}");
-    match podman.logs_tail(container_name, RUN_FAILURE_LOG_TAIL_LINES) {
-        Ok(logs) => {
-            let logs = logs.trim_end();
-            if logs.is_empty() {
-                Error::msg(format!(
-                    "{original_error}\n\ncontainer `{container_name}` produced no logs; inspect it with `{command}`"
-                ))
-            } else {
-                Error::msg(format!(
-                    "{original_error}\n\ncontainer logs (`{command}`):\n{logs}"
-                ))
-            }
-        }
-        Err(log_error) => Error::msg(format!(
-            "{original_error}\n\nfailed to read container logs with `{command}`: {log_error}"
-        )),
-    }
 }

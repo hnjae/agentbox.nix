@@ -7,29 +7,30 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::process::ExitStatus;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::cli::RunArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
-use crate::prompt;
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::container_cleanup::ManagedContainerCleanup;
 use super::container_launch::{HostClientRequirement, prepare_container_launch};
+use super::launch_policy::{
+    CommandInterrupt, ContainerLogContext, error_with_container_logs, exit_code, select_runtime,
+};
 use super::runtime_command::{
     host_client_status_error, run_host_runtime_client_status, server_runtime_command,
 };
 use super::server_readiness::{ServerEndpointWait, wait_for_transient_server_endpoint};
 use super::workspace_flow::with_locked_workspace;
 
-const RUN_FAILURE_LOG_TAIL_LINES: usize = 80;
-
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
-    let runtime = selected_runtime(args.runtime)?;
+    let runtime = select_runtime(
+        args.runtime,
+        "agentbox run requires --runtime when stdin or stderr is not a TTY",
+    )?;
 
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
@@ -52,7 +53,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             server_run,
         );
 
-        let interrupt = RunInterrupt::install()?;
+        let interrupt = CommandInterrupt::install("run")?;
         diagnostic::info(format!(
             "starting transient container `{}` for `{}`",
             workspace.container_name, runtime
@@ -78,7 +79,12 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
                 return Err(interrupted_error(podman, workspace));
             }
             Err(error) => {
-                let error = error_with_container_logs(podman, workspace, error);
+                let error = error_with_container_logs(
+                    podman,
+                    workspace,
+                    ContainerLogContext::TransientRun,
+                    error,
+                );
                 return Err(with_cleanup_result(
                     error,
                     cleanup_transient_container(podman, workspace),
@@ -96,17 +102,6 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
         finish_host_client_run(podman, workspace, runtime, &endpoint, status)
     })?;
     Ok(())
-}
-
-fn selected_runtime(runtime: Option<RuntimeKind>) -> Result<RuntimeKind> {
-    match runtime {
-        Some(runtime) => Ok(runtime),
-        None => prompt::select_one(
-            "Select runtime",
-            RuntimeKind::variants().to_vec(),
-            "agentbox run requires --runtime when stdin or stderr is not a TTY",
-        ),
-    }
 }
 
 fn finish_host_client_run(
@@ -142,12 +137,8 @@ fn finish_host_client_run(
     }
 }
 
-fn exit_code(code: i32) -> Option<u8> {
-    u8::try_from(code).ok()
-}
-
 fn check_interrupted(
-    interrupt: &RunInterrupt,
+    interrupt: &CommandInterrupt,
     podman: &Podman,
     workspace: &WorkspaceIdentity,
 ) -> Result<()> {
@@ -187,66 +178,5 @@ fn with_cleanup_result(error: Error, cleanup: Result<()>) -> Error {
     match cleanup {
         Ok(()) => error,
         Err(cleanup_error) => Error::msg(format!("{error}; additionally, {cleanup_error}")),
-    }
-}
-
-fn error_with_container_logs(
-    podman: &Podman,
-    workspace: &WorkspaceIdentity,
-    original_error: Error,
-) -> Error {
-    let container_name = &workspace.container_name;
-    let command = format!("podman logs --tail {RUN_FAILURE_LOG_TAIL_LINES} {container_name}");
-    match podman.logs_tail(container_name, RUN_FAILURE_LOG_TAIL_LINES) {
-        Ok(logs) => {
-            let logs = logs.trim_end();
-            if logs.is_empty() {
-                Error::msg(format!(
-                    "{original_error}\n\ntransient run container `{container_name}` produced no logs; inspect it with `{command}`"
-                ))
-            } else {
-                Error::msg(format!(
-                    "{original_error}\n\ntransient run container logs (`{command}`):\n{logs}"
-                ))
-            }
-        }
-        Err(log_error) => Error::msg(format!(
-            "{original_error}\n\nfailed to read transient run container logs with `{command}`: {log_error}"
-        )),
-    }
-}
-
-#[derive(Debug)]
-struct RunInterrupt {
-    flag: Arc<AtomicBool>,
-    signal_id: Option<signal_hook::SigId>,
-}
-
-impl RunInterrupt {
-    fn install() -> Result<Self> {
-        let flag = Arc::new(AtomicBool::new(false));
-        let signal_id = signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&flag))
-            .map_err(|error| {
-                Error::msg(format!(
-                    "failed to install SIGINT cleanup handler for `agentbox run`: {error}"
-                ))
-            })?;
-
-        Ok(Self {
-            flag,
-            signal_id: Some(signal_id),
-        })
-    }
-
-    fn interrupted(&self) -> bool {
-        self.flag.load(Ordering::Relaxed)
-    }
-}
-
-impl Drop for RunInterrupt {
-    fn drop(&mut self) {
-        if let Some(signal_id) = self.signal_id.take() {
-            signal_hook::low_level::unregister(signal_id);
-        }
     }
 }
