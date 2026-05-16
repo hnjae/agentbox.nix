@@ -40,7 +40,6 @@ fn opencode_create_spec_matches_mvp_contract() {
     let workspace = resolve_workspace_identity(repo.path()).unwrap();
     let preflight = check_host_prerequisites_with_snapshot(
         &support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode),
-        Some(Utf8Path::from_path(repo.path()).unwrap()),
         RuntimeKind::Opencode,
     )
     .unwrap();
@@ -199,7 +198,6 @@ fn runtime_run_modes_encode_container_ownership_policy() {
     let runtime = RuntimeKind::Opencode;
     let preflight = check_host_prerequisites_with_snapshot(
         &support::passing_preflight_snapshot_with_static_nix_mount(runtime),
-        Some(Utf8Path::from_path(repo.path()).unwrap()),
         runtime,
     )
     .unwrap();
@@ -326,7 +324,6 @@ fn codex_create_spec_includes_host_codex_config_mount() {
     let workspace = resolve_workspace_identity(repo.path()).unwrap();
     let preflight = check_host_prerequisites_with_snapshot(
         &support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Codex),
-        Some(Utf8Path::from_path(repo.path()).unwrap()),
         RuntimeKind::Codex,
     )
     .unwrap();
@@ -394,7 +391,7 @@ fn preflight_missing_nix_conf_reports_exact_message() {
     };
 
     let error =
-        check_host_prerequisites_with_snapshot(&snapshot, None, RuntimeKind::Opencode).unwrap_err();
+        check_host_prerequisites_with_snapshot(&snapshot, RuntimeKind::Opencode).unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -402,30 +399,9 @@ fn preflight_missing_nix_conf_reports_exact_message() {
     );
 }
 
-#[test]
-fn envrc_above_repo_root_does_not_trigger_direnv_requirement() {
-    let sandbox = tempfile::tempdir().unwrap();
-    let repo = sandbox.path().join("repo");
-    let nested = repo.join("nested");
-
-    fs::create_dir(&repo).unwrap();
-    support::init_git_repo(&repo);
-    fs::create_dir(&nested).unwrap();
-    fs::write(sandbox.path().join(".envrc"), "use nix\n").unwrap();
-
-    let workspace = resolve_workspace_identity(&nested).unwrap();
-    let snapshot = PreflightSnapshot::detect(
-        Some(workspace.canonical_target.as_ref()),
-        Some(workspace.canonical_git_root.as_ref()),
-        RuntimeKind::Opencode,
-    );
-
-    assert!(!snapshot.host.direnv.required);
-}
-
 fn assert_opencode_preflight_error(snapshot: PreflightSnapshot, expected: &str) {
     let error =
-        check_host_prerequisites_with_snapshot(&snapshot, None, RuntimeKind::Opencode).unwrap_err();
+        check_host_prerequisites_with_snapshot(&snapshot, RuntimeKind::Opencode).unwrap_err();
     assert!(error.to_string().contains(expected), "{error}");
 }
 

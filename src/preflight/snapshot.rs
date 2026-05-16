@@ -17,9 +17,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::runtime::{RuntimeHostStateSource, RuntimeKind};
 
-use super::path::{
-    envrc_applies_within_git_root, path_reaches_mount_root, resolve_path, symlink_or_path_exists,
-};
+use super::path::{path_reaches_mount_root, resolve_path, symlink_or_path_exists};
 use super::{
     ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, NIX_CUSTOM_CONF_PATH, NIX_DAEMON_SOCKET_PATH,
 };
@@ -34,14 +32,7 @@ pub struct PreflightSnapshot {
 pub struct HostPreflightSnapshot {
     pub has_git: bool,
     pub has_podman: bool,
-    pub direnv: DirenvPreflightSnapshot,
     pub runtime_state: BTreeMap<String, HostDirectoryPreflightSnapshot>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DirenvPreflightSnapshot {
-    pub required: bool,
-    pub available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,42 +67,20 @@ pub struct NixCustomConfPreflightSnapshot {
 }
 
 impl PreflightSnapshot {
-    pub fn detect(
-        target_directory: Option<&Utf8Path>,
-        git_root: Option<&Utf8Path>,
-        runtime: RuntimeKind,
-    ) -> Self {
+    pub fn detect(runtime: RuntimeKind) -> Self {
         Self {
-            host: HostPreflightSnapshot::detect(target_directory, git_root, runtime),
+            host: HostPreflightSnapshot::detect(runtime),
             nix: NixPreflightSnapshot::detect(),
         }
     }
 }
 
 impl HostPreflightSnapshot {
-    fn detect(
-        target_directory: Option<&Utf8Path>,
-        git_root: Option<&Utf8Path>,
-        runtime: RuntimeKind,
-    ) -> Self {
+    fn detect(runtime: RuntimeKind) -> Self {
         Self {
             has_git: test_fixtures_enabled() || command_exists("git"),
             has_podman: command_exists("podman"),
-            direnv: DirenvPreflightSnapshot::detect(target_directory, git_root),
             runtime_state: detect_runtime_state(runtime),
-        }
-    }
-}
-
-impl DirenvPreflightSnapshot {
-    fn detect(target_directory: Option<&Utf8Path>, git_root: Option<&Utf8Path>) -> Self {
-        Self {
-            required: target_directory
-                .zip(git_root)
-                .is_some_and(|(target_directory, git_root)| {
-                    envrc_applies_within_git_root(target_directory, git_root)
-                }),
-            available: command_exists("direnv"),
         }
     }
 }

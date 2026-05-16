@@ -55,13 +55,10 @@ fn workspace_identity_errors_are_actionable() {
 }
 
 fn host_preflight_errors_are_actionable() {
-    let target = Utf8Path::new("/workspace/demo/nested");
-
     let error = check_host_prerequisites_with_snapshot(
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.host.has_git = false
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -75,7 +72,6 @@ fn host_preflight_errors_are_actionable() {
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.host.has_podman = false
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -89,7 +85,6 @@ fn host_preflight_errors_are_actionable() {
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.nix.has_daemon_socket = false
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -101,7 +96,6 @@ fn host_preflight_errors_are_actionable() {
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.nix.client_source = None
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -111,7 +105,6 @@ fn host_preflight_errors_are_actionable() {
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.nix.config.has_etc_nix_mount = false
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -121,7 +114,6 @@ fn host_preflight_errors_are_actionable() {
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             snapshot.nix.config.has_readable_nix_conf = false
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -136,7 +128,6 @@ fn host_preflight_errors_are_actionable() {
             snapshot.nix.config.custom_conf.present = true;
             snapshot.nix.config.custom_conf.has_readable_target = false;
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -150,7 +141,6 @@ fn host_preflight_errors_are_actionable() {
         &snapshot_with(RuntimeKind::Codex, |snapshot| {
             support::host_state_mut(snapshot, CODEX_CONFIG_DESTINATION).exists = false;
         }),
-        Some(target),
         RuntimeKind::Codex,
     )
     .unwrap_err();
@@ -165,7 +155,6 @@ fn host_preflight_errors_are_actionable() {
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             support::host_state_mut(snapshot, OPENCODE_CONFIG_DESTINATION).exists = false;
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -179,7 +168,6 @@ fn host_preflight_errors_are_actionable() {
         &snapshot_with(RuntimeKind::Opencode, |snapshot| {
             support::host_state_mut(snapshot, OPENCODE_DATA_DESTINATION).writable = false;
         }),
-        Some(target),
         RuntimeKind::Opencode,
     )
     .unwrap_err();
@@ -188,21 +176,6 @@ fn host_preflight_errors_are_actionable() {
             .to_string()
             .contains("Host OpenCode data directory is not readable and writable")
     );
-}
-
-#[test]
-fn host_preflight_does_not_require_host_direnv_for_envrc() {
-    let target = Utf8Path::new("/workspace/demo/nested");
-
-    check_host_prerequisites_with_snapshot(
-        &snapshot_with(RuntimeKind::Opencode, |snapshot| {
-            snapshot.host.direnv.required = true;
-            snapshot.host.direnv.available = false;
-        }),
-        Some(target),
-        RuntimeKind::Opencode,
-    )
-    .expect("host preflight should not require host-side direnv");
 }
 
 fn connect_side_drift_errors_are_actionable() {

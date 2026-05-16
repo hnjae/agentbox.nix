@@ -12,21 +12,6 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::paths::path_is_or_descendant;
 
-pub(super) fn envrc_applies_within_git_root(
-    target_directory: &Utf8Path,
-    git_root: &Utf8Path,
-) -> bool {
-    if !path_is_or_descendant(target_directory, git_root) {
-        return false;
-    }
-
-    target_directory
-        .ancestors()
-        .take_while(|candidate| *candidate != git_root)
-        .chain(std::iter::once(git_root))
-        .any(|candidate| candidate.join(".envrc").is_file())
-}
-
 pub(super) fn symlink_or_path_exists(path: &Utf8Path) -> bool {
     fs::symlink_metadata(path.as_std_path()).is_ok()
 }

@@ -77,26 +77,41 @@ impl DevEnvironment {
     }
 
     fn resolve_auto(target_directory: &Utf8Path, git_root: &Utf8Path) -> Result<Self> {
-        if nearest_file(target_directory, git_root, ".envrc").is_some() {
-            return Ok(Self::Direnv);
+        DevEnvironmentDiscovery::detect(target_directory, git_root).resolve(target_directory)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DevEnvironmentDiscovery {
+    envrc: Option<Utf8PathBuf>,
+    devenv_nix: Option<Utf8PathBuf>,
+    flake_nix: Option<Utf8PathBuf>,
+}
+
+impl DevEnvironmentDiscovery {
+    fn detect(target_directory: &Utf8Path, git_root: &Utf8Path) -> Self {
+        Self {
+            envrc: nearest_file(target_directory, git_root, ".envrc"),
+            devenv_nix: nearest_file(target_directory, git_root, "devenv.nix"),
+            flake_nix: nearest_file(target_directory, git_root, "flake.nix"),
+        }
+    }
+
+    fn resolve(self, target_directory: &Utf8Path) -> Result<DevEnvironment> {
+        if self.envrc.is_some() {
+            return Ok(DevEnvironment::Direnv);
         }
 
-        if let Some(devenv_nix) = nearest_file(target_directory, git_root, "devenv.nix") {
-            return Ok(Self::Devenv {
-                root: devenv_nix
-                    .parent()
-                    .expect("devenv.nix candidates always have a parent")
-                    .to_path_buf(),
+        if let Some(devenv_nix) = self.devenv_nix {
+            return Ok(DevEnvironment::Devenv {
+                root: parent_directory(&devenv_nix, "devenv.nix"),
             });
         }
 
-        let Some(flake_nix) = nearest_file(target_directory, git_root, "flake.nix") else {
-            return Ok(Self::None);
+        let Some(flake_nix) = self.flake_nix else {
+            return Ok(DevEnvironment::None);
         };
-        let flake_root = flake_nix
-            .parent()
-            .expect("flake.nix candidates always have a parent")
-            .to_path_buf();
+        let flake_root = parent_directory(&flake_nix, "flake.nix");
 
         resolve_nix_develop(target_directory, &flake_root)
     }
@@ -197,6 +212,12 @@ fn nearest_file(
         .find(|candidate| candidate.is_file())
 }
 
+fn parent_directory(path: &Utf8Path, filename: &str) -> Utf8PathBuf {
+    path.parent()
+        .unwrap_or_else(|| panic!("{filename} candidates always have a parent"))
+        .to_path_buf()
+}
+
 fn ancestor_directories(target_directory: &Utf8Path, git_root: &Utf8Path) -> Vec<Utf8PathBuf> {
     let mut directories = Vec::new();
     for candidate in target_directory.ancestors() {
@@ -218,6 +239,8 @@ fn nix_string(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     #[test]
@@ -275,6 +298,81 @@ mod tests {
         assert_eq!(
             nix_develop_candidate_attrs(Utf8Path::new("/repo/api"), Utf8Path::new("/repo/api")),
             vec!["default".to_string()]
+        );
+    }
+
+    #[test]
+    fn discovery_ignores_envrc_above_git_root() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(sandbox.path().to_path_buf()).unwrap();
+        let repo = root.join("repo");
+        let nested = repo.join("nested");
+        fs::create_dir(&repo).unwrap();
+        fs::create_dir(&nested).unwrap();
+        fs::write(root.join(".envrc"), "use nix\n").unwrap();
+
+        let discovery = DevEnvironmentDiscovery::detect(&nested, &repo);
+
+        assert_eq!(
+            discovery,
+            DevEnvironmentDiscovery {
+                envrc: None,
+                devenv_nix: None,
+                flake_nix: None,
+            }
+        );
+    }
+
+    #[test]
+    fn discovery_records_nearest_supported_files_within_git_root() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let repo = Utf8PathBuf::from_path_buf(sandbox.path().join("repo")).unwrap();
+        let nested = repo.join("nested");
+        fs::create_dir(&repo).unwrap();
+        fs::create_dir(&nested).unwrap();
+        fs::write(repo.join(".envrc"), "use nix\n").unwrap();
+        fs::write(repo.join("flake.nix"), "{}\n").unwrap();
+        fs::write(nested.join("devenv.nix"), "{}\n").unwrap();
+
+        let discovery = DevEnvironmentDiscovery::detect(&nested, &repo);
+
+        assert_eq!(
+            discovery,
+            DevEnvironmentDiscovery {
+                envrc: Some(repo.join(".envrc")),
+                devenv_nix: Some(nested.join("devenv.nix")),
+                flake_nix: Some(repo.join("flake.nix")),
+            }
+        );
+    }
+
+    #[test]
+    fn envrc_takes_precedence_over_other_development_environment_files() {
+        let discovery = DevEnvironmentDiscovery {
+            envrc: Some("/repo/.envrc".into()),
+            devenv_nix: Some("/repo/devenv.nix".into()),
+            flake_nix: Some("/repo/flake.nix".into()),
+        };
+
+        assert_eq!(
+            discovery.resolve(Utf8Path::new("/repo")).unwrap(),
+            DevEnvironment::Direnv
+        );
+    }
+
+    #[test]
+    fn devenv_takes_precedence_over_flake_when_envrc_is_absent() {
+        let discovery = DevEnvironmentDiscovery {
+            envrc: None,
+            devenv_nix: Some("/repo/nested/devenv.nix".into()),
+            flake_nix: Some("/repo/flake.nix".into()),
+        };
+
+        assert_eq!(
+            discovery.resolve(Utf8Path::new("/repo/nested")).unwrap(),
+            DevEnvironment::Devenv {
+                root: "/repo/nested".into()
+            }
         );
     }
 }

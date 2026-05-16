@@ -22,21 +22,12 @@ pub struct PreflightReport {
     pub runtime_mounts: Vec<RuntimeMount>,
 }
 
-pub fn check_host_prerequisites_for_runtime(
-    runtime: RuntimeKind,
-    target_directory: Option<&Utf8Path>,
-    git_root: Option<&Utf8Path>,
-) -> Result<PreflightReport> {
-    check_host_prerequisites_with_snapshot(
-        &PreflightSnapshot::detect(target_directory, git_root, runtime),
-        target_directory,
-        runtime,
-    )
+pub fn check_host_prerequisites_for_runtime(runtime: RuntimeKind) -> Result<PreflightReport> {
+    check_host_prerequisites_with_snapshot(&PreflightSnapshot::detect(runtime), runtime)
 }
 
 pub fn check_host_prerequisites_with_snapshot(
     snapshot: &PreflightSnapshot,
-    _target_directory: Option<&Utf8Path>,
     runtime: RuntimeKind,
 ) -> Result<PreflightReport> {
     PreflightCheck { snapshot, runtime }.run()

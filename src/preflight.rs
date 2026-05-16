@@ -6,8 +6,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use camino::Utf8Path;
-
 mod check;
 mod path;
 mod snapshot;
@@ -17,9 +15,8 @@ pub use check::{
     required_host_mount_destinations,
 };
 pub use snapshot::{
-    DirenvPreflightSnapshot, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
-    NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
-    PreflightSnapshot,
+    HostDirectoryPreflightSnapshot, HostPreflightSnapshot, NixConfigPreflightSnapshot,
+    NixCustomConfPreflightSnapshot, NixPreflightSnapshot, PreflightSnapshot,
 };
 
 pub const NIX_DAEMON_SOCKET_PATH: &str = "/nix/var/nix/daemon-socket/socket";
@@ -33,7 +30,3 @@ pub const OPENCODE_CONFIG_DESTINATION: &str = "/home/user/.config/opencode";
 pub const OPENCODE_DATA_DESTINATION: &str = "/home/user/.local/share/opencode";
 
 const NIX_CUSTOM_CONF_PATH: &str = "/etc/nix/nix.custom.conf";
-
-pub fn direnv_applies_to_target(target_directory: &Utf8Path, git_root: &Utf8Path) -> bool {
-    path::envrc_applies_within_git_root(target_directory, git_root)
-}

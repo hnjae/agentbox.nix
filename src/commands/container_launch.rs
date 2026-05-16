@@ -40,11 +40,7 @@ pub(super) fn prepare_container_launch(
     let workspace = locked.workspace();
 
     diagnostic::info("checking workspace prerequisites");
-    let preflight = check_host_prerequisites_for_runtime(
-        runtime,
-        Some(workspace.canonical_target.as_ref()),
-        Some(workspace.canonical_git_root.as_ref()),
-    )?;
+    let preflight = check_host_prerequisites_for_runtime(runtime)?;
 
     diagnostic::info("checking existing managed sessions");
     let podman = locked.podman();

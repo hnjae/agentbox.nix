@@ -9,10 +9,9 @@
 use std::collections::BTreeMap;
 
 use agentbox::preflight::{
-    CODEX_CONFIG_DESTINATION, DirenvPreflightSnapshot, HostDirectoryPreflightSnapshot,
-    HostPreflightSnapshot, NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot,
-    NixPreflightSnapshot, OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION,
-    PreflightSnapshot,
+    CODEX_CONFIG_DESTINATION, HostDirectoryPreflightSnapshot, HostPreflightSnapshot,
+    NixConfigPreflightSnapshot, NixCustomConfPreflightSnapshot, NixPreflightSnapshot,
+    OPENCODE_CONFIG_DESTINATION, OPENCODE_DATA_DESTINATION, PreflightSnapshot,
 };
 use agentbox::runtime::RuntimeKind;
 
@@ -62,10 +61,6 @@ fn passing_preflight_snapshot(runtime: RuntimeKind) -> PreflightSnapshot {
         host: HostPreflightSnapshot {
             has_git: true,
             has_podman: true,
-            direnv: DirenvPreflightSnapshot {
-                required: false,
-                available: true,
-            },
             runtime_state: runtime_state(runtime),
         },
         nix: NixPreflightSnapshot {
