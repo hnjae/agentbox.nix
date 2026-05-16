@@ -10,17 +10,17 @@ use crate::cli::StartArgs;
 use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
-use crate::runtime::{RuntimeRunMode, RuntimeRunSpec};
+use crate::runtime::RuntimeRunSpec;
 use crate::session::classify_create_error_or_else;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::container_launch::{HostClientRequirement, prepare_container_launch};
+use super::container_launch::{ServerLaunchMode, prepare_server_launch};
 use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
 use super::launch_policy::{
     CommandInterrupt, ContainerLogContext, error_with_container_logs, select_runtime,
 };
-use super::runtime_command::{run_host_runtime_client, server_runtime_command};
+use super::runtime_command::run_host_runtime_client;
 use super::server_readiness::ServerEndpointContext;
 use super::workspace_flow::with_locked_workspace;
 
@@ -37,24 +37,13 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
         let podman = locked.podman();
-        let preparation = prepare_container_launch(
+        let preparation = prepare_server_launch(
             &locked,
             runtime,
             args.dev_env,
-            HostClientRequirement::NotRequired,
+            ServerLaunchMode::ManagedSession,
         )?;
-        let server_run = server_runtime_command(
-            runtime,
-            workspace.canonical_target.as_ref(),
-            &preparation.dev_env,
-        );
-        let mut run_spec = runtime.run_spec(
-            RuntimeRunMode::ManagedSession,
-            workspace,
-            &preparation.preflight.host_nix_mounts,
-            &preparation.preflight.runtime_mounts,
-            server_run,
-        );
+        let mut run_spec = preparation.run_spec;
         if let Some(version) = preparation.runtime_image_version {
             run_spec
                 .create_mut()

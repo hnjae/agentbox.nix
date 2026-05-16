@@ -8,15 +8,14 @@
 
 use crate::cli::RunArgs;
 use crate::diagnostic;
-use crate::runtime::RuntimeRunMode;
 use crate::{Error, Result};
 
-use super::container_launch::{HostClientRequirement, prepare_container_launch};
+use super::container_launch::{ServerLaunchMode, prepare_server_launch};
 use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
 use super::launch_policy::{
     CommandInterrupt, ContainerLogContext, error_with_container_logs, select_runtime,
 };
-use super::runtime_command::{run_host_runtime_client_status, server_runtime_command};
+use super::runtime_command::run_host_runtime_client_status;
 use super::server_readiness::ServerEndpointContext;
 use super::transient_run::TransientRun;
 use super::workspace_flow::with_locked_workspace;
@@ -30,31 +29,19 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
         let podman = locked.podman();
-        let preparation = prepare_container_launch(
+        let preparation = prepare_server_launch(
             &locked,
             runtime,
             args.dev_env,
-            HostClientRequirement::Required,
+            ServerLaunchMode::TransientServer,
         )?;
-        let server_run = server_runtime_command(
-            runtime,
-            workspace.canonical_target.as_ref(),
-            &preparation.dev_env,
-        );
-        let run_spec = runtime.run_spec(
-            RuntimeRunMode::TransientServer,
-            workspace,
-            &preparation.preflight.host_nix_mounts,
-            &preparation.preflight.runtime_mounts,
-            server_run,
-        );
 
         let transient = TransientRun::new(podman, workspace);
         let ready_server = launch_detached_server(
             podman,
             workspace,
             runtime,
-            &run_spec,
+            &preparation.run_spec,
             TransientServerLifecycle { transient },
         )?;
         let endpoint = ready_server.endpoint();

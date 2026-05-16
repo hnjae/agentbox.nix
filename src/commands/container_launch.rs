@@ -11,11 +11,11 @@ use crate::cli::DevEnvMode;
 use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
 use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime};
-use crate::runtime::RuntimeKind;
+use crate::runtime::{RuntimeKind, RuntimeRunMode, RuntimeRunSpec};
 use crate::session::{existing_session_error, select_single_session};
 
 use super::runtime::ensure_default_runtime_image;
-use super::runtime_command::ensure_host_runtime_client_available;
+use super::runtime_command::{ensure_host_runtime_client_available, server_runtime_command};
 use super::workspace_flow::LockedWorkspace;
 
 #[derive(Debug)]
@@ -25,10 +25,70 @@ pub(super) struct ContainerLaunchPreparation {
     pub(super) runtime_image_version: Option<String>,
 }
 
+#[derive(Debug)]
+pub(super) struct ServerLaunchPreparation {
+    pub(super) run_spec: RuntimeRunSpec,
+    pub(super) runtime_image_version: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HostClientRequirement {
     Required,
     NotRequired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ServerLaunchMode {
+    ManagedSession,
+    TransientServer,
+}
+
+impl ServerLaunchMode {
+    fn runtime_run_mode(self) -> RuntimeRunMode {
+        match self {
+            Self::ManagedSession => RuntimeRunMode::ManagedSession,
+            Self::TransientServer => RuntimeRunMode::TransientServer,
+        }
+    }
+
+    fn host_client_requirement(self) -> HostClientRequirement {
+        match self {
+            Self::ManagedSession => HostClientRequirement::NotRequired,
+            Self::TransientServer => HostClientRequirement::Required,
+        }
+    }
+}
+
+pub(super) fn prepare_server_launch(
+    locked: &LockedWorkspace<'_>,
+    runtime: RuntimeKind,
+    dev_env_mode: DevEnvMode,
+    mode: ServerLaunchMode,
+) -> Result<ServerLaunchPreparation> {
+    let workspace = locked.workspace();
+    let preparation = prepare_container_launch(
+        locked,
+        runtime,
+        dev_env_mode,
+        mode.host_client_requirement(),
+    )?;
+    let server_run = server_runtime_command(
+        runtime,
+        workspace.canonical_target.as_ref(),
+        &preparation.dev_env,
+    );
+    let run_spec = runtime.run_spec(
+        mode.runtime_run_mode(),
+        workspace,
+        &preparation.preflight.host_nix_mounts,
+        &preparation.preflight.runtime_mounts,
+        server_run,
+    );
+
+    Ok(ServerLaunchPreparation {
+        run_spec,
+        runtime_image_version: preparation.runtime_image_version,
+    })
 }
 
 pub(super) fn prepare_container_launch(
