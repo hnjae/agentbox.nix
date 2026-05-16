@@ -20,8 +20,8 @@ fi
 mode=$2
 
 case "$mode" in
-    image-local) ;;
-    *) usage ;;
+image-local) ;;
+*) usage ;;
 esac
 
 image_tag=containerfile-nixkpgs-runtime-trust-source-$mode

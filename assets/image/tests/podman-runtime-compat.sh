@@ -20,8 +20,8 @@ fi
 mode=$2
 
 case "$mode" in
-    xdg-state-fallback|fixed-home-fallback) ;;
-    *) usage ;;
+xdg-state-fallback | fixed-home-fallback) ;;
+*) usage ;;
 esac
 
 image_tag=containerfile-nixkpgs-runtime-compat-$mode
@@ -72,8 +72,8 @@ runtime_contract_run_container "$@"
 runtime_contract_wait_for_startup "$container_name"
 
 case "$mode" in
-    xdg-state-fallback)
-        podman exec "$container_name" env -u XDG_STATE_HOME /entrypoint zsh -ceu '
+xdg-state-fallback)
+    podman exec "$container_name" env -u XDG_STATE_HOME /entrypoint zsh -ceu '
             test "$NIX_PROFILE_PATH" = "$HOME/.local/state/nix/profile"
             case "$PATH" in
                 *"$HOME/.local/state/nix/profile/bin"*) ;;
@@ -82,9 +82,9 @@ case "$mode" in
 
             command -v gh >/dev/null 2>&1
         '
-        ;;
-    fixed-home-fallback)
-        podman exec "$container_name" env -u XDG_STATE_HOME -u HOME /entrypoint zsh -ceu '
+    ;;
+fixed-home-fallback)
+    podman exec "$container_name" env -u XDG_STATE_HOME -u HOME /entrypoint zsh -ceu '
             test "$HOME" = "/home/user"
             test "$NIX_PROFILE_PATH" = "/home/user/.local/state/nix/profile"
             case "$NIX_PROFILES" in
@@ -99,7 +99,7 @@ case "$mode" in
 
             command -v gh >/dev/null 2>&1
         '
-        ;;
+    ;;
 esac
 
 printf 'podman runtime compatibility OK (%s)\n' "$mode"

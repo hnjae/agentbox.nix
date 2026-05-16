@@ -24,6 +24,20 @@
             inherit system;
             config.allowUnfree = true;
           };
+
+          shellFormat = pkgs.writeShellApplication {
+            name = "shell-format";
+            runtimeInputs = with devPkgs; [
+              shellharden
+              shfmt
+            ];
+            text = ''
+              for file in "$@"; do
+                shellharden --replace "$file"
+                shfmt --indent 4 --simplify --write "$file"
+              done
+            '';
+          };
         in
         {
           formatter =
@@ -57,11 +71,28 @@
                 editorconfig-checker.enable = true;
                 typos.enable = true;
 
+                # Nix Static Checkers:
+                deadnix.enable = true;
+                statix.enable = true;
+
+                # Miscellaneous Static Checkers:
+                shellcheck-env = {
+                  enable = true;
+                  name = "shellcheck";
+                  package = devPkgs.shellcheck;
+                  files = ''
+                    (?x)^(
+                      .*\.(sh|bash)$|
+                      \.envrc(\..+)?$|
+                      \.env(\..+)?$
+                    )
+                  '';
+                  entry = "${lib.getExe devPkgs.shellcheck} -e SC2034,SC1091,SC2154";
+                };
+
                 # Formatters:
                 nixfmt.enable = true;
                 rustfmt.enable = true;
-
-                # Other formatters:
                 taplo.enable = true;
                 rumdl.enable = true;
                 just-format = {
@@ -82,6 +113,20 @@
                       ''
                   );
                 };
+                shell-format = {
+                  enable = true;
+                  name = "shell-format";
+                  description = "Format shell files with shellharden and shfmt.";
+                  package = shellFormat;
+                  files = ''
+                    (?x)^(
+                      .*\.(sh|bash)$|
+                      \.envrc(\..+)?$|
+                      \.env(\..+)?$
+                    )
+                  '';
+                  entry = lib.getExe shellFormat;
+                };
               };
             };
           };
@@ -95,17 +140,9 @@
               config.pre-commit.settings.enabledPackages
 
               (with devPkgs; [
-                # Nix
                 nixd
-                statix
-                deadnix
-
-                # Shell
-                shellcheck
                 shellharden
-
-                # Misc
-                editorconfig-checker
+                shfmt
               ])
             ];
           };

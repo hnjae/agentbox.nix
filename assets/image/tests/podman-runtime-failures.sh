@@ -20,8 +20,8 @@ fi
 mode=$2
 
 case "$mode" in
-    missing-etc-nix|broken-static-nix|no-ca-bundle|unusable-state-path) ;;
-    *) usage ;;
+missing-etc-nix | broken-static-nix | no-ca-bundle | unusable-state-path) ;;
+*) usage ;;
 esac
 
 image_tag=containerfile-nixkpgs-runtime-failure-contract
@@ -103,48 +103,48 @@ set -- \
     -v "$nix_client_path:/usr/local/bin/nix:ro"
 
 case "$mode" in
-    missing-etc-nix)
-        if [ -e /etc/static/nix ]; then
-            set -- "$@" -v /etc/static/nix:/etc/static/nix:ro
-        fi
+missing-etc-nix)
+    if [ -e /etc/static/nix ]; then
+        set -- "$@" -v /etc/static/nix:/etc/static/nix:ro
+    fi
 
-        run_failure_command "$evidence_file" podman run --rm "$@" "$image_tag" /bin/true
-        assert_log_contains "Missing /etc/nix host mount. Mount /etc/nix:/etc/nix:ro so the wrapper inherits the host config and registry."
-        ;;
-    broken-static-nix)
-        custom_etc_nix=$(mktemp -d /tmp/containerfile-nixpkgs-runtime-failure-etc-nix.XXXXXX)
-        printf 'experimental-features = nix-command flakes\n' >"$custom_etc_nix/nix.conf"
-        ln -s /etc/static/nix/nix.custom.conf "$custom_etc_nix/nix.custom.conf"
+    run_failure_command "$evidence_file" podman run --rm "$@" "$image_tag" /bin/true
+    assert_log_contains "Missing /etc/nix host mount. Mount /etc/nix:/etc/nix:ro so the wrapper inherits the host config and registry."
+    ;;
+broken-static-nix)
+    custom_etc_nix=$(mktemp -d /tmp/containerfile-nixpkgs-runtime-failure-etc-nix.XXXXXX)
+    printf 'experimental-features = nix-command flakes\n' >"$custom_etc_nix/nix.conf"
+    ln -s /etc/static/nix/nix.custom.conf "$custom_etc_nix/nix.custom.conf"
 
-        set -- "$@" -v "$custom_etc_nix:/etc/nix:ro"
+    set -- "$@" -v "$custom_etc_nix:/etc/nix:ro"
 
-        run_failure_command "$evidence_file" podman run --rm "$@" "$image_tag" /bin/true
-        assert_log_contains "Missing readable target for /etc/nix/nix.custom.conf. Mount /etc/static/nix:/etc/static/nix:ro when /etc/nix points there."
-        ;;
-    no-ca-bundle)
-        empty_ssl_dir=$(mktemp -d /tmp/containerfile-nixpkgs-runtime-failure-ssl.XXXXXX)
+    run_failure_command "$evidence_file" podman run --rm "$@" "$image_tag" /bin/true
+    assert_log_contains "Missing readable target for /etc/nix/nix.custom.conf. Mount /etc/static/nix:/etc/static/nix:ro when /etc/nix points there."
+    ;;
+no-ca-bundle)
+    empty_ssl_dir=$(mktemp -d /tmp/containerfile-nixpkgs-runtime-failure-ssl.XXXXXX)
 
-        set -- "$@" \
-            -v /etc/nix:/etc/nix:ro \
-            -v "$empty_ssl_dir:/etc/ssl:ro"
+    set -- "$@" \
+        -v /etc/nix:/etc/nix:ro \
+        -v "$empty_ssl_dir:/etc/ssl:ro"
 
-        if [ -e /etc/static/nix ]; then
-            set -- "$@" -v /etc/static/nix:/etc/static/nix:ro
-        fi
+    if [ -e /etc/static/nix ]; then
+        set -- "$@" -v /etc/static/nix:/etc/static/nix:ro
+    fi
 
-        run_failure_command "$evidence_file" podman run --rm "$@" "$image_tag" /bin/true
-        assert_log_contains "Missing image-local CA bundle at /etc/ssl/certs/ca-certificates.crt."
-        ;;
-    unusable-state-path)
-        set -- "$@" -v /etc/nix:/etc/nix:ro
+    run_failure_command "$evidence_file" podman run --rm "$@" "$image_tag" /bin/true
+    assert_log_contains "Missing image-local CA bundle at /etc/ssl/certs/ca-certificates.crt."
+    ;;
+unusable-state-path)
+    set -- "$@" -v /etc/nix:/etc/nix:ro
 
-        if [ -e /etc/static/nix ]; then
-            set -- "$@" -v /etc/static/nix:/etc/static/nix:ro
-        fi
+    if [ -e /etc/static/nix ]; then
+        set -- "$@" -v /etc/static/nix:/etc/static/nix:ro
+    fi
 
-        run_failure_command "$evidence_file" podman run --rm "$@" -e XDG_STATE_HOME=/proc/agentbox-state "$image_tag" /bin/true
-        assert_log_contains "Unusable Nix profile state path: /proc/agentbox-state/nix/profile. Ensure XDG_STATE_HOME or HOME points to a writable location."
-        ;;
+    run_failure_command "$evidence_file" podman run --rm "$@" -e XDG_STATE_HOME=/proc/agentbox-state "$image_tag" /bin/true
+    assert_log_contains "Unusable Nix profile state path: /proc/agentbox-state/nix/profile. Ensure XDG_STATE_HOME or HOME points to a writable location."
+    ;;
 esac
 
 printf 'podman runtime failure contract OK (%s)\n' "$mode"
