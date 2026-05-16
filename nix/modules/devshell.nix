@@ -45,9 +45,16 @@
               gitPackage = pkgs.gitMinimal;
               hooks = {
                 # Static checkers
+                cocogitto = {
+                  enable = true;
+                  name = "cog verify";
+                  description = "Require Conventional Commits with Cocogitto.";
+                  package = devPkgs.cocogitto;
+                  entry = "${lib.getExe devPkgs.cocogitto} verify --file";
+                  stages = [ "commit-msg" ];
+                };
                 detect-private-keys.enable = true;
                 editorconfig-checker.enable = true;
-                gitlint.enable = true;
                 typos.enable = true;
 
                 # Formatters:

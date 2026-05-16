@@ -1,3 +1,0 @@
-[general]
-contrib=contrib-title-conventional-commits
-ignore=body-min-length,body-max-line-length,body-is-missing
