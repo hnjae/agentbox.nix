@@ -1086,6 +1086,43 @@ Rules:
 - Podman `--rm` removes the managed container, not the named runtime cache
   volume.
 
+### SSH Commit Signing Passthrough
+
+When the invoking host environment has a usable SSH agent socket, `run`,
+`start`, and `exec` make SSH-based Git commit signing available inside the
+runtime container without mounting private keys or host SSH configuration.
+
+Rules:
+
+- `agentbox` detects `SSH_AUTH_SOCK` on the host during launch preparation.
+- If `SSH_AUTH_SOCK` is unset, container launch behavior is unchanged.
+- If `SSH_AUTH_SOCK` is set but does not point to an accessible Unix socket,
+  `agentbox` prints a warning, does not mount it, and continues launching the
+  container.
+- If `SSH_AUTH_SOCK` points to an accessible Unix socket, `agentbox` bind-mounts
+  that socket at `/run/agentbox/ssh-agent.sock` and sets
+  `SSH_AUTH_SOCK=/run/agentbox/ssh-agent.sock` inside the container.
+- `agentbox` reads only the effective Git config values needed for commit
+  signing from the host repository: `user.name`, `user.email`, `gpg.format`,
+  `user.signingkey`, and `commit.gpgsign`.
+- Those Git config values are injected into the container with Git's
+  `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment
+  variables.
+- `agentbox` does not mount the host Git config files, credential helpers,
+  `~/.ssh`, private keys, or GPG agent sockets for commit signing passthrough.
+- If `user.signingkey` is an SSH public key literal, `agentbox` passes that
+  literal unchanged.
+- If `user.signingkey` is a public key file path, `agentbox` reads the public
+  key file and passes the key literal instead of the path.
+- If `user.signingkey` is a private key path, `agentbox` does not read the
+  private key. If a sibling `<path>.pub` file exists and is readable,
+  `agentbox` reads that public key and passes the key literal instead.
+- `agentbox` does not verify that the configured signing key is currently
+  loaded in the SSH agent. Git and ssh-agent own the final signing error if the
+  agent cannot sign.
+- GPG commit signing passthrough and Git SSH remote authentication are outside
+  the MVP scope.
+
 ### Codex Host Configuration Passthrough
 
 Codex sessions use the invoking host user's Codex configuration directory as
