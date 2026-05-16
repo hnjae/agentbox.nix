@@ -11,21 +11,17 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::cli::RunArgs;
-use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
 use crate::podman::Podman;
-use crate::preflight::check_host_prerequisites_for_runtime;
 use crate::prompt;
 use crate::runtime::{AttachEndpoint, RuntimeKind};
-use crate::session::{existing_session_error, select_single_session};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::container_cleanup::ManagedContainerCleanup;
-use super::runtime::ensure_default_runtime_image;
+use super::container_launch::{HostClientRequirement, prepare_container_launch};
 use super::runtime_command::{
-    ensure_host_runtime_client_available, host_client_status_error, run_host_runtime_client_status,
-    server_runtime_command,
+    host_client_status_error, run_host_runtime_client_status, server_runtime_command,
 };
 use super::server_readiness::{ServerEndpointWait, wait_for_transient_server_endpoint};
 use super::workspace_flow::with_locked_workspace;
@@ -37,40 +33,22 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
 
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
-        diagnostic::info("checking workspace prerequisites");
-        let preflight = check_host_prerequisites_for_runtime(
-            runtime,
-            Some(workspace.canonical_target.as_ref()),
-            Some(workspace.canonical_git_root.as_ref()),
-        )?;
-
-        diagnostic::info("checking existing managed sessions");
         let podman = locked.podman();
-        let sessions = locked.discover_sessions()?;
-        if let Some(session) = select_single_session(&sessions, workspace)? {
-            return Err(existing_session_error(podman, workspace, session));
-        }
-
-        let dev_env = DevEnvironment::resolve(
-            args.dev_env,
-            workspace.canonical_target.as_ref(),
-            workspace.canonical_git_root.as_ref(),
-        )?;
-        diagnostic::info(format!("selected development environment: {dev_env}"));
-        ensure_host_runtime_client_available(runtime)?;
-
-        ensure_default_runtime_image(
-            podman,
+        let preparation = prepare_container_launch(
+            &locked,
             runtime,
-            workspace.canonical_git_root.as_ref(),
-            diagnostic::info,
+            args.dev_env,
+            HostClientRequirement::Required,
         )?;
-        let server_run =
-            server_runtime_command(runtime, workspace.canonical_target.as_ref(), &dev_env);
+        let server_run = server_runtime_command(
+            runtime,
+            workspace.canonical_target.as_ref(),
+            &preparation.dev_env,
+        );
         let run_spec = runtime.transient_server_run_spec(
             workspace,
-            &preflight.host_nix_mounts,
-            &preflight.runtime_mounts,
+            &preparation.preflight.host_nix_mounts,
+            &preparation.preflight.runtime_mounts,
             server_run,
         );
 

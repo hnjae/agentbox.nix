@@ -13,6 +13,7 @@ pub mod clean;
 pub mod completion;
 pub mod connect;
 mod container_cleanup;
+mod container_launch;
 pub mod exec;
 pub mod health;
 pub mod ls;

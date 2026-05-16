@@ -9,14 +9,11 @@
 use std::io::IsTerminal;
 
 use crate::cli::ExecArgs;
-use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
-use crate::preflight::check_host_prerequisites_for_runtime;
 use crate::runtime::RuntimeKind;
-use crate::session::{existing_session_error, select_single_session};
 use crate::{Error, Result};
 
-use super::runtime::ensure_default_runtime_image;
+use super::container_launch::{HostClientRequirement, prepare_container_launch};
 use super::runtime_command::codex_exec_runtime_command;
 use super::workspace_flow::with_locked_workspace;
 
@@ -25,42 +22,22 @@ pub fn run(args: ExecArgs, verbose: bool) -> Result<()> {
 
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
-        diagnostic::info("checking workspace prerequisites");
-        let preflight = check_host_prerequisites_for_runtime(
-            runtime,
-            Some(workspace.canonical_target.as_ref()),
-            Some(workspace.canonical_git_root.as_ref()),
-        )?;
-
-        diagnostic::info("checking existing managed sessions");
         let podman = locked.podman();
-        let sessions = locked.discover_sessions()?;
-        if let Some(session) = select_single_session(&sessions, workspace)? {
-            return Err(existing_session_error(podman, workspace, session));
-        }
-
-        let dev_env = DevEnvironment::resolve(
-            args.dev_env,
-            workspace.canonical_target.as_ref(),
-            workspace.canonical_git_root.as_ref(),
-        )?;
-        diagnostic::info(format!("selected development environment: {dev_env}"));
-
-        ensure_default_runtime_image(
-            podman,
+        let preparation = prepare_container_launch(
+            &locked,
             runtime,
-            workspace.canonical_git_root.as_ref(),
-            diagnostic::info,
+            args.dev_env,
+            HostClientRequirement::NotRequired,
         )?;
         let codex_exec = codex_exec_runtime_command(
             workspace.canonical_target.as_ref(),
-            &dev_env,
+            &preparation.dev_env,
             args.codex_args,
         );
         let run_spec = runtime.foreground_run_spec(
             workspace,
-            &preflight.host_nix_mounts,
-            &preflight.runtime_mounts,
+            &preparation.preflight.host_nix_mounts,
+            &preparation.preflight.runtime_mounts,
             codex_exec,
         );
 

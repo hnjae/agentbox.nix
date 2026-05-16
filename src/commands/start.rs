@@ -7,21 +7,17 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::cli::StartArgs;
-use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
-use crate::preflight::check_host_prerequisites_for_runtime;
 use crate::prompt;
 use crate::runtime::RuntimeKind;
 use crate::runtime::RuntimeRunSpec;
-use crate::session::{
-    classify_create_error_or_else, existing_session_error, select_single_session,
-};
+use crate::session::classify_create_error_or_else;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::runtime::ensure_default_runtime_image;
+use super::container_launch::{HostClientRequirement, prepare_container_launch};
 use super::runtime_command::{run_host_runtime_client, server_runtime_command};
 use super::server_readiness::{ServerEndpointWait, wait_for_server_endpoint};
 use super::workspace_flow::with_locked_workspace;
@@ -37,42 +33,25 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
 
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
-        diagnostic::info("checking workspace prerequisites");
-        let preflight = check_host_prerequisites_for_runtime(
-            runtime,
-            Some(workspace.canonical_target.as_ref()),
-            Some(workspace.canonical_git_root.as_ref()),
-        )?;
-
-        diagnostic::info("checking existing managed sessions");
         let podman = locked.podman();
-        let sessions = locked.discover_sessions()?;
-        if let Some(session) = select_single_session(&sessions, workspace)? {
-            return Err(existing_session_error(podman, workspace, session));
-        }
-
-        let dev_env = DevEnvironment::resolve(
-            args.dev_env,
-            workspace.canonical_target.as_ref(),
-            workspace.canonical_git_root.as_ref(),
-        )?;
-        diagnostic::info(format!("selected development environment: {dev_env}"));
-
-        let runtime_version = ensure_default_runtime_image(
-            podman,
+        let preparation = prepare_container_launch(
+            &locked,
             runtime,
-            workspace.canonical_git_root.as_ref(),
-            diagnostic::info,
+            args.dev_env,
+            HostClientRequirement::NotRequired,
         )?;
-        let server_run =
-            server_runtime_command(runtime, workspace.canonical_target.as_ref(), &dev_env);
+        let server_run = server_runtime_command(
+            runtime,
+            workspace.canonical_target.as_ref(),
+            &preparation.dev_env,
+        );
         let mut run_spec = runtime.run_spec(
             workspace,
-            &preflight.host_nix_mounts,
-            &preflight.runtime_mounts,
+            &preparation.preflight.host_nix_mounts,
+            &preparation.preflight.runtime_mounts,
             server_run,
         );
-        if let Some(version) = runtime_version {
+        if let Some(version) = preparation.runtime_image_version {
             run_spec
                 .create_mut()
                 .labels
