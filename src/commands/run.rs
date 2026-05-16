@@ -11,7 +11,7 @@ use std::process::ExitStatus;
 use crate::cli::RunArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
-use crate::runtime::{AttachEndpoint, RuntimeKind};
+use crate::runtime::{AttachEndpoint, RuntimeKind, RuntimeRunMode};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
@@ -46,7 +46,8 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             workspace.canonical_target.as_ref(),
             &preparation.dev_env,
         );
-        let run_spec = runtime.transient_server_run_spec(
+        let run_spec = runtime.run_spec(
+            RuntimeRunMode::TransientServer,
             workspace,
             &preparation.preflight.host_nix_mounts,
             &preparation.preflight.runtime_mounts,

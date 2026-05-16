@@ -10,7 +10,7 @@ use crate::cli::StartArgs;
 use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
 use crate::podman::Podman;
-use crate::runtime::RuntimeRunSpec;
+use crate::runtime::{RuntimeRunMode, RuntimeRunSpec};
 use crate::session::classify_create_error_or_else;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
@@ -48,6 +48,7 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             &preparation.dev_env,
         );
         let mut run_spec = runtime.run_spec(
+            RuntimeRunMode::ManagedSession,
             workspace,
             &preparation.preflight.host_nix_mounts,
             &preparation.preflight.runtime_mounts,

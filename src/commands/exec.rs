@@ -10,7 +10,7 @@ use std::io::IsTerminal;
 
 use crate::cli::ExecArgs;
 use crate::diagnostic;
-use crate::runtime::RuntimeKind;
+use crate::runtime::{RuntimeKind, RuntimeRunMode};
 use crate::{Error, Result};
 
 use super::container_launch::{HostClientRequirement, prepare_container_launch};
@@ -35,7 +35,8 @@ pub fn run(args: ExecArgs, verbose: bool) -> Result<()> {
             &preparation.dev_env,
             args.codex_args,
         );
-        let run_spec = runtime.foreground_run_spec(
+        let run_spec = runtime.run_spec(
+            RuntimeRunMode::Foreground,
             workspace,
             &preparation.preflight.host_nix_mounts,
             &preparation.preflight.runtime_mounts,

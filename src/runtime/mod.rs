@@ -19,5 +19,5 @@ pub use kind::RuntimeKind;
 pub(crate) use profile::{RuntimeHostStateMount, RuntimeHostStateSource};
 pub use spec::{
     AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeAttachSpec, RuntimeCommand, RuntimeCreateSpec,
-    RuntimeInvocation, RuntimeMount, RuntimeMountKind, RuntimeRunSpec,
+    RuntimeInvocation, RuntimeMount, RuntimeMountKind, RuntimeRunMode, RuntimeRunSpec,
 };

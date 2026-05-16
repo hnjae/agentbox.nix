@@ -143,6 +143,23 @@ impl RuntimeRunSpec {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeRunMode {
+    ManagedSession,
+    TransientServer,
+    Foreground,
+}
+
+impl RuntimeRunMode {
+    fn managed(self) -> bool {
+        matches!(self, Self::ManagedSession)
+    }
+
+    fn publishes_attach_endpoint(self) -> bool {
+        matches!(self, Self::ManagedSession | Self::TransientServer)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachEndpoint {
     pub scheme: String,
@@ -195,6 +212,7 @@ impl RuntimeAttachSpec {
 impl RuntimeKind {
     pub fn run_spec(
         self,
+        mode: RuntimeRunMode,
         workspace: &WorkspaceIdentity,
         host_nix_mounts: &[RuntimeMount],
         runtime_mounts: &[RuntimeMount],
@@ -202,51 +220,32 @@ impl RuntimeKind {
     ) -> RuntimeRunSpec {
         let (command, workdir) = invocation.into_parts();
         RuntimeRunSpec::new(
-            self.create_spec(workspace, host_nix_mounts, runtime_mounts, command),
-            workdir,
-        )
-    }
-
-    pub fn foreground_run_spec(
-        self,
-        workspace: &WorkspaceIdentity,
-        host_nix_mounts: &[RuntimeMount],
-        runtime_mounts: &[RuntimeMount],
-        invocation: RuntimeInvocation,
-    ) -> RuntimeRunSpec {
-        let (command, workdir) = invocation.into_parts();
-        RuntimeRunSpec::new(
-            self.foreground_create_spec(workspace, host_nix_mounts, runtime_mounts, command),
-            workdir,
-        )
-    }
-
-    pub fn transient_server_run_spec(
-        self,
-        workspace: &WorkspaceIdentity,
-        host_nix_mounts: &[RuntimeMount],
-        runtime_mounts: &[RuntimeMount],
-        invocation: RuntimeInvocation,
-    ) -> RuntimeRunSpec {
-        let (command, workdir) = invocation.into_parts();
-        RuntimeRunSpec::new(
-            self.transient_server_create_spec(workspace, host_nix_mounts, runtime_mounts, command),
+            self.create_spec(mode, workspace, host_nix_mounts, runtime_mounts, command),
             workdir,
         )
     }
 
     fn create_spec(
         self,
+        mode: RuntimeRunMode,
         workspace: &WorkspaceIdentity,
         host_nix_mounts: &[RuntimeMount],
         runtime_mounts: &[RuntimeMount],
         command: impl Into<Vec<String>>,
     ) -> RuntimeCreateSpec {
         let image = self.default_image();
-        let attach = self.attach_spec();
-        let labels = managed_session_labels(ManagedSessionLabelInput::from_workspace(
-            workspace, &image, self,
-        ));
+        let labels = if mode.managed() {
+            managed_session_labels(ManagedSessionLabelInput::from_workspace(
+                workspace, &image, self,
+            ))
+        } else {
+            BTreeMap::new()
+        };
+        let published_ports = if mode.publishes_attach_endpoint() {
+            vec![self.attach_spec().published_port(DEFAULT_HOST_ATTACH_IP)]
+        } else {
+            Vec::new()
+        };
 
         RuntimeCreateSpec {
             image,
@@ -255,45 +254,7 @@ impl RuntimeKind {
             command: command.into(),
             default_env: self.default_env(),
             network_enabled: true,
-            published_ports: vec![attach.published_port(DEFAULT_HOST_ATTACH_IP)],
-        }
-    }
-
-    fn foreground_create_spec(
-        self,
-        workspace: &WorkspaceIdentity,
-        host_nix_mounts: &[RuntimeMount],
-        runtime_mounts: &[RuntimeMount],
-        command: impl Into<Vec<String>>,
-    ) -> RuntimeCreateSpec {
-        RuntimeCreateSpec {
-            image: self.default_image(),
-            labels: BTreeMap::new(),
-            mounts: runtime_mounts_for_workspace(workspace, host_nix_mounts, runtime_mounts),
-            command: command.into(),
-            default_env: self.default_env(),
-            network_enabled: true,
-            published_ports: Vec::new(),
-        }
-    }
-
-    fn transient_server_create_spec(
-        self,
-        workspace: &WorkspaceIdentity,
-        host_nix_mounts: &[RuntimeMount],
-        runtime_mounts: &[RuntimeMount],
-        command: impl Into<Vec<String>>,
-    ) -> RuntimeCreateSpec {
-        let attach = self.attach_spec();
-
-        RuntimeCreateSpec {
-            image: self.default_image(),
-            labels: BTreeMap::new(),
-            mounts: runtime_mounts_for_workspace(workspace, host_nix_mounts, runtime_mounts),
-            command: command.into(),
-            default_env: self.default_env(),
-            network_enabled: true,
-            published_ports: vec![attach.published_port(DEFAULT_HOST_ATTACH_IP)],
+            published_ports,
         }
     }
 

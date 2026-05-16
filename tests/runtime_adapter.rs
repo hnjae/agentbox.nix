@@ -20,7 +20,10 @@ use agentbox::preflight::{
 use agentbox::runtime::default_image::{
     default_image_context_hash, embedded_default_image_paths, materialize_default_image_context,
 };
-use agentbox::runtime::{AttachEndpoint, RuntimeInvocation, RuntimeKind, RuntimeMountKind};
+use agentbox::runtime::{
+    AttachEndpoint, RuntimeCreateSpec, RuntimeInvocation, RuntimeKind, RuntimeMountKind,
+    RuntimeRunMode,
+};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -45,6 +48,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     let runtime = RuntimeKind::Opencode;
     let default_image = runtime.default_image();
     let run_spec = runtime.run_spec(
+        RuntimeRunMode::ManagedSession,
         &workspace,
         &preflight.host_nix_mounts,
         &preflight.runtime_mounts,
@@ -189,6 +193,53 @@ fn opencode_create_spec_matches_mvp_contract() {
 }
 
 #[test]
+fn runtime_run_modes_encode_container_ownership_policy() {
+    let repo = support::temp_git_repo();
+    let workspace = resolve_workspace_identity(repo.path()).unwrap();
+    let runtime = RuntimeKind::Opencode;
+    let preflight = check_host_prerequisites_with_snapshot(
+        &support::passing_preflight_snapshot_with_static_nix_mount(runtime),
+        Some(Utf8Path::from_path(repo.path()).unwrap()),
+        runtime,
+    )
+    .unwrap();
+
+    let managed = create_spec_for_mode(
+        runtime,
+        RuntimeRunMode::ManagedSession,
+        &workspace,
+        &preflight,
+    );
+    let transient = create_spec_for_mode(
+        runtime,
+        RuntimeRunMode::TransientServer,
+        &workspace,
+        &preflight,
+    );
+    let foreground =
+        create_spec_for_mode(runtime, RuntimeRunMode::Foreground, &workspace, &preflight);
+
+    assert_eq!(
+        managed.labels.get(LABEL_MANAGED),
+        Some(&LABEL_MANAGED_VALUE.to_string())
+    );
+    assert!(transient.labels.is_empty());
+    assert!(foreground.labels.is_empty());
+
+    assert_eq!(managed.published_ports, ["127.0.0.1::4096"]);
+    assert_eq!(transient.published_ports, managed.published_ports);
+    assert!(foreground.published_ports.is_empty());
+
+    assert_eq!(transient.mounts, managed.mounts);
+    assert_eq!(foreground.mounts, managed.mounts);
+    assert_eq!(transient.default_env, managed.default_env);
+    assert_eq!(foreground.default_env, managed.default_env);
+    assert!(managed.network_enabled);
+    assert!(transient.network_enabled);
+    assert!(foreground.network_enabled);
+}
+
+#[test]
 fn opencode_preflight_rejects_unusable_state_directories() {
     let mut snapshot =
         support::passing_preflight_snapshot_with_static_nix_mount(RuntimeKind::Opencode);
@@ -281,6 +332,7 @@ fn codex_create_spec_includes_host_codex_config_mount() {
     .unwrap();
 
     let run_spec = RuntimeKind::Codex.run_spec(
+        RuntimeRunMode::ManagedSession,
         &workspace,
         &preflight.host_nix_mounts,
         &preflight.runtime_mounts,
@@ -458,4 +510,25 @@ fn collect_relative_files(root: &Path, current: &Path) -> Vec<String> {
     }
 
     files
+}
+
+fn create_spec_for_mode(
+    runtime: RuntimeKind,
+    mode: RuntimeRunMode,
+    workspace: &agentbox::workspace::WorkspaceIdentity,
+    preflight: &agentbox::preflight::PreflightReport,
+) -> RuntimeCreateSpec {
+    runtime
+        .run_spec(
+            mode,
+            workspace,
+            &preflight.host_nix_mounts,
+            &preflight.runtime_mounts,
+            RuntimeInvocation::new(
+                runtime.server_command().argv,
+                workspace.canonical_target.clone(),
+            ),
+        )
+        .create()
+        .clone()
 }
