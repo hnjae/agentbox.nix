@@ -10,7 +10,7 @@ use crate::cli::StopArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
 use crate::prompt;
-use crate::session::{SessionRecord, discover_managed_sessions};
+use crate::session::{SessionRecord, discover_agentbox_containers};
 use crate::{Error, Result};
 
 use super::session_targets::SessionTargetKind;
@@ -44,10 +44,10 @@ fn select_stop_targets() -> Result<Vec<StopTargetInput>> {
         "agentbox stop requires a target or --all when stdin or stderr is not a TTY";
     prompt::require_interactive_terminal(non_tty_error)?;
     let podman = Podman::new();
-    let candidates = stop_prompt_candidates(&discover_managed_sessions(&podman)?);
+    let candidates = stop_prompt_candidates(&discover_agentbox_containers(&podman)?);
 
     if candidates.is_empty() {
-        diagnostic::info("agentbox stop: no managed sessions available to stop");
+        diagnostic::info("agentbox stop: no agentbox containers available to stop");
         return Ok(Vec::new());
     }
 

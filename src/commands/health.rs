@@ -155,6 +155,7 @@ mod tests {
 
     use serde_json::Value;
 
+    use crate::metadata::AgentboxContainerKind;
     use crate::runtime::{AttachEndpoint, RuntimeHealth, RuntimeKind};
     use crate::session::{SessionMetadata, SessionRecord, SessionStatus};
 
@@ -165,6 +166,7 @@ mod tests {
         let session = SessionRecord {
             container_id: "container-id".to_string(),
             container_name: "broken-container".to_string(),
+            container_kind: AgentboxContainerKind::Managed,
             metadata: SessionMetadata::from_labels(&BTreeMap::new()),
             attach_endpoint: None,
             container_running: true,

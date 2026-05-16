@@ -10,7 +10,8 @@ use camino::Utf8Path;
 
 use crate::git::Git;
 use crate::metadata::{
-    LABEL_GIT_ROOT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE, required_label_value,
+    AgentboxContainerKind, LABEL_GIT_ROOT_HASH, agentbox_container_kind_from_labels,
+    required_label_value,
 };
 use crate::podman::{Podman, PodmanContainerInspect, PodmanContainerMount, PodmanPsContainer};
 use crate::workspace::git_root_hash12;
@@ -22,21 +23,65 @@ use super::record::{SessionMetadata, SessionRecord};
 use super::status::{SessionStatusInput, derive_status, mark_duplicate_sessions};
 
 pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_podman(podman, SessionDiscoveryScope::All)
+    discover_scoped_sessions_from_podman(
+        podman,
+        SessionDiscoveryScope::All,
+        ContainerDiscoveryScope::ManagedSessions,
+    )
+}
+
+pub fn discover_agentbox_containers(podman: &Podman) -> Result<Vec<SessionRecord>> {
+    discover_scoped_sessions_from_podman(
+        podman,
+        SessionDiscoveryScope::All,
+        ContainerDiscoveryScope::AgentboxOwned,
+    )
 }
 
 pub fn discover_managed_sessions_from_ps(
     containers: Vec<PodmanPsContainer>,
     inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
 ) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_ps(containers, SessionDiscoveryScope::All, inspect_container)
+    discover_scoped_sessions_from_ps(
+        containers,
+        SessionDiscoveryScope::All,
+        ContainerDiscoveryScope::ManagedSessions,
+        inspect_container,
+    )
+}
+
+pub fn discover_agentbox_containers_from_ps(
+    containers: Vec<PodmanPsContainer>,
+    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+) -> Result<Vec<SessionRecord>> {
+    discover_scoped_sessions_from_ps(
+        containers,
+        SessionDiscoveryScope::All,
+        ContainerDiscoveryScope::AgentboxOwned,
+        inspect_container,
+    )
 }
 
 pub fn discover_sessions_for_git_root(
     podman: &Podman,
     git_root: &Utf8Path,
 ) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_podman(podman, SessionDiscoveryScope::for_git_root(git_root))
+    discover_scoped_sessions_from_podman(
+        podman,
+        SessionDiscoveryScope::for_git_root(git_root),
+        ContainerDiscoveryScope::AgentboxOwned,
+    )
+}
+
+pub fn discover_managed_sessions_for_git_root(
+    podman: &Podman,
+    git_root: &Utf8Path,
+) -> Result<Vec<SessionRecord>> {
+    discover_scoped_sessions_from_podman(
+        podman,
+        SessionDiscoveryScope::for_git_root(git_root),
+        ContainerDiscoveryScope::ManagedSessions,
+    )
 }
 
 pub fn discover_sessions_for_git_root_from_ps(
@@ -47,6 +92,20 @@ pub fn discover_sessions_for_git_root_from_ps(
     discover_scoped_sessions_from_ps(
         containers,
         SessionDiscoveryScope::for_git_root(git_root),
+        ContainerDiscoveryScope::AgentboxOwned,
+        inspect_container,
+    )
+}
+
+pub fn discover_managed_sessions_for_git_root_from_ps(
+    containers: Vec<PodmanPsContainer>,
+    git_root: &Utf8Path,
+    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+) -> Result<Vec<SessionRecord>> {
+    discover_scoped_sessions_from_ps(
+        containers,
+        SessionDiscoveryScope::for_git_root(git_root),
+        ContainerDiscoveryScope::ManagedSessions,
         inspect_container,
     )
 }
@@ -54,8 +113,13 @@ pub fn discover_sessions_for_git_root_from_ps(
 fn discover_scoped_sessions_from_podman(
     podman: &Podman,
     scope: SessionDiscoveryScope<'_>,
+    container_scope: ContainerDiscoveryScope,
 ) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_ps(podman.ps()?, scope, |container_id| {
+    let containers = match container_scope {
+        ContainerDiscoveryScope::ManagedSessions => podman.ps()?,
+        ContainerDiscoveryScope::AgentboxOwned => podman.ps_all()?,
+    };
+    discover_scoped_sessions_from_ps(containers, scope, container_scope, |container_id| {
         podman.inspect_one(container_id)
     })
 }
@@ -63,10 +127,26 @@ fn discover_scoped_sessions_from_podman(
 fn discover_scoped_sessions_from_ps(
     containers: Vec<PodmanPsContainer>,
     scope: SessionDiscoveryScope<'_>,
+    container_scope: ContainerDiscoveryScope,
     inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
 ) -> Result<Vec<SessionRecord>> {
     let git = Git::new();
-    discover_sessions_from_ps_with_git(containers, scope, inspect_container, &git)
+    discover_sessions_from_ps_with_git(containers, scope, container_scope, inspect_container, &git)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContainerDiscoveryScope {
+    ManagedSessions,
+    AgentboxOwned,
+}
+
+impl ContainerDiscoveryScope {
+    fn includes(self, kind: AgentboxContainerKind) -> bool {
+        match self {
+            Self::ManagedSessions => kind == AgentboxContainerKind::Managed,
+            Self::AgentboxOwned => true,
+        }
+    }
 }
 
 enum SessionDiscoveryScope<'a> {
@@ -180,18 +260,22 @@ impl<'a> SessionCollector<'a> {
 fn discover_sessions_from_ps_with_git(
     containers: Vec<PodmanPsContainer>,
     scope: SessionDiscoveryScope<'_>,
+    container_scope: ContainerDiscoveryScope,
     mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
     git: &Git,
 ) -> Result<Vec<SessionRecord>> {
     let mut collector = SessionCollector::new(scope);
 
-    for container in containers.into_iter().filter(ps_candidate_is_managed) {
+    for (container, container_kind) in containers
+        .into_iter()
+        .filter_map(|container| ps_candidate(container, container_scope))
+    {
         if !collector.scope.should_inspect_ps_candidate(&container) {
             continue;
         }
 
         let inspect = inspect_container(&container.id)?;
-        let record = build_session_record(container, inspect, git);
+        let record = build_session_record(container, inspect, container_kind, git);
         collector.collect(record);
     }
 
@@ -201,14 +285,17 @@ fn discover_sessions_from_ps_with_git(
 fn build_session_record(
     container: PodmanPsContainer,
     inspect: PodmanContainerInspect,
+    container_kind: AgentboxContainerKind,
     git: &Git,
 ) -> SessionRecord {
-    InspectedManagedContainer::from_podman(container, inspect).into_session_record(git)
+    InspectedAgentboxContainer::from_podman(container, inspect, container_kind)
+        .into_session_record(git)
 }
 
-struct InspectedManagedContainer {
+struct InspectedAgentboxContainer {
     container_id: String,
     container_name: String,
+    container_kind: AgentboxContainerKind,
     metadata: SessionMetadata,
     label_report: SessionLabelReport,
     attach_endpoint: AttachEndpointReport,
@@ -216,8 +303,12 @@ struct InspectedManagedContainer {
     mounts: Vec<PodmanContainerMount>,
 }
 
-impl InspectedManagedContainer {
-    fn from_podman(container: PodmanPsContainer, inspect: PodmanContainerInspect) -> Self {
+impl InspectedAgentboxContainer {
+    fn from_podman(
+        container: PodmanPsContainer,
+        inspect: PodmanContainerInspect,
+        container_kind: AgentboxContainerKind,
+    ) -> Self {
         let labels = &inspect.config.labels;
         let container_name = container
             .names
@@ -235,6 +326,7 @@ impl InspectedManagedContainer {
         Self {
             container_id: container.id,
             container_name,
+            container_kind,
             metadata,
             label_report,
             attach_endpoint,
@@ -256,6 +348,7 @@ impl InspectedManagedContainer {
         SessionRecord {
             container_id: self.container_id,
             container_name: self.container_name,
+            container_kind: self.container_kind,
             metadata: self.metadata,
             attach_endpoint,
             container_running: self.running,
@@ -264,6 +357,14 @@ impl InspectedManagedContainer {
     }
 }
 
-fn ps_candidate_is_managed(container: &PodmanPsContainer) -> bool {
-    required_label_value(&container.labels, LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE)
+fn ps_candidate(
+    container: PodmanPsContainer,
+    container_scope: ContainerDiscoveryScope,
+) -> Option<(PodmanPsContainer, AgentboxContainerKind)> {
+    let kind = agentbox_container_kind_from_labels(&container.labels)?;
+    if container_scope.includes(kind) {
+        Some((container, kind))
+    } else {
+        None
+    }
 }

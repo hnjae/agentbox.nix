@@ -4,16 +4,16 @@ use serde::Serialize;
 use crate::cli::{LsArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
-use crate::session::{SessionRecord, discover_managed_sessions, sorted_session_refs_by_identity};
+use crate::session::{
+    SessionRecord, discover_agentbox_containers, sorted_session_refs_by_identity,
+};
 
 use super::output;
-use super::session_output::{
-    SessionDisplay, SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
-};
+use super::session_output::{SessionDisplay, SessionJsonFields};
 
 pub fn run(args: LsArgs) -> Result<()> {
     let podman = Podman::new();
-    let sessions = discover_managed_sessions(&podman)?;
+    let sessions = discover_agentbox_containers(&podman)?;
     match args.output {
         OutputFormat::Table => print_table(&sessions),
         OutputFormat::Json => print_json(&sessions)?,
@@ -31,12 +31,20 @@ pub fn print_json(sessions: &[SessionRecord]) -> Result<()> {
 }
 
 pub fn render_table(sessions: &[SessionRecord]) -> String {
-    let mut table = output::table(["ID", "CANONICAL GIT ROOT", "RUNTIME", "STATUS", "ENDPOINT"]);
+    let mut table = output::table([
+        "ID",
+        "TYPE",
+        "CANONICAL GIT ROOT",
+        "RUNTIME",
+        "STATUS",
+        "ENDPOINT",
+    ]);
 
     for session in sorted_session_refs_by_identity(sessions) {
         let display = SessionDisplay::from_session(session);
         table.add_row([
             Cell::new(display.id_or_unknown()),
+            Cell::new(session.container_kind().output_type()),
             Cell::new(display.canonical_git_root_or_unknown()),
             Cell::new(display.runtime_or_unknown()),
             Cell::new(session.status.as_str()),
@@ -58,11 +66,14 @@ pub fn render_json(sessions: &[SessionRecord]) -> Result<String> {
 
 #[derive(Debug, Serialize)]
 struct LsJsonRow<'a> {
-    #[serde(flatten)]
-    leading: SessionJsonLeadingFields<'a>,
+    id: Option<&'a str>,
+    #[serde(rename = "type")]
+    container_type: &'static str,
+    canonical_git_root: Option<&'a str>,
+    runtime: Option<&'a str>,
     status: &'static str,
-    #[serde(flatten)]
-    trailing: SessionJsonTrailingFields<'a>,
+    endpoint: Option<String>,
+    container_name: &'a str,
 }
 
 impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
@@ -70,9 +81,13 @@ impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
         let fields = SessionJsonFields::from_session(session);
 
         Self {
-            leading: fields.leading,
+            id: fields.leading.id,
+            container_type: session.container_kind().output_type(),
+            canonical_git_root: fields.leading.canonical_git_root,
+            runtime: fields.leading.runtime,
             status: session.status.as_str(),
-            trailing: fields.trailing,
+            endpoint: fields.trailing.endpoint,
+            container_name: fields.trailing.container_name,
         }
     }
 }

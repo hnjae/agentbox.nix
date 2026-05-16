@@ -11,7 +11,7 @@ use std::fmt;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::metadata::{ManagedSessionLabelInput, managed_session_labels};
+use crate::metadata::{ManagedSessionLabelInput, managed_session_labels, transient_run_labels};
 use crate::preflight::NIX_CACHE_DESTINATION;
 use crate::workspace::WorkspaceIdentity;
 
@@ -151,10 +151,6 @@ pub enum RuntimeRunMode {
 }
 
 impl RuntimeRunMode {
-    fn managed(self) -> bool {
-        matches!(self, Self::ManagedSession)
-    }
-
     fn publishes_attach_endpoint(self) -> bool {
         matches!(self, Self::ManagedSession | Self::TransientServer)
     }
@@ -234,12 +230,11 @@ impl RuntimeKind {
         command: impl Into<Vec<String>>,
     ) -> RuntimeCreateSpec {
         let image = self.default_image();
-        let labels = if mode.managed() {
-            managed_session_labels(ManagedSessionLabelInput::from_workspace(
-                workspace, &image, self,
-            ))
-        } else {
-            BTreeMap::new()
+        let label_input = ManagedSessionLabelInput::from_workspace(workspace, &image, self);
+        let labels = match mode {
+            RuntimeRunMode::ManagedSession => managed_session_labels(label_input),
+            RuntimeRunMode::TransientServer => transient_run_labels(label_input),
+            RuntimeRunMode::Foreground => BTreeMap::new(),
         };
         let published_ports = if mode.publishes_attach_endpoint() {
             vec![self.attach_spec().published_port(DEFAULT_HOST_ATTACH_IP)]

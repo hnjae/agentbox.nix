@@ -15,8 +15,9 @@ mod support;
 
 use support::{
     CliHarness as Harness, ReadyEndpoint, managed_inspect_fixture, managed_ps_entry,
-    opencode_managed_labels, opencode_workspace_inspect_fixture, ps_fixture,
-    running_workspace_inspect_fixture_with_host_port, workspace_ps_entry,
+    opencode_managed_labels, opencode_transient_run_labels, opencode_workspace_inspect_fixture,
+    ps_fixture, running_workspace_inspect_fixture_with_host_port, transient_run_ps_entry,
+    workspace_ps_entry,
 };
 
 #[test]
@@ -196,10 +197,12 @@ fn health_json_reports_healthy_and_unhealthy_rows_without_failing() {
 #[test]
 fn health_filters_non_running_session_statuses() {
     let running_fixture = support::temp_workspace("running");
+    let run_fixture = support::temp_workspace("run");
     let stopped_fixture = support::temp_workspace("stopped");
     let failed_fixture = support::temp_workspace("failed");
     let orphan_fixture = support::temp_workspace("orphan");
     let running = &running_fixture.workspace;
+    let transient = &run_fixture.workspace;
     let stopped = &stopped_fixture.workspace;
     let failed = &failed_fixture.workspace;
     let orphan = &orphan_fixture.workspace;
@@ -208,6 +211,7 @@ fn health_filters_non_running_session_statuses() {
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(vec![
         workspace_ps_entry("running-id", running),
+        transient_run_ps_entry("run-id", &transient.container_name, &transient.hash12),
         workspace_ps_entry("stopped-id", stopped),
         workspace_ps_entry("failed-id", failed),
         workspace_ps_entry("orphan-id", orphan),
@@ -219,6 +223,20 @@ fn health_filters_non_running_session_statuses() {
             &RuntimeKind::Opencode.default_image(),
             RuntimeKind::Opencode,
             port,
+        ),
+    );
+    harness.write_inspect(
+        "run-id",
+        &managed_inspect_fixture(
+            &transient.container_name,
+            transient.canonical_git_root.as_str(),
+            true,
+            true,
+            opencode_transient_run_labels(
+                transient.canonical_git_root.as_str(),
+                &transient.hash12,
+                &transient.container_name,
+            ),
         ),
     );
     harness.write_inspect(
@@ -239,6 +257,7 @@ fn health_filters_non_running_session_statuses() {
     endpoint.wait();
 
     assert!(stdout.contains(&running.hash12));
+    assert!(!stdout.contains(&transient.hash12));
     assert!(!stdout.contains(&stopped.hash12));
     assert!(!stdout.contains(&failed.hash12));
     assert!(!stdout.contains(&orphan.hash12));

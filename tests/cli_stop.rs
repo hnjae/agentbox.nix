@@ -10,7 +10,7 @@ use std::path::Path;
 
 use agentbox::commands::stop::stop_prompt_candidates;
 use agentbox::metadata::{LABEL_ATTACH_SCHEME, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH};
-use agentbox::session::discover_managed_sessions_from_ps;
+use agentbox::session::discover_agentbox_containers_from_ps;
 use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
 
@@ -20,8 +20,10 @@ mod support;
 use support::{
     CliHarness as Harness, cached_managed_inspect_fixture as managed_inspect_fixture,
     inspect_models_by_id, managed_container_models, managed_ps_entry,
-    opencode_managed_labels as managed_labels, opencode_workspace_inspect_fixture, operation_names,
-    ps_fixture, workspace_ps_entry,
+    opencode_managed_labels as managed_labels,
+    opencode_transient_run_labels as transient_run_labels, opencode_workspace_inspect_fixture,
+    operation_names, ps_fixture, transient_run_container_models, transient_run_ps_entry,
+    workspace_ps_entry,
 };
 
 #[test]
@@ -59,6 +61,74 @@ fn stop_stops_the_container_and_leaves_the_volume_and_workspace_untouched() {
 }
 
 #[test]
+fn stop_path_target_stops_transient_run_container() {
+    let fixture = support::temp_workspace("run");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![transient_run_ps_entry(
+        "run-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "run-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            transient_run_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                &workspace.container_name,
+            ),
+        ),
+    );
+
+    run_command(&harness, target, &[]).success();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
+    assert!(log[2].contains(&workspace.container_name));
+}
+
+#[test]
+fn stop_stable_id_target_stops_transient_run_container() {
+    let fixture = support::temp_workspace("run");
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![transient_run_ps_entry(
+        "run-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "run-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            transient_run_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                &workspace.container_name,
+            ),
+        ),
+    );
+
+    run_command(&harness, Path::new(&workspace.hash12[..6]), &[]).success();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        ["ps", "inspect", "stop", "container-exists"]
+    );
+}
+
+#[test]
 fn stop_without_targets_requires_tty_for_selection() {
     let harness = install_harness();
 
@@ -75,9 +145,11 @@ fn stop_without_targets_requires_tty_for_selection() {
 #[test]
 fn stop_prompt_candidates_include_stop_completion_eligible_sessions() {
     let running_fixture = support::temp_workspace("running");
+    let run_fixture = support::temp_workspace("transient-run");
     let failed_fixture = support::temp_workspace("failed");
     let unidentifiable_fixture = support::temp_workspace("unidentifiable");
     let running = &running_fixture.workspace;
+    let transient = &run_fixture.workspace;
     let failed = &failed_fixture.workspace;
     let unidentifiable = &unidentifiable_fixture.workspace;
     let (running_ps, running_inspect) = managed_container_models(
@@ -89,6 +161,12 @@ fn stop_prompt_candidates_include_stop_completion_eligible_sessions() {
     let (failed_ps, mut failed_inspect) = managed_container_models(
         &failed.container_name,
         failed.canonical_git_root.as_ref(),
+        true,
+        true,
+    );
+    let (run_ps, run_inspect) = transient_run_container_models(
+        &transient.container_name,
+        transient.canonical_git_root.as_ref(),
         true,
         true,
     );
@@ -104,10 +182,11 @@ fn stop_prompt_candidates_include_stop_completion_eligible_sessions() {
         .labels
         .remove(LABEL_GIT_ROOT_HASH);
 
-    let sessions = discover_managed_sessions_from_ps(
-        vec![running_ps, failed_ps, unidentifiable_ps],
+    let sessions = discover_agentbox_containers_from_ps(
+        vec![running_ps, run_ps, failed_ps, unidentifiable_ps],
         inspect_models_by_id(vec![
             running_inspect,
+            run_inspect,
             failed_inspect,
             unidentifiable_inspect,
         ]),
@@ -120,7 +199,11 @@ fn stop_prompt_candidates_include_stop_completion_eligible_sessions() {
         .map(|candidate| candidate.value().clone())
         .collect::<Vec<_>>();
     targets.sort();
-    let mut expected = vec![failed.hash12.clone(), running.hash12.clone()];
+    let mut expected = vec![
+        failed.hash12.clone(),
+        running.hash12.clone(),
+        transient.hash12.clone(),
+    ];
     expected.sort();
 
     assert_eq!(targets, expected);
@@ -219,7 +302,7 @@ fn stop_reports_aggregate_failures_after_processing_other_targets() {
         .stderr(predicates::str::contains("failed to stop 1 target"))
         .stderr(predicates::str::contains("`deadbeef`"))
         .stderr(predicates::str::contains(
-            "no managed session id matches prefix `deadbeef`",
+            "no agentbox container id matches prefix `deadbeef`",
         ));
 
     let log = harness.read_log();
@@ -354,7 +437,7 @@ fn stop_duplicate_root_requires_force_before_cleanup() {
     run_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
-            "duplicate managed sessions exist",
+            "duplicate agentbox containers exist",
         ))
         .stderr(predicates::str::contains("agentbox stop --force"));
 
@@ -446,7 +529,7 @@ fn stop_missing_absolute_path_without_exact_stored_match_fails() {
     run_command(&harness, target.as_std_path(), &[])
         .failure()
         .stderr(predicates::str::contains(
-            "no managed session exists for exact stored git-root path",
+            "no agentbox container exists for exact stored git-root path",
         ))
         .stderr(predicates::str::contains(target.as_str()));
 
@@ -467,7 +550,7 @@ fn stop_duplicate_exact_missing_stored_path_requires_force_before_cleanup() {
     run_command(&harness, Path::new(&root_string), &[])
         .failure()
         .stderr(predicates::str::contains(
-            "duplicate managed sessions exist for exact stored git-root path",
+            "duplicate agentbox containers exist for exact stored git-root path",
         ))
         .stderr(predicates::str::contains("agentbox stop --force"));
 
@@ -534,7 +617,7 @@ fn stop_stable_id_prefix_reports_no_match() {
     run_command(&harness, Path::new("deadbeef"), &[])
         .failure()
         .stderr(predicates::str::contains(
-            "no managed session id matches prefix `deadbeef`",
+            "no agentbox container id matches prefix `deadbeef`",
         ));
 
     let log = harness.read_log();
@@ -629,7 +712,7 @@ fn stop_stable_id_duplicate_requires_force_before_cleanup() {
     run_command(&harness, Path::new(&workspace.hash12[..6]), &[])
         .failure()
         .stderr(predicates::str::contains(
-            "duplicate managed sessions exist for stable id",
+            "duplicate agentbox containers exist for stable id",
         ))
         .stderr(predicates::str::contains("agentbox stop --force"));
 
@@ -694,14 +777,17 @@ fn stop_force_removes_all_duplicate_stable_id_matches() {
 fn stop_all_stops_running_managed_sessions_and_ignores_stopped_ones() {
     let first_fixture = support::temp_workspace("first");
     let second_fixture = support::temp_workspace("second");
+    let run_fixture = support::temp_workspace("run");
     let stopped_fixture = support::temp_workspace("stopped");
     let first = &first_fixture.workspace;
     let second = &second_fixture.workspace;
+    let transient = &run_fixture.workspace;
     let stopped = &stopped_fixture.workspace;
     let harness = install_harness();
     harness.write_ps(&ps_fixture(vec![
         workspace_ps_entry("first-id", first),
         workspace_ps_entry("second-id", second),
+        transient_run_ps_entry("run-id", &transient.container_name, &transient.hash12),
         workspace_ps_entry("stopped-id", stopped),
     ]));
     harness.write_inspect(
@@ -711,6 +797,19 @@ fn stop_all_stops_running_managed_sessions_and_ignores_stopped_ones() {
     harness.write_inspect(
         "second-id",
         &opencode_workspace_inspect_fixture(second, true, true),
+    );
+    harness.write_inspect(
+        "run-id",
+        &managed_inspect_fixture(
+            &transient.container_name,
+            transient.canonical_git_root.as_str(),
+            true,
+            transient_run_labels(
+                transient.canonical_git_root.as_str(),
+                &transient.hash12,
+                &transient.container_name,
+            ),
+        ),
     );
     harness.write_inspect(
         "stopped-id",
@@ -724,7 +823,7 @@ fn stop_all_stops_running_managed_sessions_and_ignores_stopped_ones() {
         .iter()
         .filter(|line| line.starts_with("stop "))
         .collect::<Vec<_>>();
-    assert_eq!(stop_lines.len(), 2);
+    assert_eq!(stop_lines.len(), 3);
     assert!(
         stop_lines
             .iter()
@@ -736,6 +835,11 @@ fn stop_all_stops_running_managed_sessions_and_ignores_stopped_ones() {
             .any(|line| line.contains(&second.container_name))
     );
     assert!(
+        stop_lines
+            .iter()
+            .any(|line| line.contains(&transient.container_name))
+    );
+    assert!(
         !stop_lines
             .iter()
             .any(|line| line.contains(&stopped.container_name))
@@ -745,7 +849,7 @@ fn stop_all_stops_running_managed_sessions_and_ignores_stopped_ones() {
             .into_iter()
             .filter(|operation| *operation == "stop")
             .count(),
-        2
+        3
     );
 }
 

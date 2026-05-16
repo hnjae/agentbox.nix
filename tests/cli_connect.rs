@@ -11,7 +11,7 @@ use std::fs;
 use agentbox::commands::connect::connect_prompt_candidates;
 use agentbox::metadata::{LABEL_ATTACH_SCHEME, LABEL_LAUNCH_DIRECTORY};
 use agentbox::runtime::RuntimeKind;
-use agentbox::session::discover_managed_sessions_from_ps;
+use agentbox::session::discover_agentbox_containers_from_ps;
 use agentbox::workspace::resolve_workspace_identity;
 
 #[path = "support/mod.rs"]
@@ -20,7 +20,8 @@ mod support;
 use support::{
     CliHarness as Harness, inspect_models_by_id, managed_container_models, managed_inspect_fixture,
     managed_ps_entry, opencode_managed_labels as managed_labels, opencode_workspace_labels,
-    operation_names, ps_fixture, running_workspace_inspect_fixture, workspace_ps_entry,
+    operation_names, ps_fixture, running_workspace_inspect_fixture, transient_run_container_models,
+    workspace_ps_entry,
 };
 
 #[test]
@@ -79,9 +80,11 @@ fn connect_without_target_requires_tty_for_selection() {
 #[test]
 fn connect_prompt_candidates_include_only_connectable_running_sessions() {
     let running_fixture = support::temp_workspace("running");
+    let run_fixture = support::temp_workspace("run");
     let stopped_fixture = support::temp_workspace("stopped");
     let failed_fixture = support::temp_workspace("failed");
     let running = &running_fixture.workspace;
+    let transient = &run_fixture.workspace;
     let stopped = &stopped_fixture.workspace;
     let failed = &failed_fixture.workspace;
     let (running_ps, running_inspect) = managed_container_models(
@@ -96,6 +99,12 @@ fn connect_prompt_candidates_include_only_connectable_running_sessions() {
         false,
         true,
     );
+    let (run_ps, run_inspect) = transient_run_container_models(
+        &transient.container_name,
+        transient.canonical_git_root.as_ref(),
+        true,
+        true,
+    );
     let (failed_ps, mut failed_inspect) = managed_container_models(
         &failed.container_name,
         failed.canonical_git_root.as_ref(),
@@ -104,9 +113,14 @@ fn connect_prompt_candidates_include_only_connectable_running_sessions() {
     );
     failed_inspect.config.labels.remove(LABEL_ATTACH_SCHEME);
 
-    let sessions = discover_managed_sessions_from_ps(
-        vec![running_ps, stopped_ps, failed_ps],
-        inspect_models_by_id(vec![running_inspect, stopped_inspect, failed_inspect]),
+    let sessions = discover_agentbox_containers_from_ps(
+        vec![running_ps, run_ps, stopped_ps, failed_ps],
+        inspect_models_by_id(vec![
+            running_inspect,
+            run_inspect,
+            stopped_inspect,
+            failed_inspect,
+        ]),
     )
     .unwrap();
 

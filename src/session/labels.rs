@@ -10,10 +10,11 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::Error;
 use crate::metadata::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME,
-    REQUIRED_SESSION_MARKER_LABEL_VALUES, REQUIRED_SESSION_METADATA_LABELS,
-    REQUIRED_SESSION_WORKSPACE_IDENTITY_LABELS,
+    AgentboxContainerKind, LABEL_ATTACH_SCHEME, LABEL_CONTAINER_KIND,
+    LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT,
+    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_MANAGED,
+    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    REQUIRED_SESSION_METADATA_LABELS, REQUIRED_SESSION_WORKSPACE_IDENTITY_LABELS,
 };
 use crate::paths::path_is_or_descendant;
 use crate::runtime::{RuntimeAttachSpec, RuntimeKind};
@@ -177,9 +178,7 @@ impl SessionIdentityLabels {
     }
 
     fn from_session_labels(labels: &SessionMetadata) -> SessionLabelResult<Self> {
-        for (name, expected) in REQUIRED_SESSION_MARKER_LABEL_VALUES {
-            require_session_label_value(labels, name, expected)?;
-        }
+        require_agentbox_container_marker(labels)?;
 
         require_session_labels(labels, REQUIRED_SESSION_WORKSPACE_IDENTITY_LABELS)?;
 
@@ -194,6 +193,21 @@ impl SessionIdentityLabels {
 
     fn hash_matches_root(&self) -> bool {
         self.git_root_hash == git_root_hash12(&self.canonical_git_root)
+    }
+}
+
+fn require_agentbox_container_marker(labels: &SessionMetadata) -> SessionLabelResult<()> {
+    match labels.container_kind() {
+        Some(AgentboxContainerKind::Managed) => {
+            require_session_label_value(labels, LABEL_MANAGED, LABEL_MANAGED_VALUE)?;
+            require_session_label_value(labels, LABEL_SCHEMA, LABEL_SCHEMA_VALUE)
+        }
+        Some(AgentboxContainerKind::Run) => require_session_label_value(
+            labels,
+            LABEL_CONTAINER_KIND,
+            LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE,
+        ),
+        None => Err(SessionFailure::MissingRequiredLabels),
     }
 }
 

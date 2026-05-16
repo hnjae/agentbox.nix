@@ -1,5 +1,5 @@
 use crate::Error;
-use crate::metadata::LABEL_LOGICAL_NAME;
+use crate::metadata::{AgentboxContainerKind, LABEL_LOGICAL_NAME};
 use crate::podman::{Podman, PodmanContainerInspect};
 use crate::runtime::RuntimeCreateSpec;
 use crate::workspace::WorkspaceIdentity;
@@ -8,7 +8,7 @@ use super::labels::{SessionIdentityLabels, SessionLabelReport};
 use super::mounts::has_volume_mount_destination;
 use super::{
     REQUIRED_NIX_CACHE_MOUNT_DESTINATION, SessionFailure, SessionMetadata, SessionRecord,
-    SessionStatus, failed_session_requires_action_error, session_failure_requires_action_error,
+    SessionStatus, failed_session_requires_action_error, resource_failure_requires_action_error,
 };
 
 pub(crate) fn existing_session_error(
@@ -21,7 +21,7 @@ pub(crate) fn existing_session_error(
     }
 
     match session.status {
-        SessionStatus::Running => running_existing_session_error(workspace, session),
+        SessionStatus::Running => running_existing_resource_error(workspace, session),
         SessionStatus::Orphaned => Error::orphaned_managed_session(
             workspace.canonical_git_root.as_ref(),
             &session.container_name,
@@ -72,14 +72,16 @@ fn classify_named_container_conflict(
     let metadata = SessionMetadata::from_labels(&inspect.config.labels);
     let container_name = inspect_container_name(&metadata, expected_name);
 
-    if !metadata.is_managed() {
+    let Some(container_kind) = metadata.container_kind() else {
         return unmanaged_container_conflict_error(workspace);
-    }
+    };
 
     let label_report = SessionLabelReport::from_metadata(&metadata);
     let identity = match label_report.identity_labels() {
         Ok(identity) => identity,
-        Err(failure) => return failure_conflict_error(workspace, &container_name, failure),
+        Err(failure) => {
+            return failure_conflict_error(workspace, container_kind, &container_name, failure);
+        }
     };
     let same_root_failure = label_report
         .required_failure()
@@ -88,6 +90,7 @@ fn classify_named_container_conflict(
     ManagedContainerConflict {
         workspace,
         container_name: &container_name,
+        container_kind,
         identity,
         same_root_failure,
         inspect,
@@ -98,6 +101,7 @@ fn classify_named_container_conflict(
 struct ManagedContainerConflict<'a> {
     workspace: &'a WorkspaceIdentity,
     container_name: &'a str,
+    container_kind: AgentboxContainerKind,
     identity: &'a SessionIdentityLabels,
     same_root_failure: Option<SessionFailure>,
     inspect: &'a PodmanContainerInspect,
@@ -131,12 +135,18 @@ impl ManagedContainerConflict<'_> {
 
     fn same_root_error(&self) -> Error {
         if let Some(failure) = self.same_root_failure {
-            return failure_conflict_error(self.workspace, self.container_name, failure);
+            return failure_conflict_error(
+                self.workspace,
+                self.container_kind,
+                self.container_name,
+                failure,
+            );
         }
 
         if !self.hash_matches_workspace() {
             return failure_conflict_error(
                 self.workspace,
+                self.container_kind,
                 self.container_name,
                 SessionFailure::DriftedGitRootHash,
             );
@@ -149,6 +159,7 @@ impl ManagedContainerConflict<'_> {
         if !has_cache_volume {
             return failure_conflict_error(
                 self.workspace,
+                self.container_kind,
                 self.container_name,
                 SessionFailure::MissingCacheMount,
             );
@@ -168,8 +179,12 @@ impl ManagedContainerConflict<'_> {
     }
 
     fn different_root_error(&self) -> Error {
+        let resource = match self.container_kind {
+            AgentboxContainerKind::Managed => "managed session",
+            AgentboxContainerKind::Run => "transient run container",
+        };
         Error::msg(format!(
-            "container name `{}` is already used by managed session `{}` for `{}`; remove or rename the conflicting container before retrying `{}`",
+            "container name `{}` is already used by {resource} `{}` for `{}`; remove or rename the conflicting container before retrying `{}`",
             self.workspace.container_name,
             self.container_name,
             self.identity.canonical_git_root(),
@@ -189,14 +204,30 @@ pub(crate) fn duplicate_sessions_error(workspace: &WorkspaceIdentity) -> Error {
     Error::duplicate_managed_sessions(workspace.canonical_git_root.as_ref())
 }
 
-fn running_existing_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
-    Error::msg(format!(
-        "managed session `{}` is already running for `{}`; use `agentbox connect {}` to connect to it or `agentbox stop {}` to stop it first",
-        session.container_name,
-        workspace.canonical_git_root,
-        workspace.requested_target,
-        workspace.requested_target,
-    ))
+pub(crate) fn duplicate_agentbox_containers_error(workspace: &WorkspaceIdentity) -> Error {
+    Error::duplicate_agentbox_containers(workspace.canonical_git_root.as_ref())
+}
+
+fn running_existing_resource_error(
+    workspace: &WorkspaceIdentity,
+    session: &SessionRecord,
+) -> Error {
+    match session.container_kind() {
+        AgentboxContainerKind::Managed => Error::msg(format!(
+            "managed session `{}` is already running for `{}`; use `agentbox connect {}` to connect to it or `agentbox stop {}` to stop it first",
+            session.container_name,
+            workspace.canonical_git_root,
+            workspace.requested_target,
+            workspace.requested_target,
+        )),
+        AgentboxContainerKind::Run => {
+            let target = session.stable_id().unwrap_or(&session.container_name);
+            Error::msg(format!(
+                "transient run container `{}` is already running for `{}`; use `agentbox stop {target}` to stop it first",
+                session.container_name, workspace.canonical_git_root,
+            ))
+        }
+    }
 }
 
 fn generic_failed_session_error(workspace: &WorkspaceIdentity, container_name: &str) -> Error {
@@ -205,10 +236,12 @@ fn generic_failed_session_error(workspace: &WorkspaceIdentity, container_name: &
 
 fn failure_conflict_error(
     workspace: &WorkspaceIdentity,
+    container_kind: AgentboxContainerKind,
     container_name: &str,
     failure: SessionFailure,
 ) -> Error {
-    session_failure_requires_action_error(
+    resource_failure_requires_action_error(
+        container_kind,
         workspace.canonical_git_root.as_ref(),
         container_name,
         failure,

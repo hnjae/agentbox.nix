@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use agentbox::cli::{Cli, Command, LsArgs, OutputFormat};
 use agentbox::commands::ls::{render_json, render_table};
 use agentbox::metadata::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    AgentboxContainerKind, LABEL_ATTACH_SCHEME, LABEL_CONTAINER_KIND,
+    LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT,
+    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME,
+    LABEL_MANAGED, LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::runtime::AttachEndpoint;
 use agentbox::session::{SessionMetadata, SessionRecord, SessionStatus};
@@ -42,6 +43,8 @@ fn ls_renders_all_status_rows_in_stable_order() {
         "roots sort lexicographically"
     );
     assert!(table.lines().next().unwrap().starts_with("ID"));
+    assert!(table.lines().next().unwrap().contains("TYPE"));
+    assert!(table.contains("managed"));
     assert!(table.contains("hash"));
     assert!(table.contains("running"));
     assert!(table.contains("orphaned"));
@@ -91,6 +94,7 @@ fn ls_renders_json_rows_in_stable_order() {
 
     assert_eq!(names, ["alpha-one", "alpha-two", "beta", "gamma"]);
     assert_eq!(rows[0]["id"], "hash");
+    assert_eq!(rows[0]["type"], "managed");
     assert_eq!(rows[0]["canonical_git_root"], "/workspace/a");
     assert_eq!(rows[0]["runtime"], "opencode");
     assert_eq!(rows[0]["status"], "running");
@@ -117,7 +121,7 @@ fn ls_renders_null_for_unrecoverable_json_fields() {
     assert_eq!(
         json,
         concat!(
-            r#"[{"id":null,"canonical_git_root":null,"runtime":null,"status":"failed","endpoint":null,"container_name":"broken"}]"#,
+            r#"[{"id":null,"type":"managed","canonical_git_root":null,"runtime":null,"status":"failed","endpoint":null,"container_name":"broken"}]"#,
             "\n"
         )
     );
@@ -152,6 +156,7 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
     SessionRecord {
         container_id: format!("{name}-id"),
         container_name: name.to_string(),
+        container_kind: AgentboxContainerKind::Managed,
         metadata: metadata(root, name),
         attach_endpoint: Some(AttachEndpoint {
             scheme: "http".to_string(),
@@ -163,10 +168,44 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
     }
 }
 
+#[test]
+fn ls_renders_transient_run_type_in_table_and_json() {
+    let mut run = session("/workspace/run", "run-container", SessionStatus::Running);
+    run.container_kind = AgentboxContainerKind::Run;
+    run.metadata = transient_run_metadata("/workspace/run", "run-container");
+
+    let table = render_table(&[run.clone()]);
+    assert!(table.lines().next().unwrap().contains("TYPE"));
+    assert!(table.contains("run"));
+    assert!(!table.contains("managed"));
+
+    let json = render_json(&[run]).unwrap();
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+    assert_eq!(rows[0]["type"], "run");
+}
+
 fn metadata(root: &str, name: &str) -> SessionMetadata {
     SessionMetadata::from_labels(&BTreeMap::from([
         (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
         (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
+        (LABEL_GIT_ROOT.to_string(), root.to_string()),
+        (LABEL_GIT_ROOT_HASH.to_string(), "hash".to_string()),
+        (LABEL_RUNTIME.to_string(), "opencode".to_string()),
+        (LABEL_IMAGE.to_string(), "image".to_string()),
+        (LABEL_LAUNCH_DIRECTORY.to_string(), root.to_string()),
+        (LABEL_LOGICAL_NAME.to_string(), name.to_string()),
+        (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
+        (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
+        (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
+    ]))
+}
+
+fn transient_run_metadata(root: &str, name: &str) -> SessionMetadata {
+    SessionMetadata::from_labels(&BTreeMap::from([
+        (
+            LABEL_CONTAINER_KIND.to_string(),
+            LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE.to_string(),
+        ),
         (LABEL_GIT_ROOT.to_string(), root.to_string()),
         (LABEL_GIT_ROOT_HASH.to_string(), "hash".to_string()),
         (LABEL_RUNTIME.to_string(), "opencode".to_string()),

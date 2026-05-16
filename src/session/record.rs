@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::metadata::{
-    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, required_label_value,
+    AgentboxContainerKind, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY,
+    LABEL_LOGICAL_NAME, LABEL_RUNTIME, agentbox_container_kind_from_labels, required_label_value,
 };
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 
@@ -22,6 +22,7 @@ use super::status::SessionStatus;
 pub struct SessionRecord {
     pub container_id: String,
     pub container_name: String,
+    pub container_kind: AgentboxContainerKind,
     pub metadata: SessionMetadata,
     pub attach_endpoint: Option<AttachEndpoint>,
     pub container_running: bool,
@@ -53,6 +54,18 @@ impl SessionRecord {
         self.metadata.runtime_kind()
     }
 
+    pub fn container_kind(&self) -> AgentboxContainerKind {
+        self.container_kind
+    }
+
+    pub fn is_managed_session(&self) -> bool {
+        self.container_kind == AgentboxContainerKind::Managed
+    }
+
+    pub fn is_transient_run(&self) -> bool {
+        self.container_kind == AgentboxContainerKind::Run
+    }
+
     pub fn container_running(&self) -> bool {
         self.container_running
     }
@@ -66,7 +79,10 @@ impl SessionRecord {
     }
 
     pub(crate) fn is_connectable_candidate(&self) -> bool {
-        self.is_running() && self.attach_endpoint.is_some() && self.canonical_git_root().is_some()
+        self.is_managed_session()
+            && self.is_running()
+            && self.attach_endpoint.is_some()
+            && self.canonical_git_root().is_some()
     }
 }
 
@@ -82,8 +98,8 @@ impl SessionMetadata {
         }
     }
 
-    pub(crate) fn is_managed(&self) -> bool {
-        self.label(LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE)
+    pub(crate) fn container_kind(&self) -> Option<AgentboxContainerKind> {
+        agentbox_container_kind_from_labels(&self.labels)
     }
 
     pub(crate) fn canonical_git_root(&self) -> Option<&Utf8Path> {
@@ -140,6 +156,7 @@ mod tests {
         let session = SessionRecord {
             container_id: "container-id".to_string(),
             container_name: "agentbox-example".to_string(),
+            container_kind: AgentboxContainerKind::Managed,
             metadata,
             attach_endpoint: None,
             container_running: false,

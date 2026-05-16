@@ -5,7 +5,7 @@ use crate::cli::{Cli, CompletionRootCommand, CompletionShell, DevEnvMode, Output
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
-use crate::session::{SessionRecord, discover_managed_sessions};
+use crate::session::{SessionRecord, discover_agentbox_containers, discover_managed_sessions};
 
 use super::session_targets::SessionTargetKind;
 
@@ -41,12 +41,24 @@ pub fn generate_manpages(directory: &Path) -> Result<()> {
 pub fn live_roots(command: CompletionRootCommand) -> Result<Vec<SessionRecord>> {
     let podman = Podman::new();
     let target_kind = completion_target_kind(command);
-    let sessions = discover_managed_sessions(&podman)?
+    let sessions = completion_sessions(&podman, command)?
         .into_iter()
         .filter(|session| target_kind.matches(session))
         .collect();
 
     Ok(sessions)
+}
+
+fn completion_sessions(
+    podman: &Podman,
+    command: CompletionRootCommand,
+) -> Result<Vec<SessionRecord>> {
+    match command {
+        CompletionRootCommand::Stop => discover_agentbox_containers(podman),
+        CompletionRootCommand::Connect | CompletionRootCommand::Health => {
+            discover_managed_sessions(podman)
+        }
+    }
 }
 
 pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {

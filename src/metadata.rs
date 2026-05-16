@@ -12,6 +12,7 @@ use crate::runtime::{RuntimeKind, default_image};
 use crate::workspace::WorkspaceIdentity;
 
 pub const LABEL_MANAGED: &str = "io.agentbox.managed";
+pub const LABEL_CONTAINER_KIND: &str = "io.agentbox.container_kind";
 pub const LABEL_SCHEMA: &str = "io.agentbox.schema";
 pub const LABEL_GIT_ROOT: &str = "io.agentbox.git_root";
 pub const LABEL_GIT_ROOT_HASH: &str = "io.agentbox.git_root_hash";
@@ -26,6 +27,8 @@ pub const LABEL_DEFAULT_RUNTIME_IMAGE: &str = "io.agentbox.default_runtime_image
 pub const LABEL_IMAGE_CONTEXT_HASH: &str = "io.agentbox.image_context_hash";
 
 pub const LABEL_MANAGED_VALUE: &str = "true";
+pub const LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE: &str = "managed-session";
+pub const LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE: &str = "transient-run";
 pub const LABEL_SCHEMA_VALUE: &str = "1";
 pub const LABEL_DEFAULT_RUNTIME_IMAGE_VALUE: &str = "true";
 
@@ -40,8 +43,39 @@ pub const REQUIRED_SESSION_WORKSPACE_IDENTITY_LABELS: &[&str] =
 pub const REQUIRED_SESSION_METADATA_LABELS: &[&str] =
     &[LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentboxContainerKind {
+    Managed,
+    Run,
+}
+
+impl AgentboxContainerKind {
+    pub fn output_type(self) -> &'static str {
+        match self {
+            Self::Managed => "managed",
+            Self::Run => "run",
+        }
+    }
+}
+
 pub(crate) fn managed_label_filter() -> String {
     format!("label={LABEL_MANAGED}={LABEL_MANAGED_VALUE}")
+}
+
+pub(crate) fn agentbox_container_kind_from_labels(
+    labels: &BTreeMap<String, String>,
+) -> Option<AgentboxContainerKind> {
+    if required_label_value(labels, LABEL_MANAGED) == Some(LABEL_MANAGED_VALUE) {
+        return Some(AgentboxContainerKind::Managed);
+    }
+
+    if required_label_value(labels, LABEL_CONTAINER_KIND)
+        == Some(LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE)
+    {
+        return Some(AgentboxContainerKind::Run);
+    }
+
+    None
 }
 
 pub(crate) fn default_runtime_image_label_filter() -> String {
@@ -172,11 +206,32 @@ impl<'a> ManagedSessionLabelInput<'a> {
 
 /// Builds the complete label set stored on managed session containers.
 pub fn managed_session_labels(input: ManagedSessionLabelInput<'_>) -> BTreeMap<String, String> {
+    let mut labels = runtime_server_container_labels(input);
+    labels.insert(LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string());
+    labels.insert(
+        LABEL_CONTAINER_KIND.to_string(),
+        LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE.to_string(),
+    );
+    labels.insert(LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string());
+    labels
+}
+
+/// Builds the complete label set stored on transient run containers.
+pub fn transient_run_labels(input: ManagedSessionLabelInput<'_>) -> BTreeMap<String, String> {
+    let mut labels = runtime_server_container_labels(input);
+    labels.insert(
+        LABEL_CONTAINER_KIND.to_string(),
+        LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE.to_string(),
+    );
+    labels
+}
+
+fn runtime_server_container_labels(
+    input: ManagedSessionLabelInput<'_>,
+) -> BTreeMap<String, String> {
     let attach = input.runtime.attach_spec();
 
     BTreeMap::from([
-        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
-        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
         (
             LABEL_GIT_ROOT.to_string(),
             input.canonical_git_root.to_string(),

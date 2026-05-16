@@ -7,9 +7,10 @@
 // You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use agentbox::metadata::{
-    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME, LABEL_MANAGED,
-    LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_ATTACH_SCHEME, LABEL_CONTAINER_KIND, LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE,
+    LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT,
+    LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME,
+    LABEL_MANAGED, LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::preflight::{
     CODEX_CONFIG_DESTINATION, ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION,
@@ -62,6 +63,10 @@ fn opencode_create_spec_matches_mvp_contract() {
     assert_eq!(
         spec.labels.get(LABEL_MANAGED),
         Some(&LABEL_MANAGED_VALUE.to_string())
+    );
+    assert_eq!(
+        spec.labels.get(LABEL_CONTAINER_KIND),
+        Some(&LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE.to_string())
     );
     assert_eq!(
         spec.labels.get(LABEL_SCHEMA),
@@ -221,7 +226,19 @@ fn runtime_run_modes_encode_container_ownership_policy() {
         managed.labels.get(LABEL_MANAGED),
         Some(&LABEL_MANAGED_VALUE.to_string())
     );
-    assert!(transient.labels.is_empty());
+    assert_eq!(
+        managed.labels.get(LABEL_CONTAINER_KIND),
+        Some(&LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE.to_string())
+    );
+    assert_eq!(
+        transient.labels.get(LABEL_CONTAINER_KIND),
+        Some(&LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE.to_string())
+    );
+    assert_eq!(
+        transient.labels.get(LABEL_GIT_ROOT),
+        Some(&workspace.canonical_git_root.to_string())
+    );
+    assert_eq!(transient.labels.get(LABEL_MANAGED), None);
     assert!(foreground.labels.is_empty());
 
     assert_eq!(managed.published_ports, ["127.0.0.1::4096"]);

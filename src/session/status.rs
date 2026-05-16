@@ -13,6 +13,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::Error;
 use crate::git::Git;
+use crate::metadata::AgentboxContainerKind;
 use crate::paths::canonicalize_utf8_path;
 use crate::podman::PodmanContainerMount;
 
@@ -153,7 +154,12 @@ pub fn failed_session_requires_action_error(
     session: &SessionRecord,
 ) -> Option<Error> {
     session.status.failure().map(|failure| {
-        session_failure_requires_action_error(git_root, &session.container_name, failure)
+        resource_failure_requires_action_error(
+            session.container_kind(),
+            git_root,
+            &session.container_name,
+            failure,
+        )
     })
 }
 
@@ -162,7 +168,28 @@ pub fn session_failure_requires_action_error(
     container_name: &str,
     failure: SessionFailure,
 ) -> Error {
-    failure.requires_action_error(git_root, container_name)
+    resource_failure_requires_action_error(
+        AgentboxContainerKind::Managed,
+        git_root,
+        container_name,
+        failure,
+    )
+}
+
+pub fn resource_failure_requires_action_error(
+    container_kind: AgentboxContainerKind,
+    git_root: &Utf8Path,
+    container_name: &str,
+    failure: SessionFailure,
+) -> Error {
+    let action = failure.action();
+    Error::agentbox_container_requires_action(
+        container_kind,
+        git_root,
+        container_name,
+        action.detail.as_ref(),
+        action.next_step,
+    )
 }
 
 pub(super) fn derive_status(input: SessionStatusInput<'_>) -> SessionStatus {

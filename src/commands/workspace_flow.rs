@@ -13,7 +13,10 @@ use camino::Utf8Path;
 use crate::Result;
 use crate::lock::{lock_git_root, lock_workspace};
 use crate::podman::Podman;
-use crate::session::{SessionRecord, discover_sessions_for_git_root};
+use crate::session::{
+    SessionRecord, discover_agentbox_containers, discover_managed_sessions_for_git_root,
+    discover_sessions_for_git_root,
+};
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 
 pub(crate) struct LockedWorkspace<'a> {
@@ -35,7 +38,14 @@ impl LockedWorkspace<'_> {
         &self.podman
     }
 
-    pub(crate) fn discover_sessions(&self) -> Result<Vec<SessionRecord>> {
+    pub(crate) fn discover_managed_sessions(&self) -> Result<Vec<SessionRecord>> {
+        discover_managed_sessions_for_git_root(
+            &self.podman,
+            self.workspace.canonical_git_root.as_ref(),
+        )
+    }
+
+    pub(crate) fn discover_agentbox_containers(&self) -> Result<Vec<SessionRecord>> {
         discover_sessions_for_git_root(&self.podman, self.workspace.canonical_git_root.as_ref())
     }
 }
@@ -51,6 +61,10 @@ impl LockedGitRoot<'_> {
 
     pub(crate) fn discover_sessions(&self) -> Result<Vec<SessionRecord>> {
         discover_sessions_for_git_root(&self.podman, self.git_root)
+    }
+
+    pub(crate) fn discover_agentbox_containers(&self) -> Result<Vec<SessionRecord>> {
+        discover_agentbox_containers(&self.podman)
     }
 }
 

@@ -8,6 +8,8 @@
 
 use camino::Utf8Path;
 
+use crate::metadata::AgentboxContainerKind;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -51,14 +53,40 @@ impl Error {
         detail: &str,
         next_step: &str,
     ) -> Self {
+        Self::agentbox_container_requires_action(
+            AgentboxContainerKind::Managed,
+            git_root,
+            container_name,
+            detail,
+            next_step,
+        )
+    }
+
+    pub fn agentbox_container_requires_action(
+        container_kind: AgentboxContainerKind,
+        git_root: &Utf8Path,
+        container_name: &str,
+        detail: &str,
+        next_step: &str,
+    ) -> Self {
+        let resource = match container_kind {
+            AgentboxContainerKind::Managed => "managed session",
+            AgentboxContainerKind::Run => "transient run container",
+        };
         Self::msg(format!(
-            "managed session `{container_name}` for `{git_root}` {detail}; {next_step}"
+            "{resource} `{container_name}` for `{git_root}` {detail}; {next_step}"
         ))
     }
 
     pub fn duplicate_managed_sessions(git_root: &Utf8Path) -> Self {
         Self::msg(format!(
             "duplicate managed sessions exist for `{git_root}`; remove extras before retrying"
+        ))
+    }
+
+    pub fn duplicate_agentbox_containers(git_root: &Utf8Path) -> Self {
+        Self::msg(format!(
+            "duplicate agentbox containers exist for `{git_root}`; remove extras before retrying"
         ))
     }
 

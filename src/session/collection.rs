@@ -74,7 +74,7 @@ fn compare_sessions_by_identity(left: &SessionRecord, right: &SessionRecord) -> 
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::metadata::LABEL_GIT_ROOT;
+    use crate::metadata::{AgentboxContainerKind, LABEL_GIT_ROOT};
     use crate::session::{SessionMetadata, SessionStatus};
 
     use super::*;
@@ -143,6 +143,7 @@ mod tests {
         SessionRecord {
             container_id: format!("{container_name}-id"),
             container_name: container_name.to_string(),
+            container_kind: AgentboxContainerKind::Managed,
             metadata: SessionMetadata::from_labels(&labels),
             attach_endpoint: None,
             container_running: false,

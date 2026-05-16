@@ -8,10 +8,14 @@
 
 use std::fs;
 
-use agentbox::metadata::{LABEL_CONTAINER_PORT, LABEL_GIT_ROOT_HASH, LABEL_RUNTIME};
+use agentbox::metadata::{
+    AgentboxContainerKind, LABEL_CONTAINER_KIND, LABEL_CONTAINER_PORT, LABEL_GIT_ROOT_HASH,
+    LABEL_RUNTIME,
+};
 use agentbox::session::{
-    SessionFailure, SessionStatus, discover_managed_sessions_from_ps,
-    discover_sessions_for_git_root_from_ps, group_sessions_by_git_root,
+    SessionFailure, SessionStatus, discover_agentbox_containers_from_ps,
+    discover_managed_sessions_from_ps, discover_sessions_for_git_root_from_ps,
+    group_sessions_by_git_root,
 };
 use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
@@ -22,6 +26,7 @@ mod support;
 use support::{
     inspect_models_by_id as inspect_by_id, managed_container_models as managed_container,
     managed_container_models_with_hash as managed_container_with_hash,
+    transient_run_container_models as transient_run_container,
 };
 
 #[test]
@@ -47,6 +52,85 @@ fn duplicate_root_group_marks_each_row_duplicate() {
     let groups = group_sessions_by_git_root(&sessions);
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].sessions.len(), 2);
+}
+
+#[test]
+fn transient_run_containers_are_discovered_as_run_resources() {
+    let repo = support::temp_git_repo();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let run = transient_run_container("transient-run", root, true, true);
+
+    let sessions =
+        discover_agentbox_containers_from_ps(vec![run.0], inspect_by_id(vec![run.1])).unwrap();
+
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].container_kind(), AgentboxContainerKind::Run);
+    assert_eq!(sessions[0].status, SessionStatus::Running);
+    assert_eq!(sessions[0].runtime(), Some("opencode"));
+    assert!(sessions[0].attach_endpoint.is_some());
+}
+
+#[test]
+fn transient_run_status_uses_existing_orphan_failed_and_duplicate_rules() {
+    let orphan_repo = support::temp_git_repo();
+    let failed_repo = support::temp_git_repo();
+    let duplicate_repo = support::temp_git_repo();
+    let orphan_root = Utf8Path::from_path(orphan_repo.path()).unwrap().to_owned();
+    let failed_root = Utf8Path::from_path(failed_repo.path()).unwrap();
+    let duplicate_root = Utf8Path::from_path(duplicate_repo.path()).unwrap();
+    let orphan = transient_run_container("orphan-run", &orphan_root, true, true);
+    let failed = transient_run_container("failed-run", failed_root, true, false);
+    let duplicate_a = transient_run_container("duplicate-run-a", duplicate_root, true, true);
+    let duplicate_b = transient_run_container("duplicate-run-b", duplicate_root, true, true);
+    drop(orphan_repo);
+
+    let sessions = discover_agentbox_containers_from_ps(
+        vec![orphan.0, failed.0, duplicate_a.0, duplicate_b.0],
+        inspect_by_id(vec![orphan.1, failed.1, duplicate_a.1, duplicate_b.1]),
+    )
+    .unwrap();
+
+    assert_eq!(status_for(&sessions, "orphan-run"), SessionStatus::Orphaned);
+    assert_eq!(
+        status_for(&sessions, "failed-run").failure(),
+        Some(SessionFailure::MissingCacheMount)
+    );
+    assert_eq!(
+        status_for(&sessions, "duplicate-run-a"),
+        SessionStatus::Duplicate
+    );
+    assert_eq!(
+        status_for(&sessions, "duplicate-run-b"),
+        SessionStatus::Duplicate
+    );
+}
+
+#[test]
+fn managed_discovery_excludes_transient_run_containers() {
+    let repo = support::temp_git_repo();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let managed = managed_container("managed", root, true, true);
+    let run = transient_run_container("transient-run", root, true, true);
+
+    let sessions =
+        discover_managed_sessions_from_ps(vec![managed.0, run.0], inspect_by_id(vec![managed.1]))
+            .unwrap();
+
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].container_name, "managed");
+}
+
+#[test]
+fn transient_run_without_kind_label_is_not_discovered_by_name_or_image() {
+    let repo = support::temp_git_repo();
+    let root = Utf8Path::from_path(repo.path()).unwrap();
+    let (mut ps, inspect) = transient_run_container("agentbox-unlabeled", root, true, true);
+    ps.labels.remove(LABEL_CONTAINER_KIND);
+
+    let sessions =
+        discover_agentbox_containers_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+
+    assert!(sessions.is_empty());
 }
 
 #[test]

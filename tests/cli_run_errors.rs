@@ -25,10 +25,11 @@ mod support;
 
 use support::{
     CliHarness as Harness, ReadyEndpoint, managed_ps_entry,
-    opencode_managed_labels as managed_labels, opencode_workspace_inspect_fixture,
+    opencode_managed_labels as managed_labels,
+    opencode_transient_run_labels as transient_run_labels, opencode_workspace_inspect_fixture,
     opencode_workspace_inspect_fixture_with_cache_bind, opencode_workspace_labels, operation_names,
     ps_fixture, running_managed_inspect_fixture as managed_inspect_fixture,
-    running_workspace_inspect_fixture_with_host_port, workspace_ps_entry,
+    running_workspace_inspect_fixture_with_host_port, transient_run_ps_entry, workspace_ps_entry,
 };
 
 #[test]
@@ -118,6 +119,90 @@ fn run_fails_when_a_managed_session_already_exists() {
         .stderr(predicates::str::contains(format!(
             "agentbox stop {}",
             target.display()
+        )))
+        .stderr(predicates::str::contains(&workspace.container_name));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
+    assert!(!log.iter().any(|line| line.starts_with("image ")));
+    assert!(!log.iter().any(|line| line.starts_with("run ")));
+}
+
+#[test]
+fn run_fails_when_a_transient_run_already_exists() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![transient_run_ps_entry(
+        "existing-run-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "existing-run-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            transient_run_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                &workspace.container_name,
+            ),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("transient run container"))
+        .stderr(predicates::str::contains(format!(
+            "agentbox stop {}",
+            workspace.hash12
+        )))
+        .stderr(predicates::str::contains(&workspace.container_name));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
+    assert!(!log.iter().any(|line| line.starts_with("image ")));
+    assert!(!log.iter().any(|line| line.starts_with("run ")));
+}
+
+#[test]
+fn start_fails_when_a_transient_run_already_exists() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(vec![transient_run_ps_entry(
+        "existing-run-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "existing-run-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            transient_run_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                &workspace.container_name,
+            ),
+        ),
+    );
+
+    start_command(&harness, target, &[])
+        .failure()
+        .stderr(predicates::str::contains("transient run container"))
+        .stderr(predicates::str::contains(format!(
+            "agentbox stop {}",
+            workspace.hash12
         )))
         .stderr(predicates::str::contains(&workspace.container_name));
 
@@ -413,7 +498,7 @@ fn start_duplicate_sessions_fail_closed() {
     start_command(&harness, target, &[])
         .failure()
         .stderr(predicates::str::contains(
-            "duplicate managed sessions exist",
+            "duplicate agentbox containers exist",
         ))
         .stderr(predicates::str::contains(
             workspace.canonical_git_root.as_str(),

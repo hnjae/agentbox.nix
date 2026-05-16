@@ -47,7 +47,7 @@ fn run_launches_opencode_transient_server_and_host_client() {
     command.assert().success().stderr(
         predicate::str::contains("INFO: checking workspace prerequisites")
             .and(predicate::str::contains(
-                "INFO: checking existing managed sessions",
+                "INFO: checking existing agentbox containers",
             ))
             .and(predicate::str::contains("INFO: building runtime image"))
             .and(predicate::str::contains(
@@ -96,6 +96,28 @@ fn run_launches_opencode_transient_server_and_host_client() {
     assert!(!run.contains("--tty"));
     assert!(run.contains("--publish 127.0.0.1::4096"));
     assert!(!run.contains("--label io.agentbox.managed=true"));
+    assert!(run.contains("--label io.agentbox.container_kind=transient-run"));
+    assert!(run.contains(&format!(
+        "--label io.agentbox.git_root={}",
+        workspace.canonical_git_root
+    )));
+    assert!(run.contains(&format!(
+        "--label io.agentbox.git_root_hash={}",
+        workspace.hash12
+    )));
+    assert!(run.contains("--label io.agentbox.runtime=opencode"));
+    assert!(run.contains(&format!("--label io.agentbox.image={image}")));
+    assert!(run.contains(&format!(
+        "--label io.agentbox.launch_directory={}",
+        workspace.canonical_target
+    )));
+    assert!(run.contains(&format!(
+        "--label io.agentbox.logical_name={}",
+        workspace.container_name
+    )));
+    assert!(run.contains("--label io.agentbox.attach_scheme=http"));
+    assert!(run.contains("--label io.agentbox.container_port=4096"));
+    assert!(run.contains("--label io.agentbox.container_listen_ip=0.0.0.0"));
     assert!(run.contains(&format!("--name {}", workspace.container_name)));
     assert!(run.contains(&format!("--workdir {}", workspace.canonical_target)));
     assert!(run.contains(&format!(
@@ -155,6 +177,7 @@ fn run_launches_codex_transient_server_and_host_client_in_yolo_mode() {
     )));
     assert!(run.contains("--publish 127.0.0.1::1455"));
     assert!(!run.contains("--label io.agentbox.managed=true"));
+    assert!(run.contains("--label io.agentbox.container_kind=transient-run"));
     assert!(log[4].contains(&format!(
         "codex lock=held args=--dangerously-bypass-approvals-and-sandbox --remote {expected_endpoint}"
     )));
@@ -472,7 +495,7 @@ fn start_creates_serves_waits_and_suggests_connect_for_a_new_session() {
         .stderr(
             predicate::str::contains("INFO: checking workspace prerequisites")
                 .and(predicate::str::contains(
-                    "INFO: checking existing managed sessions",
+                    "INFO: checking existing agentbox containers",
                 ))
                 .and(predicate::str::contains("INFO: building runtime image"))
                 .and(predicate::str::contains("INFO: starting container"))
@@ -518,6 +541,7 @@ fn start_creates_serves_waits_and_suggests_connect_for_a_new_session() {
     assert!(!log[4].contains("--interactive"));
     assert!(!log[4].contains("--tty"));
     assert!(log[4].contains(&format!("--label io.agentbox.image={image}")));
+    assert!(log[4].contains("--label io.agentbox.container_kind=managed-session"));
     assert!(log[4].contains("--label io.agentbox.opencode.version=0.99.0"));
     assert!(log[4].contains("--label io.agentbox.attach_scheme=http"));
     assert!(log[4].contains("--label io.agentbox.container_port=4096"));
@@ -804,6 +828,7 @@ fn start_launches_codex_server_in_yolo_mode() {
     assert!(log[2].contains("--label io.agentbox.codex.package=@openai/codex"));
     assert!(log[2].contains("--label io.agentbox.codex.version=0.99.0"));
     assert!(run.contains("--label io.agentbox.runtime=codex"));
+    assert!(run.contains("--label io.agentbox.container_kind=managed-session"));
     assert_runtime_user_args(run);
     assert!(run.contains("--label io.agentbox.codex.version=0.99.0"));
     assert!(run.contains(&format!("--label io.agentbox.image={image}")));

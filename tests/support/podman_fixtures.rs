@@ -11,9 +11,10 @@
 use std::collections::BTreeMap;
 
 use agentbox::metadata::{
-    LABEL_CONTAINER_PORT, LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE,
-    LABEL_GIT_ROOT_HASH, LABEL_IMAGE_CONTEXT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE,
-    LABEL_RUNTIME, ManagedSessionLabelInput, managed_session_labels,
+    LABEL_CONTAINER_KIND, LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE, LABEL_CONTAINER_PORT,
+    LABEL_DEFAULT_RUNTIME_IMAGE, LABEL_DEFAULT_RUNTIME_IMAGE_VALUE, LABEL_GIT_ROOT_HASH,
+    LABEL_IMAGE_CONTEXT_HASH, LABEL_MANAGED, LABEL_MANAGED_VALUE, LABEL_RUNTIME,
+    ManagedSessionLabelInput, managed_session_labels, transient_run_labels,
 };
 use agentbox::podman::{
     PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount, PodmanContainerMountKind,
@@ -175,6 +176,10 @@ pub fn managed_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
     serde_json::to_value(managed_ps_model(id, name, git_root_hash, true)).unwrap()
 }
 
+pub fn transient_run_ps_entry(id: &str, name: &str, git_root_hash: &str) -> Value {
+    serde_json::to_value(transient_run_ps_model(id, name, git_root_hash, true)).unwrap()
+}
+
 pub fn workspace_ps_entry(id: &str, workspace: &WorkspaceIdentity) -> Value {
     managed_ps_entry(id, &workspace.container_name, &workspace.hash12)
 }
@@ -214,6 +219,26 @@ pub fn managed_container_models_with_hash(
     )
 }
 
+pub fn transient_run_container_models(
+    name: &str,
+    root: &Utf8Path,
+    running: bool,
+    include_cache_mount: bool,
+) -> (PodmanPsContainer, PodmanContainerInspect) {
+    let git_root_hash = git_root_hash12(root);
+    let inspect_labels = opencode_transient_run_labels(root.as_str(), git_root_hash.as_str(), name);
+    let id = format!("{name}-id");
+
+    (
+        transient_run_ps_model(&id, name, git_root_hash.as_str(), running),
+        ManagedInspectFixture::new(name, root.as_str(), inspect_labels)
+            .id(&id)
+            .running(running)
+            .include_cache_mount(include_cache_mount)
+            .build(),
+    )
+}
+
 fn managed_ps_model(id: &str, name: &str, git_root_hash: &str, running: bool) -> PodmanPsContainer {
     PodmanPsContainer {
         id: id.to_string(),
@@ -241,6 +266,21 @@ fn managed_ps_model(id: &str, name: &str, git_root_hash: &str, running: bool) ->
         networks: Some(vec!["podman".to_string()]),
         namespaces: None,
     }
+}
+
+fn transient_run_ps_model(
+    id: &str,
+    name: &str,
+    git_root_hash: &str,
+    running: bool,
+) -> PodmanPsContainer {
+    let mut container = managed_ps_model(id, name, git_root_hash, running);
+    container.labels.remove(LABEL_MANAGED);
+    container.labels.insert(
+        LABEL_CONTAINER_KIND.to_string(),
+        LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE.to_string(),
+    );
+    container
 }
 
 #[derive(Debug, Clone)]
@@ -452,6 +492,22 @@ pub fn opencode_managed_labels(
     logical_name: &str,
 ) -> BTreeMap<String, String> {
     managed_labels(git_root, git_root_hash, RuntimeKind::Opencode, logical_name)
+}
+
+pub fn opencode_transient_run_labels(
+    git_root: &str,
+    git_root_hash: &str,
+    logical_name: &str,
+) -> BTreeMap<String, String> {
+    let image = RuntimeKind::Opencode.default_image();
+    transient_run_labels(ManagedSessionLabelInput {
+        canonical_git_root: git_root,
+        git_root_hash,
+        runtime: RuntimeKind::Opencode,
+        image: &image,
+        launch_directory: git_root,
+        logical_name,
+    })
 }
 
 pub fn opencode_workspace_labels(workspace: &WorkspaceIdentity) -> BTreeMap<String, String> {

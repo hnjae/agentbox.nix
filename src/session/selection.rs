@@ -39,6 +39,21 @@ pub(crate) fn select_stable_id_prefix<'a>(
     sessions: &'a [SessionRecord],
     prefix: &str,
 ) -> Result<StableIdPrefixSelection<'a>> {
+    select_stable_id_prefix_with_noun(sessions, prefix, "managed session")
+}
+
+pub(crate) fn select_agentbox_stable_id_prefix<'a>(
+    sessions: &'a [SessionRecord],
+    prefix: &str,
+) -> Result<StableIdPrefixSelection<'a>> {
+    select_stable_id_prefix_with_noun(sessions, prefix, "agentbox container")
+}
+
+fn select_stable_id_prefix_with_noun<'a>(
+    sessions: &'a [SessionRecord],
+    prefix: &str,
+    noun: &str,
+) -> Result<StableIdPrefixSelection<'a>> {
     if prefix.is_empty() {
         return Err(Error::msg("stable id prefix must not be empty"));
     }
@@ -58,7 +73,7 @@ pub(crate) fn select_stable_id_prefix<'a>(
 
     match matches.len() {
         0 => Err(Error::msg(format!(
-            "no managed session id matches prefix `{prefix}`"
+            "no {noun} id matches prefix `{prefix}`"
         ))),
         1 => {
             let (id, sessions) = matches.into_iter().next().unwrap();

@@ -57,7 +57,7 @@ fn select_connect_directory() -> Result<PathBuf> {
 fn connect_directory(directory: &Path) -> Result<()> {
     with_locked_workspace(directory, false, |locked| {
         let workspace = locked.workspace();
-        let sessions = locked.discover_sessions()?;
+        let sessions = locked.discover_managed_sessions()?;
         let Some(session) = select_single_session(&sessions, workspace)? else {
             return Err(no_session_error(workspace));
         };

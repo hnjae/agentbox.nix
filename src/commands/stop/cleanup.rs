@@ -10,8 +10,8 @@ use camino::Utf8Path;
 
 use crate::podman::Podman;
 use crate::session::{
-    SessionGroup, SessionRecord, discover_managed_sessions, exact_git_root_matches,
-    partition_sessions_by_git_root, select_stable_id_prefix,
+    SessionGroup, SessionRecord, discover_agentbox_containers, exact_git_root_matches,
+    partition_sessions_by_git_root, select_agentbox_stable_id_prefix,
 };
 use crate::{Error, Result};
 
@@ -31,13 +31,13 @@ pub(super) fn stop_target(target: &StopTargetInput, force: bool) -> Result<()> {
 
 pub(super) fn stop_all_running() -> Result<()> {
     let podman = Podman::new();
-    let sessions = discover_managed_sessions(&podman)?
+    let sessions = discover_agentbox_containers(&podman)?
         .into_iter()
         .filter(|session| session.container_running())
         .collect::<Vec<_>>();
     let failures = cleanup_all_running_matches(sessions)?;
 
-    finish_cleanup("all running managed sessions", &failures)
+    finish_cleanup("all running agentbox containers", &failures)
 }
 
 fn stop_git_root(git_root: &Utf8Path, force: bool, target: &StopTargetInput) -> Result<()> {
@@ -74,7 +74,7 @@ impl ExactGitRootStopMode {
     fn discover_sessions(self, locked: &LockedGitRoot<'_>) -> Result<Vec<SessionRecord>> {
         match self {
             Self::Scoped => locked.discover_sessions(),
-            Self::ExactStoredPath => discover_managed_sessions(locked.podman()),
+            Self::ExactStoredPath => locked.discover_agentbox_containers(),
         }
     }
 }
@@ -91,7 +91,7 @@ fn stop_exact_git_root_matches(
 
         if sessions.is_empty() {
             return Err(Error::msg(format!(
-                "no managed session exists for {target_ref}"
+                "no agentbox container exists for {target_ref}"
             )));
         }
 
@@ -105,8 +105,8 @@ fn stop_exact_git_root_matches(
 
 fn stop_stable_id(prefix: &str, force: bool, target: &StopTargetInput) -> Result<()> {
     let podman = Podman::new();
-    let sessions = discover_managed_sessions(&podman)?;
-    let selection = select_stable_id_prefix(&sessions, prefix)?;
+    let sessions = discover_agentbox_containers(&podman)?;
+    let selection = select_agentbox_stable_id_prefix(&sessions, prefix)?;
     let id = selection.id().to_string();
 
     require_force_for_duplicate_matches(
@@ -135,13 +135,13 @@ fn lockable_stable_id_matches(
 
     if lockable.is_empty() {
         return Err(Error::msg(format!(
-            "managed session id `{id}` cannot be stopped safely because no matched session has a recoverable git-root label"
+            "agentbox container id `{id}` cannot be stopped safely because no matched container has a recoverable git-root label"
         )));
     }
 
     if lockable.len() != selected_count {
         return Err(Error::msg(format!(
-            "managed session id `{id}` includes matched containers without a recoverable git-root label; cannot stop them safely"
+            "agentbox container id `{id}` includes matched containers without a recoverable git-root label; cannot stop them safely"
         )));
     }
 
@@ -156,7 +156,7 @@ fn require_force_for_duplicate_matches(
 ) -> Result<()> {
     if has_duplicates && !force {
         Err(Error::msg(format!(
-            "duplicate managed sessions exist for {target_ref}; rerun `agentbox stop --force {}` to remove all exact matches",
+            "duplicate agentbox containers exist for {target_ref}; rerun `agentbox stop --force {}` to remove all exact matches",
             target.display()
         )))
     } else {
@@ -264,6 +264,6 @@ fn render_cleanup_failures(identity: &str, failures: &[ContainerCleanupFailure])
         .join("; ");
 
     format!(
-        "partial stop failed for `{identity}`; remaining managed containers: {details}. podman-owned image cleanup and cache volumes are left untouched"
+        "partial stop failed for `{identity}`; remaining agentbox containers: {details}. podman-owned image cleanup and cache volumes are left untouched"
     )
 }

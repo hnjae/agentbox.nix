@@ -18,8 +18,9 @@ use agentbox::runtime::RuntimeKind;
 mod support;
 
 use support::{
-    CliHarness as LiveHarness, managed_inspect_fixture, opencode_workspace_inspect_fixture,
-    opencode_workspace_labels, ps_fixture, workspace_ps_entry,
+    CliHarness as LiveHarness, managed_inspect_fixture, opencode_transient_run_labels,
+    opencode_workspace_inspect_fixture, opencode_workspace_labels, ps_fixture,
+    transient_run_ps_entry, workspace_ps_entry,
 };
 
 #[test]
@@ -52,13 +53,20 @@ fn helper_returns_live_roots_with_runtime_and_status_metadata() {
 #[test]
 fn helper_filters_connect_and_stop_candidates_by_command() {
     let running_fixture = support::temp_workspace("running");
+    let run_fixture = support::temp_workspace("run");
     let failed_fixture = support::temp_workspace("failed");
     let running_workspace = &running_fixture.workspace;
+    let transient_workspace = &run_fixture.workspace;
     let failed_workspace = &failed_fixture.workspace;
     let harness = LiveHarness::new();
 
     harness.write_ps(&ps_fixture(vec![
         workspace_ps_entry("running-id", running_workspace),
+        transient_run_ps_entry(
+            "run-id",
+            &transient_workspace.container_name,
+            &transient_workspace.hash12,
+        ),
         workspace_ps_entry("failed-id", failed_workspace),
     ]));
     harness.write_inspect(
@@ -67,6 +75,20 @@ fn helper_filters_connect_and_stop_candidates_by_command() {
     );
     let mut failed_labels = opencode_workspace_labels(failed_workspace);
     failed_labels.remove(LABEL_ATTACH_SCHEME);
+    harness.write_inspect(
+        "run-id",
+        &managed_inspect_fixture(
+            &transient_workspace.container_name,
+            transient_workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            opencode_transient_run_labels(
+                transient_workspace.canonical_git_root.as_str(),
+                &transient_workspace.hash12,
+                &transient_workspace.container_name,
+            ),
+        ),
+    );
     harness.write_inspect(
         "failed-id",
         &managed_inspect_fixture(
@@ -91,6 +113,7 @@ fn helper_filters_connect_and_stop_candidates_by_command() {
         running_workspace.canonical_git_root.as_str()
     );
     assert!(connect.contains(running_workspace.canonical_git_root.as_str()));
+    assert!(!connect.contains(transient_workspace.canonical_git_root.as_str()));
     assert!(!connect.contains(failed_workspace.canonical_git_root.as_str()));
 
     let stop = harness
@@ -104,6 +127,9 @@ fn helper_filters_connect_and_stop_candidates_by_command() {
     assert_eq!(first_candidate_value(&stop), running_workspace.hash12);
     assert!(stop.contains(&running_workspace.hash12));
     assert!(stop.contains(running_workspace.canonical_git_root.as_str()));
+    assert!(stop.contains(&transient_workspace.hash12));
+    assert!(stop.contains(transient_workspace.canonical_git_root.as_str()));
+    assert!(stop.contains("run"));
     assert!(stop.contains(&failed_workspace.hash12));
     assert!(stop.contains(failed_workspace.canonical_git_root.as_str()));
     assert!(stop.contains("failed"));
@@ -118,6 +144,7 @@ fn helper_filters_connect_and_stop_candidates_by_command() {
     let health = String::from_utf8(health.stdout).unwrap();
     assert_eq!(first_candidate_value(&health), running_workspace.hash12);
     assert!(health.contains(&running_workspace.hash12));
+    assert!(!health.contains(&transient_workspace.hash12));
     assert!(health.contains(&failed_workspace.hash12));
 }
 

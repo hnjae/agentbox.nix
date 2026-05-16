@@ -13,7 +13,9 @@ use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
 use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime};
 use crate::runtime::{RuntimeInvocation, RuntimeKind, RuntimeRunMode, RuntimeRunSpec};
-use crate::session::{existing_session_error, select_single_session};
+use crate::session::{
+    duplicate_agentbox_containers_error, existing_session_error, select_single_session,
+};
 use crate::ssh_signing::apply_ssh_commit_signing_passthrough;
 
 use super::runtime::ensure_default_runtime_image;
@@ -36,6 +38,21 @@ pub(super) struct RuntimeLaunchPreparation {
 enum HostClientRequirement {
     Required,
     NotRequired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExistingResourceScope {
+    ManagedSessions,
+    AgentboxContainers,
+}
+
+impl ExistingResourceScope {
+    fn diagnostic_message(self) -> &'static str {
+        match self {
+            Self::ManagedSessions => "checking existing managed sessions",
+            Self::AgentboxContainers => "checking existing agentbox containers",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +93,7 @@ pub(super) fn prepare_server_launch(
         runtime,
         dev_env_mode,
         mode.host_client_requirement(),
+        ExistingResourceScope::AgentboxContainers,
     )?;
     let server_run = server_runtime_command(
         runtime,
@@ -107,6 +125,7 @@ pub(super) fn prepare_foreground_launch(
         runtime,
         dev_env_mode,
         HostClientRequirement::NotRequired,
+        ExistingResourceScope::ManagedSessions,
     )?;
     let mut run_spec = runtime.run_spec(
         RuntimeRunMode::Foreground,
@@ -125,16 +144,28 @@ fn prepare_container_launch(
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
     host_client: HostClientRequirement,
+    existing_scope: ExistingResourceScope,
 ) -> Result<ContainerLaunchPreparation> {
     let workspace = locked.workspace();
 
     diagnostic::info("checking workspace prerequisites");
     let preflight = check_host_prerequisites_for_runtime(runtime)?;
 
-    diagnostic::info("checking existing managed sessions");
+    diagnostic::info(existing_scope.diagnostic_message());
     let podman = locked.podman();
-    let sessions = locked.discover_sessions()?;
-    if let Some(session) = select_single_session(&sessions, workspace)? {
+    let sessions = match existing_scope {
+        ExistingResourceScope::ManagedSessions => locked.discover_managed_sessions()?,
+        ExistingResourceScope::AgentboxContainers => locked.discover_agentbox_containers()?,
+    };
+    let existing = match sessions.as_slice() {
+        [] => None,
+        [session] => Some(session),
+        _ if existing_scope == ExistingResourceScope::AgentboxContainers => {
+            return Err(duplicate_agentbox_containers_error(workspace));
+        }
+        _ => select_single_session(&sessions, workspace)?,
+    };
+    if let Some(session) = existing {
         return Err(existing_session_error(podman, workspace, session));
     }
 

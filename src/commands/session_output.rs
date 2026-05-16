@@ -97,13 +97,13 @@ impl<'a> SessionJsonFields<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(super) struct SessionJsonLeadingFields<'a> {
-    id: Option<&'a str>,
-    canonical_git_root: Option<&'a str>,
-    runtime: Option<&'a str>,
+    pub(super) id: Option<&'a str>,
+    pub(super) canonical_git_root: Option<&'a str>,
+    pub(super) runtime: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(super) struct SessionJsonTrailingFields<'a> {
-    endpoint: Option<String>,
-    container_name: &'a str,
+    pub(super) endpoint: Option<String>,
+    pub(super) container_name: &'a str,
 }

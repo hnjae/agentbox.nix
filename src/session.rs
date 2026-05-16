@@ -22,19 +22,25 @@ pub(crate) use collection::{
     exact_git_root_matches, partition_sessions_by_git_root, sort_session_refs_by_identity,
     sorted_session_refs_by_identity,
 };
+pub(crate) use conflict::duplicate_agentbox_containers_error;
 pub(crate) use conflict::{classify_create_error_or_else, existing_session_error};
 pub(crate) use connectable::prepare_connect_session;
 pub use discovery::{
-    discover_managed_sessions, discover_managed_sessions_from_ps, discover_sessions_for_git_root,
+    discover_agentbox_containers, discover_agentbox_containers_from_ps, discover_managed_sessions,
+    discover_managed_sessions_for_git_root, discover_managed_sessions_for_git_root_from_ps,
+    discover_managed_sessions_from_ps, discover_sessions_for_git_root,
     discover_sessions_for_git_root_from_ps,
 };
 pub use endpoint::discover_attach_endpoint_from_inspect;
 pub use record::{SessionGroup, SessionMetadata, SessionRecord};
-pub(crate) use selection::{run_command_hint, select_single_session, select_stable_id_prefix};
+pub(crate) use selection::{
+    run_command_hint, select_agentbox_stable_id_prefix, select_single_session,
+    select_stable_id_prefix,
+};
 
 pub use status::{
     SessionFailure, SessionStatus, failed_session_requires_action_error,
-    session_failure_requires_action_error,
+    resource_failure_requires_action_error, session_failure_requires_action_error,
 };
 
 pub use crate::preflight::NIX_CACHE_DESTINATION as REQUIRED_NIX_CACHE_MOUNT_DESTINATION;
