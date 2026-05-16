@@ -216,6 +216,123 @@ fn exec_launches_codex_exec_foreground_without_managed_metadata() {
     assert!(!log.iter().any(|line| line.starts_with("codex ")));
 }
 
+#[cfg(unix)]
+#[test]
+fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let (_socket_dir, socket_path, _listener) = bind_test_socket();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+    harness.write_git_config("user.name", "Alice Agent\n");
+    harness.write_git_config("user.email", "alice@example.test\n");
+    harness.write_git_config("gpg.format", "ssh\n");
+    harness.write_git_config("user.signingkey", "ssh-ed25519 AAAATEST alice\n");
+    harness.write_git_config("commit.gpgsign", "true\n");
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("SSH_AUTH_SOCK", socket_path.as_str())
+        .args(["run", "--runtime", "opencode"])
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let log = harness.read_log();
+    let run = podman_run_command(&log);
+    assert!(run.contains(&format!(
+        "--mount type=bind,src={},dst=/run/agentbox/ssh-agent.sock",
+        socket_path
+    )));
+    assert!(run.contains("--env SSH_AUTH_SOCK=/run/agentbox/ssh-agent.sock"));
+    assert!(run.contains("--env GIT_CONFIG_COUNT=5"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_0=user.name"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_0=Alice Agent"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_1=alice@example.test"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_2=gpg.format"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_2=ssh"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_3=user.signingkey"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_3=ssh-ed25519 AAAATEST alice"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_4=commit.gpgsign"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_4=true"));
+    assert!(!run.contains("credential.helper"));
+}
+
+#[cfg(unix)]
+#[test]
+fn start_mounts_ssh_agent_socket_when_available() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let (_socket_dir, socket_path, _listener) = bind_test_socket();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("SSH_AUTH_SOCK", socket_path.as_str())
+        .args(["start", "--runtime", "opencode"])
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let log = harness.read_log();
+    let run = podman_run_command(&log);
+    assert!(run.contains(&format!(
+        "--mount type=bind,src={},dst=/run/agentbox/ssh-agent.sock",
+        socket_path
+    )));
+    assert!(run.contains("--env SSH_AUTH_SOCK=/run/agentbox/ssh-agent.sock"));
+}
+
+#[test]
+fn exec_warns_and_skips_invalid_ssh_auth_sock() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let stale_socket = fixture.repo.path().join("missing-agent.sock");
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("SSH_AUTH_SOCK", &stale_socket)
+        .args(["exec", "--dev-env", "none"])
+        .arg(target)
+        .arg("--")
+        .arg("fix-tests");
+
+    command.assert().success().stderr(predicate::str::contains(
+        "WARNING: SSH_AUTH_SOCK does not reference a usable Unix socket",
+    ));
+
+    let log = harness.read_log();
+    let run = podman_run_command(&log);
+    assert!(!run.contains("/run/agentbox/ssh-agent.sock"));
+    assert!(!run.contains("GIT_CONFIG_COUNT"));
+}
+
 #[test]
 fn run_wraps_server_command_with_direnv_when_envrc_applies() {
     let fixture = support::temp_workspace("nested");
@@ -972,6 +1089,19 @@ fn exec_codex_success(
     command.assert().success();
 
     harness.read_log()
+}
+
+#[cfg(unix)]
+fn bind_test_socket() -> (
+    tempfile::TempDir,
+    camino::Utf8PathBuf,
+    std::os::unix::net::UnixListener,
+) {
+    let sandbox = tempfile::tempdir().unwrap();
+    let socket_path =
+        camino::Utf8PathBuf::from_path_buf(sandbox.path().join("agent.sock")).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(socket_path.as_std_path()).unwrap();
+    (sandbox, socket_path, listener)
 }
 
 fn podman_run_command(log: &[String]) -> &str {

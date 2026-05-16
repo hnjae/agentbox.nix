@@ -38,6 +38,7 @@ RUN set -eux; \
 	man-db \
 	nodejs \
 	npm \
+	openssh-client \
 	perl \
 	pkg-config \
 	procps \
@@ -65,6 +66,7 @@ RUN set -eu; \
 
 RUN set -eu; \
 	useradd --create-home --home-dir /home/user --shell /bin/zsh user; \
+	install -d /run/agentbox; \
 	install -d -o user -g user \
 	/home/user/.cache \
 	/home/user/.config \

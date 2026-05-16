@@ -14,6 +14,7 @@ use crate::metadata::runtime_package_version_label;
 use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime};
 use crate::runtime::{RuntimeInvocation, RuntimeKind, RuntimeRunMode, RuntimeRunSpec};
 use crate::session::{existing_session_error, select_single_session};
+use crate::ssh_signing::apply_ssh_commit_signing_passthrough;
 
 use super::runtime::ensure_default_runtime_image;
 use super::runtime_command::{ensure_host_runtime_client_available, server_runtime_command};
@@ -88,6 +89,7 @@ pub(super) fn prepare_server_launch(
         &preparation.preflight.runtime_mounts,
         server_run,
     );
+    apply_ssh_commit_signing_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
     record_runtime_image_version(runtime, &preparation, &mut run_spec, mode);
 
     Ok(RuntimeLaunchPreparation { run_spec })
@@ -106,13 +108,14 @@ pub(super) fn prepare_foreground_launch(
         dev_env_mode,
         HostClientRequirement::NotRequired,
     )?;
-    let run_spec = runtime.run_spec(
+    let mut run_spec = runtime.run_spec(
         RuntimeRunMode::Foreground,
         workspace,
         &preparation.preflight.host_nix_mounts,
         &preparation.preflight.runtime_mounts,
         invocation(&preparation.dev_env),
     );
+    apply_ssh_commit_signing_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
 
     Ok(RuntimeLaunchPreparation { run_spec })
 }

@@ -67,6 +67,13 @@ podman exec "$container_name" /bin/sh -ceu "
     test -w '$container_home/.local'
     test -w '$container_home/.local/state'
     test -x '$profile_path/bin/gh'
+    test -d /run/agentbox
+    command -v ssh-keygen >/dev/null 2>&1
+    tmp_signing_dir=\$(mktemp -d)
+    ssh-keygen -q -t ed25519 -N '' -f \"\$tmp_signing_dir/key\"
+    printf 'payload\n' > \"\$tmp_signing_dir/payload\"
+    ssh-keygen -Y sign -f \"\$tmp_signing_dir/key\" -n git \"\$tmp_signing_dir/payload\" >/dev/null
+    rm -rf \"\$tmp_signing_dir\"
     touch '$container_home/.cache/nix/agentbox-writable'
     touch '$container_home/.local/state/agentbox-writable'
     read -r startup_path </tmp/startup-path

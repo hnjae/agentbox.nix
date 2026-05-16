@@ -29,6 +29,7 @@ pub mod process;
 pub mod prompt;
 pub mod runtime;
 pub mod session;
+mod ssh_signing;
 mod state;
 pub mod workspace;
 

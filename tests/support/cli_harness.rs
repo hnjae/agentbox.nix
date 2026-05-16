@@ -155,6 +155,16 @@ impl CliHarness {
         fs::write(self.fixtures.path().join(format!("logs-{name}.txt")), logs).unwrap();
     }
 
+    pub fn write_git_config(&self, key: &str, value: &str) {
+        fs::write(
+            self.fixtures
+                .path()
+                .join(format!("git-config-{}", safe_git_config_key(key))),
+            value,
+        )
+        .unwrap();
+    }
+
     pub fn mark_dev_shell(&self, flake_root: &Path, attr: &str) {
         fs::write(
             self.fixtures
@@ -318,6 +328,7 @@ impl CliHarness {
         for (key, value) in self.agentbox_env() {
             command.set_env(key, &value);
         }
+        command.remove_env("SSH_AUTH_SOCK");
     }
 
     fn configure_lock_probe_env(
@@ -362,17 +373,26 @@ impl CliHarness {
 
 trait CommandEnv {
     fn set_env(&mut self, key: &'static str, value: &OsStr);
+    fn remove_env(&mut self, key: &'static str);
 }
 
 impl CommandEnv for AssertCommand {
     fn set_env(&mut self, key: &'static str, value: &OsStr) {
         self.env(key, value);
     }
+
+    fn remove_env(&mut self, key: &'static str) {
+        self.env_remove(key);
+    }
 }
 
 impl CommandEnv for Command {
     fn set_env(&mut self, key: &'static str, value: &OsStr) {
         self.env(key, value);
+    }
+
+    fn remove_env(&mut self, key: &'static str) {
+        self.env_remove(key);
     }
 }
 
@@ -426,6 +446,18 @@ fn dev_shell_fixture_name(flake_root: &Path, attr: &str) -> String {
 
 fn safe_path_name(path: &Path) -> String {
     safe_image_name(&path.to_string_lossy())
+}
+
+fn safe_git_config_key(key: &str) -> String {
+    key.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn fake_podman_script() -> &'static str {

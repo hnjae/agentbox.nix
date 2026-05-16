@@ -69,6 +69,37 @@ impl Git {
 
         Ok(Utf8PathBuf::from(root.to_owned()))
     }
+
+    pub(crate) fn config_get(&self, git_root: &Utf8Path, key: &str) -> Result<Option<String>> {
+        let output = self.runner.capture_status("git", |command| {
+            command
+                .arg("-C")
+                .arg(git_root.as_str())
+                .args(["config", "--get", key]);
+        })?;
+
+        if output.status.success() {
+            return Ok(Some(trim_config_output(&output.stdout)));
+        }
+
+        if output.status.code() == Some(1) {
+            return Ok(None);
+        }
+
+        let detail = output.stderr.trim();
+        let detail = if detail.is_empty() {
+            format_status(output.status)
+        } else {
+            detail.to_string()
+        };
+        Err(Error::msg(format!(
+            "failed to read git config `{key}` for `{git_root}`: {detail}"
+        )))
+    }
+}
+
+fn trim_config_output(output: &str) -> String {
+    output.trim_end_matches(['\r', '\n']).to_string()
 }
 
 #[derive(Debug)]
