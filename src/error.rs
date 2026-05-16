@@ -14,6 +14,8 @@ pub enum Error {
     Cli(#[from] clap::Error),
     #[error("process exited with code {0}")]
     ExitCode(u8),
+    #[error("{message}")]
+    ExitCodeWithMessage { code: u8, message: String },
     #[error("{0}")]
     Message(String),
     #[error(transparent)]

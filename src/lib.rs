@@ -41,6 +41,10 @@ pub fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(Error::Cli(error)) => error.exit(),
         Err(Error::ExitCode(code)) => ExitCode::from(code),
+        Err(Error::ExitCodeWithMessage { code, message }) => {
+            diagnostic::error(message);
+            ExitCode::from(code)
+        }
         Err(error) => {
             diagnostic::error(error.to_string());
             ExitCode::FAILURE

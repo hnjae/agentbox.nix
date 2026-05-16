@@ -21,7 +21,7 @@ use support::{
 };
 
 #[test]
-fn run_launches_opencode_foreground_without_managed_metadata() {
+fn run_launches_opencode_transient_server_and_host_client() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -29,10 +29,21 @@ fn run_launches_opencode_foreground_without_managed_metadata() {
     let context_hash = default_image_context_hash();
     let harness = Harness::new();
     harness.mark_default_image_absent();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
 
     let mut command = harness.locked_agentbox_command(workspace);
     command.args(["run", "--runtime", "opencode"]).arg(target);
 
+    let expected_endpoint = format!("http://127.0.0.1:{}", endpoint.port());
     command.assert().success().stderr(
         predicate::str::contains("INFO: checking workspace prerequisites")
             .and(predicate::str::contains(
@@ -40,14 +51,37 @@ fn run_launches_opencode_foreground_without_managed_metadata() {
             ))
             .and(predicate::str::contains("INFO: building runtime image"))
             .and(predicate::str::contains(
-                "INFO: starting foreground container",
+                "INFO: starting transient container",
             ))
-            .and(predicate::str::contains("waiting for").not())
-            .and(predicate::str::contains("is ready at").not()),
+            .and(predicate::str::contains(
+                "INFO: waiting for `opencode` runtime server",
+            ))
+            .and(predicate::str::contains(format!(
+                "INFO: transient container `{}` for `{}` is ready at `{expected_endpoint}`; connecting",
+                workspace.container_name, workspace.canonical_git_root
+            )))
+            .and(predicate::str::contains(format!(
+                "INFO: stopping transient container `{}`",
+                workspace.container_name
+            )))
+            .and(predicate::str::contains("use `agentbox connect`").not()),
     );
+    endpoint.wait();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "build", "run"]);
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "image",
+            "build",
+            "run",
+            "inspect",
+            "opencode",
+            "stop",
+            "container-exists"
+        ]
+    );
     let run = podman_run_command(&log);
 
     assert!(run.contains("lock=held"));
@@ -57,48 +91,74 @@ fn run_launches_opencode_foreground_without_managed_metadata() {
         "--label io.agentbox.image_context_hash={context_hash}"
     )));
     assert!(run.contains("--rm"));
-    assert!(run.contains("--interactive"));
-    assert!(!run.contains("--detach"));
+    assert!(run.contains("--detach"));
+    assert!(!run.contains("--interactive"));
     assert!(!run.contains("--tty"));
-    assert!(!run.contains("--publish"));
+    assert!(run.contains("--publish 127.0.0.1::4096"));
     assert!(!run.contains("--label io.agentbox.managed=true"));
-    assert!(!run.contains("--label io.agentbox.attach_scheme"));
-    assert!(!run.contains("--label io.agentbox.container_port"));
     assert!(run.contains(&format!("--name {}", workspace.container_name)));
     assert!(run.contains(&format!("--workdir {}", workspace.canonical_target)));
     assert!(run.contains(&format!(
         "type=volume,src={},dst=/home/user,U",
         workspace.container_name
     )));
-    assert!(run.contains(&format!(" {image} opencode")));
-    assert!(!run.contains("opencode serve"));
-    assert!(!log.iter().any(|line| line.starts_with("inspect ")));
-    assert!(!log.iter().any(|line| line.starts_with("opencode ")));
+    assert!(run.contains(&format!(
+        " {image} opencode serve --hostname 0.0.0.0 --port 4096"
+    )));
+    assert!(log[5].contains(&format!("attach {expected_endpoint}")));
+    assert!(log[5].contains(&format!("cwd={}", workspace.canonical_target)));
+    assert!(log[6].contains(&format!("--ignore {}", workspace.container_name)));
 }
 
 #[test]
-fn run_launches_codex_foreground_in_yolo_mode_without_server() {
+fn run_launches_codex_transient_server_and_host_client_in_yolo_mode() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
     let image = RuntimeKind::Codex.default_image();
     let harness = Harness::new();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Codex);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Codex,
+            endpoint.port(),
+        ),
+    );
 
     let mut command = harness.locked_agentbox_command(workspace);
     command.args(["run", "--runtime", "codex"]).arg(target);
 
+    let expected_endpoint = format!("ws://127.0.0.1:{}", endpoint.port());
     command.assert().success();
+    endpoint.wait();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "run"]);
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "image",
+            "run",
+            "inspect",
+            "codex",
+            "stop",
+            "container-exists"
+        ]
+    );
     let run = podman_run_command(&log);
     assert_runtime_user_args(run);
     assert!(run.contains(&format!(
-        " {image} codex --dangerously-bypass-approvals-and-sandbox"
+        " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
     )));
-    assert!(!run.contains("app-server"));
-    assert!(!run.contains("--publish"));
+    assert!(run.contains("--publish 127.0.0.1::1455"));
     assert!(!run.contains("--label io.agentbox.managed=true"));
+    assert!(log[4].contains(&format!(
+        "codex lock=held args=--dangerously-bypass-approvals-and-sandbox --remote {expected_endpoint}"
+    )));
+    assert!(log[4].contains(&format!("cwd={}", workspace.canonical_target)));
 }
 
 #[test]
@@ -157,17 +217,16 @@ fn exec_launches_codex_exec_foreground_without_managed_metadata() {
 }
 
 #[test]
-fn run_wraps_foreground_command_with_direnv_when_envrc_applies() {
+fn run_wraps_server_command_with_direnv_when_envrc_applies() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
     let harness = Harness::new();
 
-    let log = run_foreground_opencode_success(&fixture, &harness, &[]);
+    let log = run_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
     assert!(run.contains(&format!("--workdir {}", fixture.workspace.canonical_target)));
-    assert!(run.contains("direnv exec . opencode"));
-    assert!(!run.contains("opencode serve"));
+    assert!(run.contains("direnv exec . opencode serve --hostname 0.0.0.0 --port 4096"));
 }
 
 #[test]
@@ -222,37 +281,47 @@ fn exec_wraps_codex_exec_command_with_nix_develop_when_selected() {
 }
 
 #[test]
-fn run_wraps_foreground_command_with_devenv_when_selected() {
+fn run_wraps_server_command_with_devenv_when_selected() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
     let harness = Harness::new();
 
-    let log = run_foreground_opencode_success(&fixture, &harness, &[]);
+    let log = run_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
     assert!(run.contains(&format!(
-        "devenv shell --no-tui --from path:{} -- opencode",
+        "devenv shell --no-tui --from path:{} -- opencode serve --hostname 0.0.0.0 --port 4096",
         fixture.workspace.canonical_git_root
     )));
-    assert!(!run.contains("opencode serve"));
 }
 
 #[test]
-fn run_wraps_foreground_command_with_nix_develop_when_selected() {
+fn run_wraps_server_command_with_nix_develop_when_selected() {
     let fixture = support::temp_workspace("nested");
     fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
     let harness = Harness::new();
     harness.mark_dev_shell(&fixture.target, "default");
 
-    let log = run_foreground_opencode_success(&fixture, &harness, &[]);
+    let log = run_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
-    assert_eq!(operation_names(&log), ["ps", "nix", "image", "run"]);
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "nix",
+            "image",
+            "run",
+            "inspect",
+            "opencode",
+            "stop",
+            "container-exists"
+        ]
+    );
     assert!(run.contains(&format!(
-        "nix develop --no-write-lock-file path:{}#default --command opencode",
+        "nix develop --no-write-lock-file path:{}#default --command opencode serve --hostname 0.0.0.0 --port 4096",
         fixture.workspace.canonical_target
     )));
-    assert!(!run.contains("opencode serve"));
 }
 
 #[test]
@@ -858,11 +927,22 @@ fn start_opencode_success(
     harness.read_log()
 }
 
-fn run_foreground_opencode_success(
+fn run_opencode_success(
     fixture: &support::TempWorkspace,
     harness: &Harness,
     extra_args: &[&str],
 ) -> Vec<String> {
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &fixture.workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            &fixture.workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
     let mut command = harness.locked_agentbox_command(&fixture.workspace);
     command
         .args(["run", "--runtime", "opencode"])
@@ -870,6 +950,7 @@ fn run_foreground_opencode_success(
         .arg(&fixture.target);
 
     command.assert().success();
+    endpoint.wait();
 
     harness.read_log()
 }

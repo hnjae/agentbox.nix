@@ -61,6 +61,8 @@ impl CliHarness {
         fs::write(fixtures.path().join("ps.json"), "[]\n").unwrap();
         fs::write(fixtures.path().join("volumes.json"), "[]\n").unwrap();
         write_executable(fake_bin.path().join("git"), fake_git_script());
+        write_executable(fake_bin.path().join("cat"), fake_cat_script());
+        write_executable(fake_bin.path().join("dirname"), fake_dirname_script());
         write_executable(fake_bin.path().join("direnv"), fake_direnv_script());
         write_executable(fake_bin.path().join("nix"), fake_nix_script());
         write_executable(fake_bin.path().join("podman"), fake_podman_script());
@@ -87,6 +89,14 @@ impl CliHarness {
 
     pub fn path_env(&self) -> String {
         path_with_prepend(self.fake_bin.path(), &self.original_path)
+    }
+
+    pub fn fake_bin_only_path_env(&self) -> String {
+        self.fake_bin.path().display().to_string()
+    }
+
+    pub fn remove_fake_program(&self, name: &str) {
+        remove_file_if_exists(self.fake_bin.path().join(name));
     }
 
     pub fn write_ps(&self, json: &str) {
@@ -424,6 +434,47 @@ fn fake_podman_script() -> &'static str {
 
 fn fake_nix_script() -> &'static str {
     include_str!("../fixtures/bin/nix.sh")
+}
+
+fn fake_cat_script() -> &'static str {
+    r#"#!/bin/sh
+set -eu
+
+emit() {
+    while IFS= read -r line || [ -n "$line" ]; do
+        printf '%s\n' "$line"
+    done
+}
+
+if [ "$#" -eq 0 ]; then
+    emit
+else
+    for path in "$@"; do
+        emit < "$path"
+    done
+fi
+"#
+}
+
+fn fake_dirname_script() -> &'static str {
+    r#"#!/bin/sh
+set -eu
+
+path=${1%/}
+case "$path" in
+    */*)
+        dir=${path%/*}
+        if [ -z "$dir" ]; then
+            dir=/
+        fi
+        ;;
+    *)
+        dir=.
+        ;;
+esac
+
+printf '%s\n' "$dir"
+"#
 }
 
 fn fake_client_script(name: &str) -> String {

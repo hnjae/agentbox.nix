@@ -24,10 +24,10 @@ use predicates::prelude::*;
 mod support;
 
 use support::{
-    CliHarness as Harness, managed_ps_entry, opencode_managed_labels as managed_labels,
-    opencode_workspace_inspect_fixture, opencode_workspace_inspect_fixture_with_cache_bind,
-    opencode_workspace_labels, operation_names, ps_fixture,
-    running_managed_inspect_fixture as managed_inspect_fixture,
+    CliHarness as Harness, ReadyEndpoint, managed_ps_entry,
+    opencode_managed_labels as managed_labels, opencode_workspace_inspect_fixture,
+    opencode_workspace_inspect_fixture_with_cache_bind, opencode_workspace_labels, operation_names,
+    ps_fixture, running_managed_inspect_fixture as managed_inspect_fixture,
     running_workspace_inspect_fixture_with_host_port, workspace_ps_entry,
 };
 
@@ -195,13 +195,23 @@ fn start_with_connect_still_fails_when_a_managed_session_already_exists() {
 }
 
 #[test]
-fn run_propagates_foreground_podman_exit_code() {
+fn run_propagates_host_client_exit_code_and_cleans_up() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
     let harness = install_harness();
     harness.write_ps(&ps_fixture(Vec::new()));
-    harness.fail_operation("run", "runtime exited\n", 42);
+    harness.fail_operation("opencode", "host client exited\n", 42);
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
 
     let mut command = harness.locked_agentbox_command(workspace);
     command.args(["run", "--runtime", "opencode"]).arg(target);
@@ -210,11 +220,134 @@ fn run_propagates_foreground_podman_exit_code() {
         .assert()
         .failure()
         .code(42)
-        .stderr(predicates::str::contains("runtime exited"))
-        .stderr(predicates::str::contains("ERROR:").not());
+        .stderr(predicates::str::contains("host client exited"))
+        .stderr(predicates::str::contains("ERR:").not());
+    endpoint.wait();
 
     let log = harness.read_log();
-    assert_eq!(operation_names(&log), ["ps", "image", "run"]);
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "image",
+            "run",
+            "inspect",
+            "opencode",
+            "stop",
+            "container-exists"
+        ]
+    );
+}
+
+#[test]
+fn run_reports_host_client_failure_and_cleanup_failure_together() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.fail_operation("opencode", "host client exited\n", 42);
+    harness.mark_container_exists(&workspace.container_name);
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
+
+    command
+        .assert()
+        .failure()
+        .code(42)
+        .stderr(predicates::str::contains("host client exited"))
+        .stderr(predicates::str::contains("exited with exit status 42"))
+        .stderr(predicates::str::contains(
+            "failed to clean up transient run container",
+        ))
+        .stderr(predicates::str::contains(
+            "container still exists after stop",
+        ));
+    endpoint.wait();
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "image",
+            "run",
+            "inspect",
+            "opencode",
+            "stop",
+            "container-exists"
+        ]
+    );
+}
+
+#[test]
+fn run_stops_transient_container_when_readiness_fails() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.write_inspect(
+        &workspace.container_name,
+        &opencode_workspace_inspect_fixture(workspace, false, true),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.args(["run", "--runtime", "opencode"]).arg(target);
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("transient run container"))
+        .stderr(predicates::str::contains(
+            "exited before the `opencode` runtime server became reachable",
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(
+        operation_names(&log),
+        [
+            "ps",
+            "image",
+            "run",
+            "inspect",
+            "logs",
+            "stop",
+            "container-exists"
+        ]
+    );
+}
+
+#[test]
+fn run_fails_before_starting_container_when_host_client_is_missing() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.remove_fake_program("opencode");
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.env("PATH", harness.fake_bin_only_path_env());
+    command.args(["run", "--runtime", "opencode"]).arg(target);
+
+    command.assert().failure().stderr(predicates::str::contains(
+        "`opencode` was not found on PATH",
+    ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps"]);
 }
 
 #[test]

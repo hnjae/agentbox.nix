@@ -56,7 +56,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    /// Run a runtime container in the foreground.
+    /// Run a transient runtime server and host client.
     Run(RunArgs),
     /// Run Codex exec in a foreground container.
     Exec(ExecArgs),

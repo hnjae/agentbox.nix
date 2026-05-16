@@ -221,6 +221,20 @@ impl RuntimeKind {
         )
     }
 
+    pub fn transient_server_run_spec(
+        self,
+        workspace: &WorkspaceIdentity,
+        host_nix_mounts: &[RuntimeMount],
+        runtime_mounts: &[RuntimeMount],
+        invocation: RuntimeInvocation,
+    ) -> RuntimeRunSpec {
+        let (command, workdir) = invocation.into_parts();
+        RuntimeRunSpec::new(
+            self.transient_server_create_spec(workspace, host_nix_mounts, runtime_mounts, command),
+            workdir,
+        )
+    }
+
     fn create_spec(
         self,
         workspace: &WorkspaceIdentity,
@@ -260,6 +274,26 @@ impl RuntimeKind {
             default_env: self.default_env(),
             network_enabled: true,
             published_ports: Vec::new(),
+        }
+    }
+
+    fn transient_server_create_spec(
+        self,
+        workspace: &WorkspaceIdentity,
+        host_nix_mounts: &[RuntimeMount],
+        runtime_mounts: &[RuntimeMount],
+        command: impl Into<Vec<String>>,
+    ) -> RuntimeCreateSpec {
+        let attach = self.attach_spec();
+
+        RuntimeCreateSpec {
+            image: self.default_image(),
+            labels: BTreeMap::new(),
+            mounts: runtime_mounts_for_workspace(workspace, host_nix_mounts, runtime_mounts),
+            command: command.into(),
+            default_env: self.default_env(),
+            network_enabled: true,
+            published_ports: vec![attach.published_port(DEFAULT_HOST_ATTACH_IP)],
         }
     }
 

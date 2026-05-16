@@ -1,10 +1,10 @@
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 
 use camino::Utf8Path;
 
 use crate::dev_env::DevEnvironment;
 use crate::process::{ProcessRunner, format_status, run_command_status};
-use crate::runtime::{AttachEndpoint, RuntimeInvocation, RuntimeKind};
+use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeInvocation, RuntimeKind};
 use crate::{Error, Result};
 
 pub(crate) fn server_runtime_command(
@@ -14,17 +14,6 @@ pub(crate) fn server_runtime_command(
 ) -> RuntimeInvocation {
     RuntimeInvocation::new(
         dev_env.wrap_argv(runtime.server_command().argv),
-        target.to_path_buf(),
-    )
-}
-
-pub(crate) fn foreground_runtime_command(
-    runtime: RuntimeKind,
-    target: &Utf8Path,
-    dev_env: &DevEnvironment,
-) -> RuntimeInvocation {
-    RuntimeInvocation::new(
-        dev_env.wrap_argv(runtime.foreground_command().argv),
         target.to_path_buf(),
     )
 }
@@ -57,13 +46,65 @@ pub(crate) fn run_host_runtime_client(
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
 ) -> Result<()> {
+    let status = run_host_runtime_client_status(runtime, endpoint, launch_directory)?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(host_client_status_error(
+            runtime,
+            endpoint,
+            launch_directory,
+            status,
+        ))
+    }
+}
+
+pub(crate) fn run_host_runtime_client_status(
+    runtime: RuntimeKind,
+    endpoint: &AttachEndpoint,
+    launch_directory: &Utf8Path,
+) -> Result<ExitStatus> {
     let process_runner = ProcessRunner::new();
     let client = host_client_runtime_command(runtime, endpoint, launch_directory);
 
     run_host_client(&process_runner, &client)
 }
 
-fn run_host_client(process_runner: &ProcessRunner, client: &RuntimeInvocation) -> Result<()> {
+pub(crate) fn ensure_host_runtime_client_available(runtime: RuntimeKind) -> Result<()> {
+    let attach = runtime.attach_spec();
+    let endpoint = AttachEndpoint {
+        scheme: attach.scheme.to_string(),
+        host_ip: DEFAULT_HOST_ATTACH_IP.to_string(),
+        host_port: attach.container_port,
+    };
+    let command = runtime.host_client_command(&endpoint);
+    let Some(program) = command.argv.first() else {
+        return Err(Error::msg("runtime host client command is empty"));
+    };
+
+    which::which(program)
+        .map(|_| ())
+        .map_err(|_| Error::msg(host_client_not_found_message(program)))
+}
+
+pub(crate) fn host_client_status_error(
+    runtime: RuntimeKind,
+    endpoint: &AttachEndpoint,
+    launch_directory: &Utf8Path,
+    status: ExitStatus,
+) -> Error {
+    let client = host_client_runtime_command(runtime, endpoint, launch_directory);
+    Error::msg(format!(
+        "`{}` exited with {}",
+        client.argv().join(" "),
+        format_status(status)
+    ))
+}
+
+fn run_host_client(
+    process_runner: &ProcessRunner,
+    client: &RuntimeInvocation,
+) -> Result<ExitStatus> {
     let argv = client.argv();
     let Some((program, args)) = argv.split_first() else {
         return Err(Error::msg("runtime host client command is empty"));
@@ -76,14 +117,9 @@ fn run_host_client(process_runner: &ProcessRunner, client: &RuntimeInvocation) -
     command.stdout(Stdio::inherit());
     command.stderr(Stdio::inherit());
 
-    let status = run_command_status(&mut command)?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(Error::msg(format!(
-            "`{}` exited with {}",
-            argv.join(" "),
-            format_status(status)
-        )))
-    }
+    run_command_status(&mut command)
+}
+
+fn host_client_not_found_message(program: &str) -> String {
+    format!("`{program}` was not found on PATH; install `{program}` or add it to PATH")
 }

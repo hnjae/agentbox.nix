@@ -120,7 +120,7 @@ fn completion_subcommands() -> Vec<CompletionSubcommand> {
 
 fn completion_subcommand_description(command: &clap::Command) -> String {
     match command.get_name() {
-        "run" => "Run a foreground runtime container".to_string(),
+        "run" => "Run a transient runtime server and host client".to_string(),
         "exec" => "Run Codex exec in a foreground container".to_string(),
         "start" => "Start a detached runtime server session".to_string(),
         "completion" => "Generate shell completion".to_string(),

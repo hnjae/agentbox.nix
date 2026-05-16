@@ -23,7 +23,28 @@ pub(super) fn wait_for_server_endpoint(
     runtime: RuntimeKind,
     interrupted: impl Fn() -> bool,
 ) -> Result<ServerEndpointWait> {
-    ServerEndpointWaiter::production().wait(podman, workspace, runtime, interrupted)
+    ServerEndpointWaiter::production().wait(
+        podman,
+        workspace,
+        runtime,
+        ServerEndpointContext::ManagedSession,
+        interrupted,
+    )
+}
+
+pub(super) fn wait_for_transient_server_endpoint(
+    podman: &Podman,
+    workspace: &WorkspaceIdentity,
+    runtime: RuntimeKind,
+    interrupted: impl Fn() -> bool,
+) -> Result<ServerEndpointWait> {
+    ServerEndpointWaiter::production().wait(
+        podman,
+        workspace,
+        runtime,
+        ServerEndpointContext::TransientRunContainer,
+        interrupted,
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +73,7 @@ where
         podman: &Podman,
         workspace: &WorkspaceIdentity,
         runtime: RuntimeKind,
+        context: ServerEndpointContext,
         interrupted: impl Fn() -> bool,
     ) -> Result<ServerEndpointWait> {
         let deadline = Instant::now() + self.timeout;
@@ -67,14 +89,22 @@ where
                     .as_deref()
                     .unwrap_or("no inspect data was available");
                 return Err(Error::msg(format!(
-                    "runtime server for managed session `{}` in `{}` did not become reachable: {last_error}",
-                    workspace.container_name, workspace.canonical_git_root,
+                    "runtime server for {} `{}` in `{}` did not become reachable: {last_error}",
+                    context.description(),
+                    workspace.container_name,
+                    workspace.canonical_git_root,
                 )));
             }
 
             match podman.inspect_one(&workspace.container_name) {
                 Ok(inspect) => {
-                    match inspect_server_endpoint(workspace, runtime, inspect, &self.probe)? {
+                    match inspect_server_endpoint(
+                        workspace,
+                        runtime,
+                        context,
+                        inspect,
+                        &self.probe,
+                    )? {
                         ServerEndpointState::Ready(endpoint) => {
                             return Ok(ServerEndpointWait::Ready(endpoint));
                         }
@@ -101,9 +131,25 @@ enum ServerEndpointState {
     Pending(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServerEndpointContext {
+    ManagedSession,
+    TransientRunContainer,
+}
+
+impl ServerEndpointContext {
+    fn description(self) -> &'static str {
+        match self {
+            Self::ManagedSession => "managed session",
+            Self::TransientRunContainer => "transient run container",
+        }
+    }
+}
+
 fn inspect_server_endpoint<P>(
     workspace: &WorkspaceIdentity,
     runtime: RuntimeKind,
+    context: ServerEndpointContext,
     inspect: PodmanContainerInspect,
     probe: &P,
 ) -> Result<ServerEndpointState>
@@ -112,7 +158,8 @@ where
 {
     if !inspect.state.running {
         return Err(Error::msg(format!(
-            "container `{}` for `{}` exited before the `{}` runtime server became reachable; status: {}, exit code: {}",
+            "{} `{}` for `{}` exited before the `{}` runtime server became reachable; status: {}, exit code: {}",
+            context.description(),
             workspace.container_name,
             workspace.canonical_git_root,
             runtime.as_str(),
@@ -121,7 +168,14 @@ where
         )));
     }
 
-    match discover_attach_endpoint_from_inspect(&inspect) {
+    let endpoint = match context {
+        ServerEndpointContext::ManagedSession => discover_attach_endpoint_from_inspect(&inspect),
+        ServerEndpointContext::TransientRunContainer => {
+            discover_attach_endpoint_from_runtime_inspect(runtime, &inspect)
+        }
+    };
+
+    match endpoint {
         Ok(endpoint) => {
             let health = probe.check(runtime, &endpoint);
             if health.is_healthy() {
@@ -139,4 +193,42 @@ where
         }
         Err(error) => Ok(ServerEndpointState::Pending(error.to_string())),
     }
+}
+
+fn discover_attach_endpoint_from_runtime_inspect(
+    runtime: RuntimeKind,
+    inspect: &PodmanContainerInspect,
+) -> Result<AttachEndpoint> {
+    let attach = runtime.attach_spec();
+    let port_key = format!("{}/tcp", attach.container_port);
+    let binding = inspect
+        .network_settings
+        .ports
+        .get(&port_key)
+        .and_then(|bindings| bindings.as_ref())
+        .and_then(|bindings| bindings.iter().find(|binding| binding.host_port.is_some()))
+        .ok_or_else(|| {
+            Error::msg(format!(
+                "transient run container has no published attach port for `{port_key}`"
+            ))
+        })?;
+
+    let host_port = binding
+        .host_port
+        .as_deref()
+        .ok_or_else(|| Error::msg(format!("missing host port for `{port_key}`")))?
+        .parse::<u16>()
+        .map_err(|error| Error::msg(format!("malformed published host port: {error}")))?;
+    let host_ip = binding
+        .host_ip
+        .as_deref()
+        .filter(|host_ip| !host_ip.trim().is_empty())
+        .unwrap_or(crate::runtime::DEFAULT_HOST_ATTACH_IP)
+        .to_string();
+
+    Ok(AttachEndpoint {
+        scheme: attach.scheme.to_string(),
+        host_ip,
+        host_port,
+    })
 }
