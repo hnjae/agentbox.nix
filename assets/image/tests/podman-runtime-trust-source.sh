@@ -72,9 +72,32 @@ runtime_contract_run_container "$@"
 
 runtime_contract_wait_for_startup "$container_name"
 
-podman exec "$container_name" /entrypoint /bin/sh -ceu '
+startup_output=$(podman logs "$container_name" 2>&1)
+
+case "$startup_output" in
+*'/etc/ssl/certs/ca-certificates.crt'*)
+    printf 'Runtime startup leaked CA bundle probe output:\n%s\n' "$startup_output" >&2
+    exit 1
+    ;;
+esac
+
+if ! entrypoint_output=$(podman exec "$container_name" /entrypoint /bin/sh -ceu '
     test -r "$NIX_SSL_CERT_FILE"
     test "$NIX_SSL_CERT_FILE" = /etc/ssl/certs/ca-certificates.crt
-'
+' 2>&1); then
+    printf '%s\n' "$entrypoint_output" >&2
+    exit 1
+fi
+
+case "$entrypoint_output" in
+*'/etc/ssl/certs/ca-certificates.crt'*)
+    printf 'Runtime entrypoint leaked CA bundle probe output:\n%s\n' "$entrypoint_output" >&2
+    exit 1
+    ;;
+?*)
+    printf 'Runtime entrypoint wrote unexpected output:\n%s\n' "$entrypoint_output" >&2
+    exit 1
+    ;;
+esac
 
 printf 'podman runtime trust source OK (%s)\n' "$mode"

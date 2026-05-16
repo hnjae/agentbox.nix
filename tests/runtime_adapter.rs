@@ -23,6 +23,7 @@ use agentbox::runtime::default_image::{
 use agentbox::runtime::{AttachEndpoint, RuntimeInvocation, RuntimeKind, RuntimeMountKind};
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use agentbox::workspace::resolve_workspace_identity;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -401,6 +402,40 @@ fn materialized_default_image_context_matches_repo_assets() {
         let source = fs::read(asset_root.join(relative_path).as_std_path()).unwrap();
         assert_eq!(materialized, source, "mismatch for {relative_path}");
     }
+}
+
+#[test]
+fn runtime_trust_validation_does_not_print_ca_bundle_path() {
+    let ca_bundle = Path::new("/etc/ssl/certs/ca-certificates.crt");
+    if !ca_bundle.is_file() {
+        return;
+    }
+
+    let script =
+        Utf8Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/image/lib/runtime-contract.sh");
+    let output = Command::new("sh")
+        .arg("-ceu")
+        .arg(". \"$1\"; validate_runtime_trust")
+        .arg("sh")
+        .arg(script.as_std_path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "validate_runtime_trust failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "unexpected stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn collect_relative_files(root: &Path, current: &Path) -> Vec<String> {

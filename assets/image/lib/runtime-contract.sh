@@ -71,6 +71,10 @@ resolve_ca_bundle_path() {
     fi
 }
 
+_has_ca_bundle() {
+    [ -r /etc/ssl/certs/ca-certificates.crt ]
+}
+
 _has_nix_command() {
     command -v nix >/dev/null 2>&1
 }
@@ -90,7 +94,7 @@ validate_runtime_config() {
 }
 
 validate_runtime_trust() {
-    check_cond "Missing image-local CA bundle at /etc/ssl/certs/ca-certificates.crt." resolve_ca_bundle_path
+    check_cond "Missing image-local CA bundle at /etc/ssl/certs/ca-certificates.crt." _has_ca_bundle
 }
 
 resolve_runtime_paths() {
