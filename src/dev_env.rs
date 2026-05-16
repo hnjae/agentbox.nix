@@ -98,6 +98,14 @@ impl DevEnvironmentDiscovery {
     }
 
     fn resolve(self, target_directory: &Utf8Path) -> Result<DevEnvironment> {
+        self.resolve_with_probe(target_directory, &HostNixDevShellProbe)
+    }
+
+    fn resolve_with_probe(
+        self,
+        target_directory: &Utf8Path,
+        probe: &impl NixDevShellProbe,
+    ) -> Result<DevEnvironment> {
         if self.envrc.is_some() {
             return Ok(DevEnvironment::Direnv);
         }
@@ -113,7 +121,7 @@ impl DevEnvironmentDiscovery {
         };
         let flake_root = parent_directory(&flake_nix, "flake.nix");
 
-        resolve_nix_develop(target_directory, &flake_root)
+        resolve_nix_develop(target_directory, &flake_root, probe)
     }
 }
 
@@ -137,9 +145,10 @@ impl fmt::Display for DevEnvironment {
 fn resolve_nix_develop(
     target_directory: &Utf8Path,
     flake_root: &Utf8Path,
+    probe: &impl NixDevShellProbe,
 ) -> Result<DevEnvironment> {
     for attr in nix_develop_candidate_attrs(target_directory, flake_root) {
-        if nix_dev_shell_exists(flake_root, &attr)? {
+        if probe.dev_shell_exists(flake_root, &attr)? {
             return Ok(DevEnvironment::NixDevelop {
                 flake_root: flake_root.to_path_buf(),
                 attr,
@@ -148,6 +157,18 @@ fn resolve_nix_develop(
     }
 
     Ok(DevEnvironment::None)
+}
+
+trait NixDevShellProbe {
+    fn dev_shell_exists(&self, flake_root: &Utf8Path, attr: &str) -> Result<bool>;
+}
+
+struct HostNixDevShellProbe;
+
+impl NixDevShellProbe for HostNixDevShellProbe {
+    fn dev_shell_exists(&self, flake_root: &Utf8Path, attr: &str) -> Result<bool> {
+        nix_dev_shell_exists(flake_root, attr)
+    }
 }
 
 fn nix_develop_candidate_attrs(target_directory: &Utf8Path, flake_root: &Utf8Path) -> Vec<String> {
@@ -239,6 +260,7 @@ fn nix_string(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::fs;
 
     use super::*;
@@ -374,5 +396,134 @@ mod tests {
                 root: "/repo/nested".into()
             }
         );
+    }
+
+    #[test]
+    fn flake_resolution_uses_first_existing_candidate_from_probe() {
+        let discovery = DevEnvironmentDiscovery {
+            envrc: None,
+            devenv_nix: None,
+            flake_nix: Some("/repo/flake.nix".into()),
+        };
+        let probe = RecordingProbe::new(["default"]);
+
+        let environment = discovery
+            .resolve_with_probe(Utf8Path::new("/repo/api"), &probe)
+            .unwrap();
+
+        assert_eq!(
+            environment,
+            DevEnvironment::NixDevelop {
+                flake_root: "/repo".into(),
+                attr: "default".to_string(),
+            }
+        );
+        assert_eq!(
+            probe.calls(),
+            vec![
+                ("/repo".to_string(), "api".to_string()),
+                ("/repo".to_string(), "default".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn flake_resolution_stops_after_first_existing_candidate() {
+        let discovery = DevEnvironmentDiscovery {
+            envrc: None,
+            devenv_nix: None,
+            flake_nix: Some("/repo/flake.nix".into()),
+        };
+        let probe = RecordingProbe::new(["api"]);
+
+        let environment = discovery
+            .resolve_with_probe(Utf8Path::new("/repo/api"), &probe)
+            .unwrap();
+
+        assert_eq!(
+            environment,
+            DevEnvironment::NixDevelop {
+                flake_root: "/repo".into(),
+                attr: "api".to_string(),
+            }
+        );
+        assert_eq!(
+            probe.calls(),
+            vec![("/repo".to_string(), "api".to_string())]
+        );
+    }
+
+    #[test]
+    fn flake_resolution_returns_none_when_no_candidate_shell_exists() {
+        let discovery = DevEnvironmentDiscovery {
+            envrc: None,
+            devenv_nix: None,
+            flake_nix: Some("/repo/flake.nix".into()),
+        };
+        let probe = RecordingProbe::new([]);
+
+        let environment = discovery
+            .resolve_with_probe(Utf8Path::new("/repo/api"), &probe)
+            .unwrap();
+
+        assert_eq!(environment, DevEnvironment::None);
+        assert_eq!(
+            probe.calls(),
+            vec![
+                ("/repo".to_string(), "api".to_string()),
+                ("/repo".to_string(), "default".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn flake_resolution_propagates_probe_errors() {
+        let discovery = DevEnvironmentDiscovery {
+            envrc: None,
+            devenv_nix: None,
+            flake_nix: Some("/repo/flake.nix".into()),
+        };
+        let probe = FailingProbe;
+
+        let error = discovery
+            .resolve_with_probe(Utf8Path::new("/repo/api"), &probe)
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "probe failed");
+    }
+
+    struct RecordingProbe {
+        existing_attrs: Vec<String>,
+        calls: RefCell<Vec<(String, String)>>,
+    }
+
+    impl RecordingProbe {
+        fn new<const N: usize>(existing_attrs: [&str; N]) -> Self {
+            Self {
+                existing_attrs: existing_attrs.into_iter().map(str::to_string).collect(),
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<(String, String)> {
+            self.calls.borrow().clone()
+        }
+    }
+
+    impl NixDevShellProbe for RecordingProbe {
+        fn dev_shell_exists(&self, flake_root: &Utf8Path, attr: &str) -> Result<bool> {
+            self.calls
+                .borrow_mut()
+                .push((flake_root.to_string(), attr.to_string()));
+            Ok(self.existing_attrs.iter().any(|existing| existing == attr))
+        }
+    }
+
+    struct FailingProbe;
+
+    impl NixDevShellProbe for FailingProbe {
+        fn dev_shell_exists(&self, _flake_root: &Utf8Path, _attr: &str) -> Result<bool> {
+            Err(Error::msg("probe failed"))
+        }
     }
 }
