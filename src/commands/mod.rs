@@ -27,6 +27,7 @@ mod session_output;
 mod session_targets;
 pub mod start;
 pub mod stop;
+mod transient_run;
 mod workspace_flow;
 
 pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
