@@ -1406,7 +1406,8 @@ Required error cases:
 
 MVP isolation expectations:
 
-- separate rootless Podman container per foreground run or workspace session
+- separate rootless Podman container per transient run, foreground exec, or
+  workspace session
 - explicit workspace mount only for the canonical git root
 - host-provided Nix inputs mounted alongside one Podman-managed cache volume
 - Codex sessions receive the invoking host user's `${HOME}/.codex` directory as
