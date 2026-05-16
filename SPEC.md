@@ -26,7 +26,8 @@ The MVP is workspace-centric rather than name-centric:
 resolves `<directory>` to its canonical git root, starts a transient runtime
 server container, and connects to it with the selected runtime host-side
 client from the canonical target directory. The transient container is not a
-managed session and is not a target for `ls`, `connect`, `health`, or `stop`.
+managed session and cannot be selected by `connect` or `health`, but it is an
+agentbox-owned resource shown by `ls` and removable with `stop`.
 By default, `run` automatically starts the runtime server through the
 applicable development environment for the launch directory; `--dev-env none`
 disables that automatic wrapping. If `--runtime` is omitted in an interactive
@@ -62,12 +63,16 @@ interactive terminal, `connect` prompts for one connectable running session.
 Foreground `exec`, transient `run`, and managed containers are started with
 Podman's `--rm` cleanup flag. When a foreground `exec` exits, when a transient
 `run` container is stopped, when a managed runtime server exits, or when
-`agentbox stop [target]...` stops a managed session, Podman removes the stopped
-container. Default runtime images and the named runtime cache volume are
+`agentbox stop [target]...` stops a managed session or transient `run`
+container, Podman removes the stopped container. Default runtime images and the
+named runtime cache volume are
 intentionally left for explicit later cleanup with `agentbox clean` or update.
 
 If a matching managed session already exists for a repository, `run`, `exec`,
-and `start` fail clearly instead of reusing, replacing, or changing it.
+and `start` fail clearly instead of reusing, replacing, or changing it. If a
+matching transient `run` already exists for a repository, `run` and `start`
+fail clearly before creating another container and report that it can be cleaned
+up with `agentbox stop <id>`.
 
 MVP runtime support includes OpenCode and Codex.
 
@@ -194,6 +199,7 @@ Managed containers are visible through Podman while they are running. They carry
 Podman labels that identify at least:
 
 - that the container is managed by `agentbox`
+- that the container kind is `managed-session`
 - the metadata schema version
 - the canonical git root
 - a stable git-root identity token
@@ -209,9 +215,18 @@ separate host-side session database.
 
 Transient `run` containers are intentionally not managed containers. They use
 the same deterministic runtime cache volume name for the workspace and publish
-a local-only attach endpoint for the matching host client, but they do not
-carry the managed-session marker label and they are not discovered by `ls`,
-`connect`, `health`, or `stop`.
+a local-only attach endpoint for the matching host client. They do not carry the
+managed-session marker label, but they carry an agentbox container-kind label
+with value `transient-run`, plus the canonical git root, stable git-root
+identity token, selected runtime, default runtime image reference, launch
+directory, logical name, attach endpoint scheme, and runtime server container
+port and listen address. Transient `run` containers are discovered by `ls` and
+`stop`; they are not discovered by `connect` or `health`.
+
+`agentbox` treats a live container as agentbox-owned only when it carries either
+`io.agentbox.managed=true` or `io.agentbox.container_kind=transient-run`. Image
+labels, image references, and container name patterns alone do not prove
+ownership.
 
 When a command is scoped to one canonical git root, containers that advertise a
 different git-root identity token are outside that command's discovery scope and
@@ -280,17 +295,20 @@ Expected behavior:
    command, and the host-attached Nix prerequisites.
 5. Ensure concurrent lifecycle operations for the same git root do not leave
    duplicate sessions or ambiguous lifecycle state.
-6. Discover existing managed containers for that canonical git root.
-7. If more than one matching container exists, fail as `duplicate` and do not
-   guess which one to use.
-8. If exactly one matching managed container exists, fail clearly instead of
-   reusing, replacing, or connecting to it. For a healthy running session,
-   suggest `agentbox connect <directory>` or `agentbox stop <directory>`.
+6. Discover existing managed sessions and transient `run` containers for that
+   canonical git root.
+7. If more than one matching agentbox container exists, fail as `duplicate` and
+   do not guess which one to use.
+8. If exactly one matching agentbox container exists, fail clearly instead of
+   reusing, replacing, or connecting to it. For a healthy running managed
+   session, suggest `agentbox connect <directory>` or
+   `agentbox stop <directory>`. For a transient `run`, suggest
+   `agentbox stop <id>`.
 9. If none exists, start detached `podman run --detach --rm` with the required
    mounts, default runtime image, runtime cache volume, canonical target
    working directory, and local-only published attach endpoint.
-10. Do not pass the managed-session marker label
-    `io.agentbox.managed=true`.
+10. Pass `io.agentbox.container_kind=transient-run`, but do not pass the
+    managed-session marker label `io.agentbox.managed=true`.
 11. Execute the selected runtime server command inside the container:
     `opencode serve --hostname 0.0.0.0 --port <port>` for OpenCode and
     `codex --dangerously-bypass-approvals-and-sandbox app-server --listen <endpoint>`
@@ -331,11 +349,11 @@ Runtime rules:
 - `--dev-env none` disables automatic development environment loading for the
   runtime server command.
 - `run` does not accept `--connect` or `-c`; clap rejects those options.
-- Transient `run` is not a managed session. It is not listed by `ls`, cannot
-  be selected by `connect`, `health`, or `stop`, and does not create live
-  managed metadata.
-- If a managed session already exists for the resolved git root, `run` fails
-  before reusing or comparing any stored runtime value.
+- Transient `run` is not a managed session. It is listed by `ls`, can be
+  selected by `stop`, cannot be selected by `connect` or `health`, and does not
+  create live managed metadata.
+- If a managed session or transient `run` already exists for the resolved git
+  root, `run` fails before reusing or comparing any stored runtime value.
 - If the selected runtime host client command is missing, `run` fails before
   starting a container.
 - If the selected runtime host client exits unsuccessfully, `run` stops the
@@ -448,16 +466,19 @@ Expected behavior:
    prerequisites.
 5. Ensure concurrent lifecycle operations for the same git root do not leave
    duplicate sessions or ambiguous lifecycle state.
-6. Discover existing managed containers for that canonical git root.
-7. If more than one matching container exists, fail as `duplicate` and do not
-   guess which one to use.
-8. If exactly one matching managed container exists, fail clearly instead of
-   reusing or replacing it. For a healthy running session, suggest
-   `agentbox connect <directory>` or `agentbox stop <directory>`.
+6. Discover existing managed sessions and transient `run` containers for that
+   canonical git root.
+7. If more than one matching agentbox container exists, fail as `duplicate` and
+   do not guess which one to use.
+8. If exactly one matching agentbox container exists, fail clearly instead of
+   reusing or replacing it. For a healthy running managed session, suggest
+   `agentbox connect <directory>` or `agentbox stop <directory>`. For a
+   transient `run`, suggest `agentbox stop <id>`.
 9. If none exists, record the canonical target directory as the session launch
    directory and start detached `podman run --rm` with the required labels,
-   mounts, default runtime image, local-only published attach endpoint, and
-   launch-directory working directory.
+   including `io.agentbox.container_kind=managed-session`, mounts, default
+   runtime image, local-only published attach endpoint, and launch-directory
+   working directory.
 10. Start the selected runtime server for the session. With the default
     `--dev-env auto`, the server starts through the selected development
     environment wrapper, if one applies. With `--dev-env none`, the server
@@ -503,8 +524,9 @@ Runtime rules:
   server command.
 - `--connect` does not change session identity, runtime selection, container
   startup, endpoint readiness checks, or existing-session handling.
-- If `--connect` is set and a managed session already exists for the resolved
-  git root, `start` still fails before reusing or connecting to that session.
+- If `--connect` is set and a managed session or transient `run` already exists
+  for the resolved git root, `start` still fails before reusing or connecting to
+  that resource.
 - When `--runtime` is absent in an interactive terminal, the runtime prompt is
   rendered on stderr and the final success message is an `INFO` log on stderr.
 - Canceling the runtime prompt with Escape exits non-zero with
@@ -521,8 +543,8 @@ Runtime rules:
 - Ctrl-C cleanup does not remove the selected runtime's default image.
 - If Ctrl-C cleanup cannot fully stop the container or remove an eligible cache
   volume, `start` reports a partial cleanup warning or error.
-- If a managed session already exists for the resolved git root, `start` fails
-  before reusing or comparing any stored runtime value.
+- If a managed session or transient `run` already exists for the resolved git
+  root, `start` fails before reusing or comparing any stored runtime value.
 - `--runtime` does not change session identity.
 - If the host client launched by `start --connect` exits unsuccessfully or
   cannot be started, `start --connect` exits non-zero and reports that the
@@ -717,8 +739,9 @@ Rules:
 - `connect` never starts or restarts a stopped session.
 - `connect` never prompts for runtime selection.
 - `connect` prompts for a target only when the positional directory is omitted.
-- The connect prompt shows only connectable `running` sessions with recoverable
-  git-root and endpoint metadata.
+- The connect prompt shows only connectable `running` managed sessions with
+  recoverable git-root and endpoint metadata.
+- Transient `run` containers are never connect candidates.
 - The connect prompt is rendered on stderr and does not write to stdout before
   the runtime host client starts.
 - `connect` does not accept or interpret `--runtime`.
@@ -745,31 +768,38 @@ Rules:
 
 ### `agentbox ls`
 
-`ls` lists managed workspace sessions from live Podman discovery.
+`ls` lists managed workspace sessions and transient `run` containers from live
+Podman discovery.
 
 Expected output fields:
 
 - id, or `unknown`
+- type
 - canonical git root, or `unknown`
 - runtime, or `unknown`
 - status
 - endpoint, or `unknown`
 
+Type values:
+
+- `managed`: a managed workspace session.
+- `run`: a transient `run` container.
+
 Status values:
 
-- `running`: the managed container exists and is running.
-- `orphaned`: the managed container exists and is running, but the stored git
+- `running`: the agentbox container exists and is running.
+- `orphaned`: the agentbox container exists and is running, but the stored git
   root path no longer exists on the host.
-- `duplicate`: more than one managed container claims the same canonical git
+- `duplicate`: more than one agentbox container claims the same canonical git
   root.
-- `failed`: the managed container exists, but required metadata, workspace
+- `failed`: the agentbox container exists, but required metadata, workspace
   mounts, published endpoint data, or other inspectable session invariants are
   inconsistent.
 
 Rules:
 
-- Containers not marked as managed by `agentbox` are ignored, even if their
-  names resemble `agentbox` names.
+- Containers not marked as managed sessions or transient `run` containers by
+  `agentbox` are ignored, even if their names resemble `agentbox` names.
 - The public session id is the stable 12-character value from the
   `io.agentbox.git_root_hash` label. It is not the Podman container id.
 - For `failed` sessions, fields that cannot be recovered from live Podman state
@@ -778,7 +808,7 @@ Rules:
 - `ls --output table` and `ls -o table` explicitly select the same table output.
 - `ls --output json`, `ls --output=json`, and `ls -o json` print a compact
   single-line JSON array followed by a newline.
-- JSON rows contain stable keys: `id`, `canonical_git_root`, `runtime`,
+- JSON rows contain stable keys: `id`, `type`, `canonical_git_root`, `runtime`,
   `status`, `endpoint`, and `container_name`.
 - JSON keeps `container_name` for automation even though the table omits it.
 - JSON uses `null` for unrecoverable `id`, `canonical_git_root`, `runtime`, or
@@ -822,6 +852,7 @@ Rules:
 
 - `health` includes only sessions whose discovered session status is `running`.
 - Failed, stopped, orphaned, and duplicate sessions are not included.
+- Transient `run` containers are not included or probed.
 - `health` probes each running session once and does not wait for recovery.
 - `health <target>` treats `<target>` as a stable id prefix. Prefix matching is
   case-insensitive.
@@ -853,10 +884,11 @@ Rules:
 
 ### `agentbox stop [target]...` / `agentbox stop --all`
 
-`stop` stops workspace sessions for the resolved repositories, exact stored
-git-root absolute paths, or stable id prefixes. It is not a volume pruning
-command.
-With `--all`, `stop` stops every running managed `agentbox` container.
+`stop` stops managed workspace sessions or transient `run` containers for the
+resolved repositories, exact stored git-root absolute paths, or stable id
+prefixes. It is not a volume pruning command.
+With `--all`, `stop` stops every running managed or transient `run`
+agentbox-owned container.
 
 Expected behavior:
 
@@ -865,9 +897,10 @@ Expected behavior:
 2. For each `<target>` that names an existing path, resolve it to a canonical
    git root.
 3. For each `<target>` that is an absolute path that does not exist, require it
-   to exactly match a live managed session's stored `io.agentbox.git_root`
-   absolute path string. This selector may match orphaned sessions and failed
-   sessions that still have a recoverable stored git-root path.
+   to exactly match a live managed session or transient `run` container's
+   stored `io.agentbox.git_root` absolute path string. This selector may match
+   orphaned sessions and failed resources that still have a recoverable stored
+   git-root path.
 4. For each `<target>` that is not resolved as a path, treat it as a stable id
    prefix. Prefix matching is case-insensitive.
 5. If no session id matches a target prefix, record a clear failure for that
@@ -880,8 +913,8 @@ Expected behavior:
 9. Stop each matching container if it is running.
 10. Treat an already-removed matching container as success after verifying it is
     absent.
-11. If no matching managed session exists for a target, record that no session
-    exists for the resolved repository or exact stored git-root path.
+11. If no matching agentbox container exists for a target, record that no
+    resource exists for the resolved repository or exact stored git-root path.
 12. After all explicit targets are processed, exit non-zero if any target failed
     or any cleanup verification failed, and include a summary of the failed
     targets.
@@ -900,39 +933,39 @@ Expected behavior:
     fail with a clear error that a stop target or `--all` is required in
     non-interactive use.
 20. If no selector candidates exist, print
-    `agentbox stop: no managed sessions available to stop` as an `INFO` log on
-    stderr and exit successfully without stopping anything.
+    `agentbox stop: no agentbox containers available to stop` as an `INFO` log
+    on stderr and exit successfully without stopping anything.
 21. If the selector returns an empty selection, print
     `agentbox stop: no sessions selected` as a `WARNING` log on stderr and exit
     successfully without stopping anything.
 22. If `--all` is set, do not accept a `<target>` and stop all running managed
-    sessions discovered from live Podman state.
+    sessions and transient `run` containers discovered from live Podman state.
 23. `stop --all` stops running, orphaned, duplicate, and otherwise malformed
-    managed containers whose Podman state is running.
-24. `stop --all` ignores managed containers that are already stopped.
-25. If `stop --all` finds no running managed containers, exit successfully.
+    managed or transient `run` containers whose Podman state is running.
+24. `stop --all` ignores agentbox containers that are already stopped.
+25. If `stop --all` finds no running agentbox containers, exit successfully.
 26. For `stop --all`, lock each recoverable git root before stopping its
-    currently running exact matches. Running managed containers without a
+    currently running exact matches. Running agentbox containers without a
     recoverable git-root label are stopped only because the user selected the
     explicit global cleanup.
 
 Optional flag:
 
 - `--force`: best-effort cleanup when duplicate or failed exact matches exist
-- `--all`: stop every running managed `agentbox` container
+- `--all`: stop every running managed or transient `run` agentbox container
 
 Safety rules:
 
-- Without `--force`, `stop` fails when more than one matching managed container
+- Without `--force`, `stop` fails when more than one matching agentbox container
   is found.
-- With `--force`, `stop` stops all live managed containers that exactly claim
+- With `--force`, `stop` stops all live agentbox containers that exactly claim
   the resolved canonical git root, exact stored git-root path, or selected
   stable id. It still does not stop containers that cannot be matched to that
   identity.
 - With multiple explicit targets, `stop` may stop sessions for successful
   targets even when other targets fail.
 - `--force` is not required with `--all`; `--all` already selects every running
-  managed container.
+  managed or transient `run` agentbox container.
 - Stable id matching includes failed sessions, but `stop` only locks and stops
   a matched session when its git-root label is recoverable.
 - `stop` never deletes the user workspace.
@@ -946,15 +979,18 @@ Shell completion for `connect`, `stop`, and `health` is dynamic.
 
 Required behavior:
 
-- Completion candidates come from live managed sessions, not from a static file.
+- Completion candidates come from live agentbox containers, not from a static
+  file.
 - `connect` candidate values are canonical or stored git root paths when known.
   Sessions with no recoverable git-root path are not connect completion
   candidates, but remain visible through `agentbox ls`.
-- `connect` completion includes only connectable `running` sessions with valid
-  endpoint metadata.
+- `connect` completion includes only connectable `running` managed sessions
+  with valid endpoint metadata.
+- Transient `run` containers are not `connect` or `health` completion
+  candidates.
 - `stop` and `health` candidate values are stable ids.
 - `stop` completion includes running, orphaned, duplicate, and failed sessions
-  when a stable id is known.
+  and transient `run` containers when a stable id is known.
 - `stop` completion offers stable id candidates at every target position, not
   only the first target position.
 - `health` completion includes sessions when a stable id is known.
@@ -1343,16 +1379,19 @@ Valid lifecycle behavior:
 - `start` creates the workspace session as a detached runtime server container.
 - `connect` discovers an existing running workspace session and runs the runtime
   host client against its published endpoint.
-- `ls` derives session status from live Podman state and host path checks.
+- `ls` derives agentbox container status from live Podman state and host path
+  checks.
 - `stop` stops the container and relies on the container's `--rm` run option
   for container cleanup.
 - Concurrent lifecycle operations for the same canonical git root do not leave
-  more than one valid managed session or ambiguous cleanup outcome.
+  more than one valid agentbox runtime-server container or ambiguous cleanup
+  outcome.
 
 Default runtime image lifecycle is separate from managed sessions. When a
 foreground `exec` exits, when a transient `run` container is stopped, when a
-managed runtime server exits, or when `agentbox stop` stops a managed session,
-Podman removes the container but keeps the default runtime image. Current
+managed runtime server exits, or when `agentbox stop` stops a managed session
+or transient `run` container, Podman removes the container but keeps the
+default runtime image. Current
 default runtime images are tagged by embedded build-context content hash.
 Runtime image package updates happen through
 `agentbox runtime update <opencode|codex>`, and unused current, old
@@ -1366,12 +1405,13 @@ explicit through `agentbox clean` or direct Podman commands.
 
 Required drift behavior:
 
-- Duplicate containers for one git root: mark the session as `duplicate`, fail
-  `run`, `start`, and `connect`, and do not guess which container to use.
-  `stop --force` may stop all duplicate managed containers that exactly claim
-  the resolved canonical git root or exact stored git-root path.
-- Missing or malformed managed-container metadata: mark the session as `failed`
-  and require explicit cleanup or recreation before the session can be used
+- Duplicate agentbox containers for one git root: mark the resources as
+  `duplicate`, fail `run` and `start`, fail `connect` when duplicate managed
+  sessions exist, and do not guess which container to use. `stop --force` may
+  stop all duplicate agentbox containers that exactly claim the resolved
+  canonical git root or exact stored git-root path.
+- Missing or malformed agentbox-container metadata: mark the resource as
+  `failed` and require explicit cleanup or recreation before it can be used
   again.
 - Missing runtime cache volume mount for an existing session, including a bind
   mount where the named volume is expected: fail clearly and require explicit
