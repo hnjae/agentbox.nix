@@ -462,6 +462,15 @@ Progress and diagnostics:
   before becoming reachable, `start` includes a short `podman logs --tail`
   excerpt for the managed container when Podman can provide one.
 
+Runtime image wrapper output:
+
+- During successful runtime image startup and later `/entrypoint` execution,
+  agentbox-owned wrapper checks do not write internal probe values, such as
+  resolved CA bundle paths, to stdout or stderr. Any stdout or stderr visible
+  from `run`, `exec`, detached container logs, or later `/entrypoint` commands
+  comes from the requested runtime command, selected development environment
+  wrapper, or an explicit failure diagnostic.
+
 Runtime rules:
 
 - `start` accepts only `opencode` and `codex` in the MVP.
