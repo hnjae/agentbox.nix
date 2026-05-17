@@ -1287,8 +1287,66 @@ Rules:
 - `agentbox` does not verify that the configured signing key is currently
   loaded in the SSH agent. Git and ssh-agent own the final signing error if the
   agent cannot sign.
-- GPG commit signing passthrough and Git SSH remote authentication are outside
-  the MVP scope.
+- GPG commit signing passthrough is outside the MVP scope.
+
+### Git SSH Remote Host Verification
+
+When `run`, `start`, `restart`, or `exec` launches a container with a usable
+host SSH agent socket, `agentbox` also prepares SSH host-key verification for
+Git SSH remotes in the current repository. This supports SSH remote
+authentication without mounting the host user's SSH directory, private keys,
+full Git configuration, or complete known_hosts files into the container.
+
+The user may provide additional trusted host-key lines in strict JSON at
+`${XDG_CONFIG_HOME}/agentbox/config.json`, or at
+`${HOME}/.config/agentbox/config.json` when `XDG_CONFIG_HOME` is unset:
+
+```json
+{
+  "knownHosts": [
+    "github.com ssh-ed25519 AAAA...",
+    "[git.example.com]:2222 ssh-ed25519 AAAA..."
+  ]
+}
+```
+
+Rules:
+
+- If the config file is missing, it is treated as an empty config.
+- If the config path cannot be determined, `agentbox` prints a warning and
+  continues with an empty config.
+- Config JSON is strict. Parse errors, unknown top-level fields, a
+  non-`knownHosts` schema, non-string entries, blank entries, or multiline
+  entries make the config incompatible.
+- When config is incompatible, `agentbox` renames it to
+  `config.json.bak.YYYYMMDDTHHMMSSZ` using UTC. If that backup path already
+  exists, `agentbox` appends `.1`, `.2`, and so on until it finds an unused
+  name. The incompatible config is then ignored for the launch.
+- `agentbox` detects SSH Git remote hosts from the current repository's
+  configured remotes. SCP-like URLs such as `git@github.com:owner/repo.git`,
+  `ssh://` URLs, and `git+ssh://` URLs are considered SSH remotes. HTTPS
+  remotes and local paths are ignored.
+- Host known_hosts lookup is limited to the detected SSH remote hosts and the
+  invoking user's `$HOME/.ssh/known_hosts` and `$HOME/.ssh/known_hosts2` files.
+- Host known_hosts lookup uses `ssh-keygen -F <host> -f <file>` so hashed
+  known_hosts entries can match. Missing `ssh-keygen`, missing known_hosts
+  files, no match, or unexpected lookup failures are non-fatal.
+- If no known_hosts entry is found for a detected SSH remote host, `agentbox`
+  prints a warning naming that host and continues launching.
+- `agentbox` combines exact lines returned from matching host known_hosts
+  lookups with config `knownHosts` entries, deduplicates exact duplicate lines,
+  and writes the result to a temporary host file for the launch.
+- If there is at least one known_hosts line, that temporary file is
+  bind-mounted read-only at `/run/agentbox/known_hosts`, and the container
+  receives `GIT_SSH_COMMAND=ssh -o UserKnownHostsFile=/run/agentbox/known_hosts
+  -o StrictHostKeyChecking=yes`.
+- The temporary known_hosts file remains alive until the corresponding Podman
+  `run` invocation has completed.
+- `agentbox` does not embed public keys for hosted Git providers, run
+  `ssh-keyscan`, automatically trust remote hosts on first use, write
+  known_hosts data to agentbox state, write known_hosts data under
+  `/home/user`, modify the host user's known_hosts files, or mount the host
+  user's `~/.ssh` directory by default.
 
 ### Codex Host Configuration Passthrough
 
