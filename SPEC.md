@@ -413,8 +413,8 @@ Expected behavior:
 8. Do not pass `--detach`, `--publish`, managed-session labels, or attach
    labels.
 9. Execute Codex exec in YOLO mode in the container:
-   `codex --dangerously-bypass-approvals-and-sandbox exec`, followed by any
-   `<codex-exec-args>`.
+   `codex --dangerously-bypass-approvals-and-sandbox exec --disable
+   codex_git_commit`, followed by any `<codex-exec-args>`.
 10. With the default `--dev-env auto`, start the Codex exec command through the
     selected development environment wrapper, if one applies. With
     `--dev-env none`, start the Codex exec command directly.
