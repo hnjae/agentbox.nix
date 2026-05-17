@@ -150,7 +150,7 @@ fn podman_inspect_parses_stable_json_fields_from_a_fake_binary() {
     let fake_bins = support::FakeBinDir::new();
     fake_bins.install_exact_response(
         "podman",
-        &["inspect", "agentbox-demo"],
+        &["container", "inspect", "agentbox-demo"],
         support::podman_inspect_fixture(),
     );
 
@@ -181,6 +181,26 @@ fn podman_inspect_parses_stable_json_fields_from_a_fake_binary() {
             .as_deref(),
         Some("10.88.0.10")
     );
+}
+
+#[test]
+fn podman_inspect_reports_container_scope_for_missing_containers() {
+    let fake_bins = support::FakeBinDir::new();
+    fake_bins.install_exact_failure(
+        "podman",
+        &["container", "inspect", "agentbox-demo"],
+        "Error: no such container \"agentbox-demo\"",
+        125,
+    );
+
+    let error = Podman::with_runner(ProcessRunner::new().with_path_prepend(fake_bins.path()))
+        .inspect_one("agentbox-demo")
+        .unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("podman container inspect agentbox-demo"));
+    assert!(message.contains("no such container"));
+    assert!(!message.contains("failed to parse"));
 }
 
 #[test]

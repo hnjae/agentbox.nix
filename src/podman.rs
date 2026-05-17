@@ -81,7 +81,7 @@ impl Podman {
 
     pub fn inspect(&self, name: &str) -> Result<Vec<PodmanContainerInspect>> {
         self.run_podman_json(|command| {
-            command.args(["inspect", name]);
+            command.args(["container", "inspect", name]);
         })
     }
 
@@ -89,7 +89,7 @@ impl Podman {
         let mut containers = self.inspect(name)?;
         if containers.is_empty() {
             return Err(Error::msg(format!(
-                "`podman inspect` returned no containers for `{name}`"
+                "`podman container inspect` returned no containers for `{name}`"
             )));
         }
 

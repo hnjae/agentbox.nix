@@ -186,6 +186,16 @@ container)
     subcommand=${1:-}
     shift || true
     case "$subcommand" in
+    inspect)
+        target=${1:?missing container inspect target}
+        record inspect "$@"
+        fixture="$fixtures/inspect-$target.json"
+        if [ ! -f "$fixture" ]; then
+            printf 'no such container: %s\n' "$target" >&2
+            exit 125
+        fi
+        cat "$fixture"
+        ;;
     exists)
         target=${1:?missing container exists target}
         record container-exists "$@"

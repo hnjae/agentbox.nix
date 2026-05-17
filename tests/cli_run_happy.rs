@@ -1218,7 +1218,9 @@ fn start_verbose_traces_podman_commands_and_forwards_non_json_output() {
             .and(predicate::str::contains("DEBUG: built"))
             .and(predicate::str::contains("DEBUG: running podman run"))
             .and(predicate::str::contains("DEBUG: started"))
-            .and(predicate::str::contains("DEBUG: running podman inspect"))
+            .and(predicate::str::contains(
+                "DEBUG: running podman container inspect",
+            ))
             .and(predicate::str::contains(
                 "INFO: waiting for `opencode` runtime server",
             )),
