@@ -337,7 +337,7 @@ fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
 
 #[cfg(unix)]
 #[test]
-fn run_adds_matching_host_known_hosts_entries_from_ssh_keygen() {
+fn run_adds_matching_host_known_hosts_entries_from_ssh_config_file() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -357,15 +357,29 @@ fn run_adds_matching_host_known_hosts_entries_from_ssh_keygen() {
     let ssh_dir = harness.home_path().join(".ssh");
     fs::create_dir(&ssh_dir).unwrap();
     fs::write(
-        ssh_dir.join("known_hosts"),
+        ssh_dir.join("known_hosts.custom"),
         "github.com ssh-ed25519 AAAAHOST\n",
     )
     .unwrap();
     harness.write_fake_program(
+        "ssh",
+        r#"#!/bin/sh
+set -eu
+if [ "$1" = "-G" ] && [ "$2" = "--" ] && [ "$3" = "github.com" ]; then
+  printf 'hostname github.com\n'
+  printf 'port 22\n'
+  printf 'userknownhostsfile %s/.ssh/known_hosts.custom\n' "$HOME"
+  printf 'globalknownhostsfile none\n'
+  exit 0
+fi
+exit 255
+"#,
+    );
+    harness.write_fake_program(
         "ssh-keygen",
         r#"#!/bin/sh
 set -eu
-if [ "$1" = "-F" ] && [ "$2" = "github.com" ]; then
+if [ "$1" = "-F" ] && [ "$2" = "github.com" ] && [ "$3" = "-f" ] && [ "$4" = "$HOME/.ssh/known_hosts.custom" ]; then
   printf '# Host github.com found: line 1\n'
   printf 'github.com ssh-ed25519 AAAAHOST\n'
   exit 0
@@ -411,6 +425,20 @@ fn run_warns_and_continues_when_remote_host_key_is_missing() {
         ),
     );
     harness.write_git_remotes("origin\tgit@gitlab.com:group/repo.git (fetch)\n");
+    harness.write_fake_program(
+        "ssh",
+        r#"#!/bin/sh
+set -eu
+if [ "$1" = "-G" ] && [ "$2" = "--" ] && [ "$3" = "gitlab.com" ]; then
+  printf 'hostname gitlab.com\n'
+  printf 'port 22\n'
+  printf 'userknownhostsfile %s/.ssh/known_hosts\n' "$HOME"
+  printf 'globalknownhostsfile none\n'
+  exit 0
+fi
+exit 255
+"#,
+    );
 
     let mut command = harness.locked_agentbox_command(workspace);
     command

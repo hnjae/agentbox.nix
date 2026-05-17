@@ -60,6 +60,32 @@ enum KnownHostsLookupError {
 
 type KnownHostsLookup = std::result::Result<Vec<String>, KnownHostsLookupError>;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SshRemoteHost {
+    config_host: String,
+    port: Option<u16>,
+}
+
+impl SshRemoteHost {
+    fn known_hosts_name(&self) -> String {
+        format_known_host(&self.config_host, self.port)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SshHostConfig {
+    lookup_hosts: Vec<String>,
+    known_hosts_files: Vec<PathBuf>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SshConfigLookupError {
+    Unavailable(String),
+    Failed(String),
+}
+
+type SshConfigLookup = std::result::Result<SshHostConfig, SshConfigLookupError>;
+
 pub(super) fn prepare<E, W>(
     git_root: &Utf8Path,
     environment: &mut E,
@@ -74,6 +100,7 @@ where
         git_root,
         environment,
         |git_root| git.remote_urls(git_root),
+        ssh_config_lookup,
         ssh_keygen_lookup,
         OffsetDateTime::now_utc(),
         warning,
@@ -84,6 +111,7 @@ fn prepare_with<E, W>(
     git_root: &Utf8Path,
     environment: &mut E,
     mut remote_urls: impl FnMut(&Utf8Path) -> Result<Vec<String>>,
+    mut ssh_config: impl FnMut(&SshRemoteHost) -> SshConfigLookup,
     mut lookup: impl FnMut(&str, &Path) -> KnownHostsLookup,
     now: OffsetDateTime,
     warning: &mut W,
@@ -104,7 +132,8 @@ where
     };
     let home = environment("HOME");
 
-    let host_lines = host_known_hosts_lines(&remote_hosts, home, &mut lookup, warning);
+    let host_lines =
+        host_known_hosts_lines(&remote_hosts, home, &mut ssh_config, &mut lookup, warning);
     let lines = combined_known_hosts_lines(host_lines, config.known_hosts);
     if lines.is_empty() {
         return None;
@@ -245,7 +274,7 @@ fn backup_timestamp(now: OffsetDateTime) -> String {
         .unwrap_or_else(|_| "00000000T000000Z".to_string())
 }
 
-fn ssh_remote_hosts(urls: &[String]) -> Vec<String> {
+fn ssh_remote_hosts(urls: &[String]) -> Vec<SshRemoteHost> {
     let mut hosts = Vec::new();
     let mut seen = HashSet::new();
     for url in urls {
@@ -258,7 +287,7 @@ fn ssh_remote_hosts(urls: &[String]) -> Vec<String> {
     hosts
 }
 
-fn ssh_remote_host(url: &str) -> Option<String> {
+fn ssh_remote_host(url: &str) -> Option<SshRemoteHost> {
     if let Some(rest) = url.strip_prefix("ssh://") {
         return ssh_url_host(rest);
     }
@@ -269,7 +298,7 @@ fn ssh_remote_host(url: &str) -> Option<String> {
     scp_like_host(url)
 }
 
-fn ssh_url_host(rest: &str) -> Option<String> {
+fn ssh_url_host(rest: &str) -> Option<SshRemoteHost> {
     let authority = rest.split('/').next()?;
     if authority.is_empty() {
         return None;
@@ -286,7 +315,10 @@ fn ssh_url_host(rest: &str) -> Option<String> {
             return None;
         }
         let port = remainder.strip_prefix(':').and_then(parse_port);
-        return Some(format_known_host(host, port));
+        return Some(SshRemoteHost {
+            config_host: host.to_string(),
+            port,
+        });
     }
 
     let (host, port) = match authority.rsplit_once(':') {
@@ -296,11 +328,14 @@ fn ssh_url_host(rest: &str) -> Option<String> {
     if host.is_empty() {
         None
     } else {
-        Some(format_known_host(host, port))
+        Some(SshRemoteHost {
+            config_host: host.to_string(),
+            port,
+        })
     }
 }
 
-fn scp_like_host(url: &str) -> Option<String> {
+fn scp_like_host(url: &str) -> Option<SshRemoteHost> {
     if url.contains("://") {
         return None;
     }
@@ -313,7 +348,10 @@ fn scp_like_host(url: &str) -> Option<String> {
     if host.is_empty() {
         None
     } else {
-        Some(host.to_string())
+        Some(SshRemoteHost {
+            config_host: host.to_string(),
+            port: None,
+        })
     }
 }
 
@@ -329,8 +367,9 @@ fn format_known_host(host: &str, port: Option<u16>) -> String {
 }
 
 fn host_known_hosts_lines<W>(
-    remote_hosts: &[String],
+    remote_hosts: &[SshRemoteHost],
     home: Option<OsString>,
+    ssh_config: &mut impl FnMut(&SshRemoteHost) -> SshConfigLookup,
     lookup: &mut impl FnMut(&str, &Path) -> KnownHostsLookup,
     warning: &mut W,
 ) -> Vec<String>
@@ -341,37 +380,64 @@ where
         return Vec::new();
     }
 
-    let files = known_hosts_files(home);
     let mut lines = Vec::new();
     for host in remote_hosts {
+        let config = match ssh_config(host) {
+            Ok(config) => config,
+            Err(SshConfigLookupError::Unavailable(reason)) => {
+                warning(format!(
+                    "ssh is unavailable for SSH config lookup for remote host `{}` ({reason}); falling back to $HOME/.ssh/known_hosts and $HOME/.ssh/known_hosts2",
+                    host.known_hosts_name()
+                ));
+                fallback_ssh_host_config(host, home.clone())
+            }
+            Err(SshConfigLookupError::Failed(reason)) => {
+                warning(format!(
+                    "ssh -G lookup failed for SSH remote host `{}` ({reason}); falling back to $HOME/.ssh/known_hosts and $HOME/.ssh/known_hosts2",
+                    host.known_hosts_name()
+                ));
+                fallback_ssh_host_config(host, home.clone())
+            }
+        };
         let mut host_lines = Vec::new();
-        for file in &files {
-            match lookup(host, file) {
-                Ok(matches) => host_lines.extend(matches),
-                Err(KnownHostsLookupError::Unavailable(reason)) => {
-                    warning(format!(
-                        "ssh-keygen is unavailable for SSH known_hosts lookup ({reason}); continuing with config-provided knownHosts only"
-                    ));
-                    return Vec::new();
-                }
-                Err(KnownHostsLookupError::Failed(reason)) => {
-                    warning(format!(
-                        "ssh-keygen lookup failed for SSH remote host `{host}` ({reason}); continuing with config-provided knownHosts only"
-                    ));
-                    return Vec::new();
+        for file in &config.known_hosts_files {
+            for lookup_host in &config.lookup_hosts {
+                match lookup(lookup_host, file) {
+                    Ok(matches) => host_lines.extend(matches),
+                    Err(KnownHostsLookupError::Unavailable(reason)) => {
+                        warning(format!(
+                            "ssh-keygen is unavailable for SSH known_hosts lookup ({reason}); continuing with config-provided knownHosts only"
+                        ));
+                        return Vec::new();
+                    }
+                    Err(KnownHostsLookupError::Failed(reason)) => {
+                        warning(format!(
+                            "ssh-keygen lookup failed for SSH remote host `{}` ({reason}); continuing with config-provided knownHosts only",
+                            host.known_hosts_name()
+                        ));
+                        return Vec::new();
+                    }
                 }
             }
         }
 
         if host_lines.is_empty() {
             warning(format!(
-                "no known_hosts entry found for SSH remote host `{host}`; Git SSH host verification may fail"
+                "no known_hosts entry found for SSH remote host `{}`; Git SSH host verification may fail",
+                host.known_hosts_name()
             ));
         }
         lines.extend(host_lines);
     }
 
     lines
+}
+
+fn fallback_ssh_host_config(host: &SshRemoteHost, home: Option<OsString>) -> SshHostConfig {
+    SshHostConfig {
+        lookup_hosts: vec![host.known_hosts_name()],
+        known_hosts_files: known_hosts_files(home),
+    }
 }
 
 fn known_hosts_files(home: Option<OsString>) -> Vec<PathBuf> {
@@ -384,6 +450,119 @@ fn known_hosts_files(home: Option<OsString>) -> Vec<PathBuf> {
         .map(|name| ssh_dir.join(name))
         .filter(|path| path.is_file())
         .collect()
+}
+
+fn ssh_config_lookup(host: &SshRemoteHost) -> SshConfigLookup {
+    let mut command = Command::new("ssh");
+    command.arg("-G");
+    if let Some(port) = host.port {
+        command.arg("-p").arg(port.to_string());
+    }
+    command.arg("--").arg(&host.config_host);
+
+    let output = command.output();
+    let output = match output {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(SshConfigLookupError::Unavailable(error.to_string()));
+        }
+        Err(error) => return Err(SshConfigLookupError::Failed(error.to_string())),
+    };
+
+    if output.status.success() {
+        return Ok(parse_ssh_config_output(
+            &String::from_utf8_lossy(&output.stdout),
+            host,
+        ));
+    }
+
+    Err(SshConfigLookupError::Failed(format!(
+        "{}: {}",
+        format_status(output.status),
+        output_detail(&output.stdout, &output.stderr)
+    )))
+}
+
+fn parse_ssh_config_output(output: &str, host: &SshRemoteHost) -> SshHostConfig {
+    let mut hostname = None;
+    let mut port = host.port;
+    let mut host_key_alias = None;
+    let mut known_hosts_files = Vec::new();
+
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let Some((key, values)) = line.split_once(char::is_whitespace) else {
+            continue;
+        };
+        let values = values.trim();
+        match key.to_ascii_lowercase().as_str() {
+            "hostname" => hostname = first_ssh_config_value(values).map(ToOwned::to_owned),
+            "port" => port = first_ssh_config_value(values).and_then(parse_port),
+            "hostkeyalias" => {
+                host_key_alias = first_ssh_config_value(values).map(ToOwned::to_owned);
+            }
+            "userknownhostsfile" | "globalknownhostsfile" => {
+                for value in values.split_whitespace() {
+                    push_known_hosts_file(&mut known_hosts_files, value);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    SshHostConfig {
+        lookup_hosts: ssh_config_lookup_hosts(
+            host,
+            hostname.as_deref(),
+            port,
+            host_key_alias.as_deref(),
+        ),
+        known_hosts_files,
+    }
+}
+
+fn first_ssh_config_value(values: &str) -> Option<&str> {
+    values
+        .split_whitespace()
+        .find(|value| !value.is_empty() && *value != "none")
+}
+
+fn push_known_hosts_file(files: &mut Vec<PathBuf>, value: &str) {
+    if value == "none" {
+        return;
+    }
+
+    let path = PathBuf::from(value);
+    if path.is_file() && !files.contains(&path) {
+        files.push(path);
+    }
+}
+
+fn ssh_config_lookup_hosts(
+    host: &SshRemoteHost,
+    hostname: Option<&str>,
+    port: Option<u16>,
+    host_key_alias: Option<&str>,
+) -> Vec<String> {
+    let mut hosts = Vec::new();
+    push_unique_host(&mut hosts, host_key_alias.map(ToOwned::to_owned));
+    let resolved_host = hostname.unwrap_or(&host.config_host);
+    push_unique_host(&mut hosts, Some(format_known_host(resolved_host, port)));
+    push_unique_host(&mut hosts, Some(host.known_hosts_name()));
+    hosts
+}
+
+fn push_unique_host(hosts: &mut Vec<String>, host: Option<String>) {
+    let Some(host) = host.filter(|host| !host.is_empty()) else {
+        return;
+    };
+    if !hosts.contains(&host) {
+        hosts.push(host);
+    }
 }
 
 fn ssh_keygen_lookup(host: &str, file: &Path) -> KnownHostsLookup {
@@ -577,12 +756,50 @@ mod tests {
         assert_eq!(
             ssh_remote_hosts(&urls),
             [
-                "github.com",
-                "gitlab.com",
-                "[example.com]:2222",
-                "example.net"
+                SshRemoteHost {
+                    config_host: "github.com".to_string(),
+                    port: None,
+                },
+                SshRemoteHost {
+                    config_host: "gitlab.com".to_string(),
+                    port: None,
+                },
+                SshRemoteHost {
+                    config_host: "example.com".to_string(),
+                    port: Some(2222),
+                },
+                SshRemoteHost {
+                    config_host: "example.net".to_string(),
+                    port: None,
+                },
             ]
         );
+    }
+
+    #[test]
+    fn parses_ssh_config_lookup_hosts_and_files() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let user_file = sandbox.path().join("known_hosts.custom");
+        let global_file = sandbox.path().join("ssh_known_hosts");
+        fs::write(&user_file, "").unwrap();
+        fs::write(&global_file, "").unwrap();
+        let remote_host = SshRemoteHost {
+            config_host: "github-work".to_string(),
+            port: None,
+        };
+        let output = format!(
+            "host github-work\nhostname ssh.github.com\nport 443\nhostkeyalias github.com\nuserknownhostsfile {} missing\nuserknownhostsfile none\nglobalknownhostsfile {}\n",
+            user_file.display(),
+            global_file.display()
+        );
+
+        let config = parse_ssh_config_output(&output, &remote_host);
+
+        assert_eq!(
+            config.lookup_hosts,
+            ["github.com", "[ssh.github.com]:443", "github-work"]
+        );
+        assert_eq!(config.known_hosts_files, [user_file, global_file]);
     }
 
     #[test]
@@ -619,6 +836,12 @@ mod tests {
                 _ => None,
             },
             |_git_root| Ok(vec!["git@github.com:owner/repo.git".to_string()]),
+            |_host| {
+                Ok(SshHostConfig {
+                    lookup_hosts: vec!["github.com".to_string()],
+                    known_hosts_files: vec![ssh_dir.join("known_hosts")],
+                })
+            },
             |_host, _file| Err(KnownHostsLookupError::Unavailable("missing".to_string())),
             sample_time(),
             &mut |warning| warnings.push(warning),
@@ -631,6 +854,43 @@ mod tests {
         );
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("ssh-keygen is unavailable"));
+    }
+
+    #[test]
+    fn unavailable_ssh_config_falls_back_to_home_known_hosts_files() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let ssh_dir = home.path().join(".ssh");
+        fs::create_dir(&ssh_dir).unwrap();
+        let known_hosts = ssh_dir.join("known_hosts");
+        fs::write(&known_hosts, "placeholder").unwrap();
+        let mut warnings = Vec::new();
+
+        let prepared = prepare_with(
+            Utf8Path::new("/repo"),
+            &mut |name| match name {
+                "XDG_CONFIG_HOME" => Some(sandbox.path().as_os_str().to_os_string()),
+                "HOME" => Some(home.path().as_os_str().to_os_string()),
+                _ => None,
+            },
+            |_git_root| Ok(vec!["git@github.com:owner/repo.git".to_string()]),
+            |_host| Err(SshConfigLookupError::Unavailable("missing".to_string())),
+            |host, file| {
+                assert_eq!(host, "github.com");
+                assert_eq!(file, known_hosts.as_path());
+                Ok(vec!["github.com ssh-ed25519 AAAAHOST".to_string()])
+            },
+            sample_time(),
+            &mut |warning| warnings.push(warning),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(prepared.file.path()).unwrap(),
+            "github.com ssh-ed25519 AAAAHOST\n"
+        );
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("ssh is unavailable"));
     }
 
     #[test]
@@ -657,6 +917,12 @@ mod tests {
                 _ => None,
             },
             |_git_root| Ok(vec!["git@github.com:owner/repo.git".to_string()]),
+            |_host| {
+                Ok(SshHostConfig {
+                    lookup_hosts: vec!["github.com".to_string()],
+                    known_hosts_files: vec![known_hosts.clone()],
+                })
+            },
             |host, file| {
                 assert_eq!(host, "github.com");
                 assert_eq!(file, known_hosts.as_path());
