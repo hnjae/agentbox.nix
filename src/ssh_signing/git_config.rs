@@ -13,6 +13,13 @@ pub(super) const GIT_CONFIG_COUNT_ENV: &str = "GIT_CONFIG_COUNT";
 pub(super) const GIT_IDENTITY_KEYS: &[&str] = &["user.name", "user.email"];
 pub(super) const GIT_SIGNING_KEYS: &[&str] = &["gpg.format", "user.signingkey", "commit.gpgsign"];
 
+pub(super) fn codex_exec_identity_entries() -> Vec<(String, String)> {
+    vec![
+        ("user.name".to_string(), "Codex".to_string()),
+        ("user.email".to_string(), "noreply@openai.com".to_string()),
+    ]
+}
+
 pub(super) fn read_git_identity_entries(
     git_root: &Utf8Path,
     git_config: &mut impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,

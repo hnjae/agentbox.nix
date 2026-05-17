@@ -48,6 +48,7 @@ pub(super) fn prepare_runtime_launch(
         runtime,
         dev_env_mode,
         policy,
+        git_identity,
         invocation,
     } = request;
     let preparation = prepare_container_launch_for_workspace(
@@ -65,8 +66,11 @@ pub(super) fn prepare_runtime_launch(
         &preparation.preflight.runtime_mounts,
         build_runtime_invocation(invocation, runtime, workspace, &preparation.dev_env),
     );
-    let ssh_passthrough =
-        apply_git_and_ssh_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
+    let ssh_passthrough = apply_git_and_ssh_passthrough(
+        &mut run_spec,
+        workspace.canonical_git_root.as_ref(),
+        git_identity,
+    );
     record_runtime_image_version(runtime, &preparation, &mut run_spec, policy);
 
     Ok(RuntimeLaunchPreparation {

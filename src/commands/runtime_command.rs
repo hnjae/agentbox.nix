@@ -28,6 +28,7 @@ pub(crate) fn codex_exec_runtime_command(
 ) -> RuntimeInvocation {
     let mut argv = RuntimeKind::Codex.foreground_command().argv;
     argv.push("exec".to_string());
+    argv.extend(["--disable".to_string(), "codex_git_commit".to_string()]);
     argv.extend(codex_args);
 
     RuntimeInvocation::new(dev_env.wrap_argv(argv), target.to_path_buf())

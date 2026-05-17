@@ -19,9 +19,16 @@ mod signing_key;
 
 use agent_socket::{HOST_SSH_AUTH_SOCK_ENV, detect_host_agent_socket, utf8_path};
 use git_config::{
-    append_git_config_env, read_git_identity_entries, read_ssh_signing_config_entries,
+    append_git_config_env, codex_exec_identity_entries, read_git_identity_entries,
+    read_ssh_signing_config_entries,
 };
 use known_hosts::PreparedKnownHosts;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GitIdentityPassthrough {
+    Host,
+    CodexExec,
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct SshPassthroughGuard {
@@ -80,10 +87,12 @@ impl SshPassthrough {
 pub(crate) fn apply_git_and_ssh_passthrough(
     run_spec: &mut RuntimeRunSpec,
     git_root: &Utf8Path,
+    git_identity: GitIdentityPassthrough,
 ) -> SshPassthroughGuard {
     let git = Git::new();
     detect_with(
         git_root,
+        git_identity,
         |name| std::env::var_os(name),
         |git_root, key| git.config_get(git_root, key),
         |git_root, environment, warning| known_hosts::prepare(git_root, environment, warning),
@@ -94,6 +103,7 @@ pub(crate) fn apply_git_and_ssh_passthrough(
 
 fn detect_with(
     git_root: &Utf8Path,
+    git_identity: GitIdentityPassthrough,
     mut environment: impl FnMut(&str) -> Option<std::ffi::OsString>,
     mut git_config: impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
     mut known_hosts: impl FnMut(
@@ -104,7 +114,12 @@ fn detect_with(
     mut warning: impl FnMut(String),
 ) -> SshPassthrough {
     let mut env = BTreeMap::new();
-    let mut git_entries = read_git_identity_entries(git_root, &mut git_config, &mut warning);
+    let mut git_entries = match git_identity {
+        GitIdentityPassthrough::Host => {
+            read_git_identity_entries(git_root, &mut git_config, &mut warning)
+        }
+        GitIdentityPassthrough::CodexExec => codex_exec_identity_entries(),
+    };
 
     let Some(host_socket) = detect_host_agent_socket(&mut environment, &mut warning) else {
         append_git_config_env(&mut env, &git_entries);
@@ -161,6 +176,7 @@ mod tests {
 
         let passthrough = detect_with(
             Utf8Path::new("/repo"),
+            GitIdentityPassthrough::Host,
             |_| None,
             |_git_root, key| {
                 requested_keys.push(key.to_string());
@@ -201,6 +217,38 @@ mod tests {
         assert!(passthrough.known_hosts.prepared.is_none());
     }
 
+    #[test]
+    fn codex_exec_identity_does_not_read_host_git_identity() {
+        let passthrough = detect_with(
+            Utf8Path::new("/repo"),
+            GitIdentityPassthrough::CodexExec,
+            |_| None,
+            |_git_root, _key| panic!("git config must not be read for Codex exec identity"),
+            |_git_root, _environment, _warning| {
+                panic!("known_hosts must not be read without an agent socket")
+            },
+            panic_warning,
+        );
+
+        assert!(passthrough.commit_signing.agent_socket_mount.is_none());
+        assert_eq!(
+            passthrough
+                .commit_signing
+                .env
+                .get(GIT_CONFIG_COUNT_ENV)
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_git_config_env(&passthrough.commit_signing.env, 0, "user.name", "Codex");
+        assert_git_config_env(
+            &passthrough.commit_signing.env,
+            1,
+            "user.email",
+            "noreply@openai.com",
+        );
+        assert!(passthrough.known_hosts.prepared.is_none());
+    }
+
     #[cfg(unix)]
     #[test]
     fn valid_ssh_auth_sock_adds_socket_mount_and_container_env() {
@@ -208,6 +256,7 @@ mod tests {
 
         let passthrough = detect_with(
             Utf8Path::new("/repo"),
+            GitIdentityPassthrough::Host,
             |name| test_env(name, &socket_path, None),
             |_git_root, _key| Ok(None),
             |_git_root, _environment, _warning| None,
@@ -245,6 +294,7 @@ mod tests {
 
         let passthrough = detect_with(
             Utf8Path::new("/repo"),
+            GitIdentityPassthrough::Host,
             |name| test_env(name, &socket_path, None),
             |_git_root, _key| Ok(None),
             |_git_root, _environment, _warning| {
@@ -268,6 +318,7 @@ mod tests {
 
         let passthrough = detect_with(
             Utf8Path::new("/repo"),
+            GitIdentityPassthrough::Host,
             |name| test_env(name, &socket_path, Some(Utf8Path::new("/home/alice"))),
             |_git_root, key| {
                 requested_keys.push(key.to_string());
@@ -337,6 +388,7 @@ mod tests {
 
         let passthrough = detect_with(
             Utf8Path::new("/repo"),
+            GitIdentityPassthrough::Host,
             |name| test_env(name, &socket_path, None),
             |_git_root, key| {
                 Ok(match key {

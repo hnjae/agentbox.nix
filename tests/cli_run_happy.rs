@@ -228,14 +228,14 @@ fn exec_launches_codex_exec_foreground_without_managed_metadata() {
         harness.home_path().join(".codex").display()
     )));
     assert!(run.contains(&format!(
-        " {image} codex --dangerously-bypass-approvals-and-sandbox exec --json fix-tests"
+        " {image} codex --dangerously-bypass-approvals-and-sandbox exec --disable codex_git_commit --json fix-tests"
     )));
     assert!(!run.contains("app-server"));
     assert!(!log.iter().any(|line| line.starts_with("codex ")));
 }
 
 #[test]
-fn exec_passes_host_git_identity_without_ssh_agent() {
+fn exec_uses_codex_git_identity_without_ssh_agent() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -256,9 +256,11 @@ fn exec_passes_host_git_identity_without_ssh_agent() {
     let run = podman_run_command(&log);
     assert!(run.contains("--env GIT_CONFIG_COUNT=2"));
     assert!(run.contains("--env GIT_CONFIG_KEY_0=user.name"));
-    assert!(run.contains("--env GIT_CONFIG_VALUE_0=Alice Agent"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_0=Codex"));
     assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
-    assert!(run.contains("--env GIT_CONFIG_VALUE_1=alice@example.test"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_1=noreply@openai.com"));
+    assert!(!run.contains("Alice Agent"));
+    assert!(!run.contains("alice@example.test"));
     assert!(!run.contains("/run/agentbox/ssh-agent.sock"));
 }
 
@@ -531,7 +533,9 @@ fn exec_warns_and_skips_invalid_ssh_auth_sock() {
     let log = harness.read_log();
     let run = podman_run_command(&log);
     assert!(!run.contains("/run/agentbox/ssh-agent.sock"));
-    assert!(!run.contains("GIT_CONFIG_COUNT"));
+    assert!(run.contains("--env GIT_CONFIG_COUNT=2"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_0=Codex"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_1=noreply@openai.com"));
 }
 
 #[test]
@@ -559,7 +563,7 @@ fn exec_wraps_codex_exec_command_with_direnv_when_envrc_applies() {
     assert!(run.contains(&format!("--workdir {}", fixture.workspace.canonical_target)));
     assert!(
         run.contains(
-            "direnv exec . codex --dangerously-bypass-approvals-and-sandbox exec fix-tests"
+            "direnv exec . codex --dangerously-bypass-approvals-and-sandbox exec --disable codex_git_commit fix-tests"
         )
     );
     assert!(!run.contains("app-server"));
@@ -575,7 +579,7 @@ fn exec_wraps_codex_exec_command_with_devenv_when_selected() {
     let run = podman_run_command(&log);
 
     assert!(run.contains(&format!(
-        "devenv shell --no-tui --from path:{} -- codex --dangerously-bypass-approvals-and-sandbox exec fix-tests",
+        "devenv shell --no-tui --from path:{} -- codex --dangerously-bypass-approvals-and-sandbox exec --disable codex_git_commit fix-tests",
         fixture.workspace.canonical_git_root
     )));
     assert!(!run.contains("app-server"));
@@ -593,7 +597,7 @@ fn exec_wraps_codex_exec_command_with_nix_develop_when_selected() {
 
     assert_eq!(operation_names(&log), ["ps", "nix", "image", "run"]);
     assert!(run.contains(&format!(
-        "nix develop --no-write-lock-file path:{}#default --command codex --dangerously-bypass-approvals-and-sandbox exec fix-tests",
+        "nix develop --no-write-lock-file path:{}#default --command codex --dangerously-bypass-approvals-and-sandbox exec --disable codex_git_commit fix-tests",
         fixture.workspace.canonical_target
     )));
 }

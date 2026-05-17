@@ -6,6 +6,7 @@ use crate::commands::workspace_flow::LockedWorkspace;
 use crate::dev_env::{DevEnvMode, DevEnvironment};
 use crate::podman::Podman;
 use crate::runtime::{RuntimeInvocation, RuntimeKind};
+use crate::ssh_signing::GitIdentityPassthrough;
 use crate::workspace::WorkspaceIdentity;
 
 use super::policy::RuntimeLaunchPolicy;
@@ -18,6 +19,7 @@ pub(in crate::commands) struct RuntimeLaunchRequest<'a> {
     pub(super) runtime: RuntimeKind,
     pub(super) dev_env_mode: DevEnvMode,
     pub(super) policy: RuntimeLaunchPolicy,
+    pub(super) git_identity: GitIdentityPassthrough,
     pub(super) invocation: RuntimeLaunchInvocation<'a>,
 }
 
@@ -65,6 +67,7 @@ fn server_launch_request<'a>(
         runtime,
         dev_env_mode,
         policy,
+        git_identity: GitIdentityPassthrough::Host,
         invocation: RuntimeLaunchInvocation::Server,
     }
 }
@@ -81,6 +84,7 @@ pub(in crate::commands) fn foreground_launch_request<'a>(
         runtime,
         dev_env_mode,
         policy: RuntimeLaunchPolicy::foreground(),
+        git_identity: GitIdentityPassthrough::CodexExec,
         invocation: RuntimeLaunchInvocation::Custom(Box::new(invocation)),
     }
 }
@@ -98,6 +102,7 @@ pub(in crate::commands) fn replacement_server_launch_request<'a>(
         runtime,
         dev_env_mode,
         policy: RuntimeLaunchPolicy::replacement_server(connect_after_start),
+        git_identity: GitIdentityPassthrough::Host,
         invocation: RuntimeLaunchInvocation::Server,
     }
 }
