@@ -431,6 +431,29 @@ fn run_fails_before_starting_container_when_host_client_is_missing() {
 }
 
 #[test]
+fn start_with_connect_fails_before_starting_container_when_host_client_is_missing() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    harness.write_ps(&ps_fixture(Vec::new()));
+    harness.remove_fake_program("opencode");
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.env("PATH", harness.fake_bin_only_path_env());
+    command
+        .args(["start", "--connect", "--runtime", "opencode"])
+        .arg(target);
+
+    command.assert().failure().stderr(predicates::str::contains(
+        "`opencode` was not found on PATH",
+    ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps"]);
+}
+
+#[test]
 fn exec_propagates_foreground_podman_exit_code() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();

@@ -29,6 +29,7 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             &locked,
             runtime,
             args.dev_env,
+            args.connect,
         ))?;
         let run_spec = preparation.run_spec;
 
