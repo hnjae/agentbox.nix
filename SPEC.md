@@ -295,8 +295,9 @@ Optional flags:
 Expected behavior:
 
 1. If `--runtime` is omitted and stdin and stderr are terminals, prompt on
-   stderr with a fuzzy single-select list of supported runtimes. Use the
-   selected runtime exactly as if the user had passed `--runtime`.
+   stderr with a fuzzy single-select list of supported runtimes sorted by
+   runtime name. Use the selected runtime exactly as if the user had passed
+   `--runtime`.
 2. If `--runtime` is omitted and either stdin or stderr is not a terminal, fail
    before workspace or runtime validation with a clear error that `--runtime` is
    required in non-interactive use.
@@ -466,8 +467,9 @@ Optional flags:
 Expected behavior:
 
 1. If `--runtime` is omitted and stdin and stderr are terminals, prompt on
-   stderr with a fuzzy single-select list of supported runtimes. Use the
-   selected runtime exactly as if the user had passed `--runtime`.
+   stderr with a fuzzy single-select list of supported runtimes sorted by
+   runtime name. Use the selected runtime exactly as if the user had passed
+   `--runtime`.
 2. If `--runtime` is omitted and either stdin or stderr is not a terminal, fail
    before workspace or runtime validation with a clear error that `--runtime` is
    required in non-interactive use.
