@@ -1486,8 +1486,9 @@ Rules:
   directory or in any ancestor up to and including the canonical git root.
 - If a `devenv.nix` is selected, `run --dev-env auto`,
   `start --dev-env auto`, or `restart --dev-env auto` starts the runtime
-  command as `devenv shell --no-tui --from path:<root> -- <runtime argv>`,
-  where `<root>` is the directory containing the selected `devenv.nix`.
+  command as `devenv shell --no-tui -- <runtime argv>` from the launch
+  directory, allowing `devenv` to resolve the nearest project configuration
+  using its normal working-directory behavior.
 
 `nix develop` selection:
 
