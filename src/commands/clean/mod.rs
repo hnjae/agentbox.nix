@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::cli::CleanArgs;
+use clap::Args;
+
 use crate::diagnostic;
 use crate::podman::Podman;
 use crate::prompt;
@@ -12,6 +13,25 @@ use plan::{CleanCandidate, CleanInventory, CleanPlan, CleanResource, CleanScope,
 
 mod inventory;
 mod plan;
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct CleanArgs {
+    /// Print cleanup candidates without deleting anything.
+    #[arg(long, conflicts_with = "yes")]
+    pub dry_run: bool,
+
+    /// Delete cleanup candidates without prompting.
+    #[arg(long)]
+    pub yes: bool,
+
+    /// Consider unused default runtime images.
+    #[arg(long)]
+    pub images: bool,
+
+    /// Consider unused workspace cache volumes.
+    #[arg(long)]
+    pub volumes: bool,
+}
 
 pub fn run(args: CleanArgs) -> Result<()> {
     let podman = Podman::new();

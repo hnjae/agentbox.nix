@@ -1,40 +1,24 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::{fmt, path::PathBuf};
+use clap::{Parser, Subcommand};
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
-
-use crate::runtime::RuntimeKind;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-#[value(rename_all = "kebab-case")]
-pub enum CompletionShell {
-    Bash,
-    Zsh,
-    Fish,
-}
-
-impl CompletionShell {
-    fn variants() -> &'static [Self] {
-        <Self as ValueEnum>::value_variants()
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Bash => "bash",
-            Self::Zsh => "zsh",
-            Self::Fish => "fish",
-        }
-    }
-
-    pub fn supported_values() -> Vec<&'static str> {
-        Self::variants()
-            .iter()
-            .map(|shell| shell.as_str())
-            .collect()
-    }
-}
+pub use crate::commands::OutputFormat;
+pub use crate::commands::clean::CleanArgs;
+pub use crate::commands::completion::{
+    CompletionArgs, CompletionRootCommand, CompletionRootsArgs, CompletionShell,
+    GenerateManpagesArgs,
+};
+pub use crate::commands::connect::ConnectArgs;
+pub use crate::commands::exec::ExecArgs;
+pub use crate::commands::health::HealthArgs;
+pub use crate::commands::ls::LsArgs;
+pub use crate::commands::restart::RestartArgs;
+pub use crate::commands::run::RunArgs;
+pub use crate::commands::runtime::{RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs};
+pub use crate::commands::start::StartArgs;
+pub use crate::commands::stop::StopArgs;
+pub use crate::dev_env::DevEnvMode;
 
 #[derive(Debug, Parser)]
 #[command(name = "agentbox")]
@@ -82,228 +66,4 @@ pub enum Command {
     GenerateMan,
     #[command(name = "__generate-manpages", hide = true)]
     GenerateManpages(GenerateManpagesArgs),
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct CompletionArgs {
-    #[arg(value_enum)]
-    pub shell: CompletionShell,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct CompletionRootsArgs {
-    pub command: CompletionRootCommand,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct GenerateManpagesArgs {
-    pub directory: PathBuf,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum CompletionRootCommand {
-    Connect,
-    Health,
-    Restart,
-    Stop,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum OutputFormat {
-    Table,
-    Json,
-}
-
-impl OutputFormat {
-    fn variants() -> &'static [Self] {
-        <Self as ValueEnum>::value_variants()
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Table => "table",
-            Self::Json => "json",
-        }
-    }
-
-    pub fn supported_values() -> Vec<&'static str> {
-        Self::variants()
-            .iter()
-            .map(|format| format.as_str())
-            .collect()
-    }
-}
-
-impl fmt::Display for OutputFormat {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-#[value(rename_all = "kebab-case")]
-pub enum DevEnvMode {
-    Auto,
-    None,
-}
-
-impl DevEnvMode {
-    fn variants() -> &'static [Self] {
-        <Self as ValueEnum>::value_variants()
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::None => "none",
-        }
-    }
-
-    pub fn supported_values() -> Vec<&'static str> {
-        Self::variants().iter().map(|mode| mode.as_str()).collect()
-    }
-}
-
-impl fmt::Display for DevEnvMode {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct RunArgs {
-    /// Runtime to launch for this run.
-    #[arg(long, value_enum)]
-    pub runtime: Option<RuntimeKind>,
-
-    /// Development environment loading mode.
-    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
-    pub dev_env: DevEnvMode,
-
-    /// Workspace directory inside a git repository.
-    pub directory: PathBuf,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct ExecArgs {
-    /// Development environment loading mode.
-    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
-    pub dev_env: DevEnvMode,
-
-    /// Workspace directory inside a git repository.
-    pub directory: PathBuf,
-
-    /// Arguments passed to codex exec.
-    #[arg(value_name = "CODEX_EXEC_ARG", last = true)]
-    pub codex_args: Vec<String>,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct StartArgs {
-    /// Runtime to launch for this session.
-    #[arg(long, value_enum)]
-    pub runtime: Option<RuntimeKind>,
-
-    /// Development environment loading mode.
-    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
-    pub dev_env: DevEnvMode,
-
-    /// Connect after the new session is ready.
-    #[arg(short = 'c', long = "connect")]
-    pub connect: bool,
-
-    /// Workspace directory inside a git repository.
-    pub directory: PathBuf,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct RestartArgs {
-    /// Development environment loading mode.
-    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
-    pub dev_env: DevEnvMode,
-
-    /// Connect after the restarted session is ready.
-    #[arg(short = 'c', long = "connect")]
-    pub connect: bool,
-
-    /// Workspace directory, exact orphan path, or stable session id prefix.
-    #[arg(value_name = "TARGET")]
-    pub target: Option<PathBuf>,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct RuntimeArgs {
-    #[command(subcommand)]
-    pub command: RuntimeCommand,
-}
-
-#[derive(Debug, Subcommand, PartialEq, Eq)]
-pub enum RuntimeCommand {
-    /// Update a default runtime image.
-    Update(RuntimeUpdateArgs),
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct RuntimeUpdateArgs {
-    /// Runtime image to update.
-    #[arg(value_enum)]
-    pub runtime: RuntimeKind,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct ConnectArgs {
-    /// Workspace directory inside a git repository.
-    pub directory: Option<PathBuf>,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct LsArgs {
-    /// Output format.
-    #[arg(short = 'o', long = "output", value_enum, default_value_t = OutputFormat::Table)]
-    pub output: OutputFormat,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct HealthArgs {
-    /// Output format.
-    #[arg(short = 'o', long = "output", value_enum, default_value_t = OutputFormat::Table)]
-    pub output: OutputFormat,
-
-    /// Stable session id prefix to probe.
-    #[arg(value_name = "TARGET")]
-    pub target: Option<String>,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct StopArgs {
-    /// Stop every running managed session.
-    #[arg(long, conflicts_with = "targets")]
-    pub all: bool,
-
-    /// Clean up duplicate or failed exact matches instead of failing.
-    #[arg(long)]
-    pub force: bool,
-
-    /// Workspace directory, exact orphan path, or stable session id prefix.
-    #[arg(value_name = "TARGET")]
-    pub targets: Vec<PathBuf>,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct CleanArgs {
-    /// Print cleanup candidates without deleting anything.
-    #[arg(long, conflicts_with = "yes")]
-    pub dry_run: bool,
-
-    /// Delete cleanup candidates without prompting.
-    #[arg(long)]
-    pub yes: bool,
-
-    /// Consider unused default runtime images.
-    #[arg(long)]
-    pub images: bool,
-
-    /// Consider unused workspace cache volumes.
-    #[arg(long)]
-    pub volumes: bool,
 }

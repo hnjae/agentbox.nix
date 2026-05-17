@@ -1,16 +1,23 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use clap::Args;
 use comfy_table::Cell;
 use serde::Serialize;
 
-use crate::cli::{LsArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::session::{SessionDiscoveryQuery, SessionRecord, sorted_session_refs_by_identity};
 
-use super::output;
+use super::output::{self, OutputFormat};
 use super::session_output::{SessionDisplay, SessionJsonFields};
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct LsArgs {
+    /// Output format.
+    #[arg(short = 'o', long = "output", value_enum, default_value_t = OutputFormat::Table)]
+    pub output: OutputFormat,
+}
 
 pub fn run(args: LsArgs) -> Result<()> {
     let podman = Podman::new();

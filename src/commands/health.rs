@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use clap::Args;
 use comfy_table::Cell;
 use serde::Serialize;
 
 use crate::Error;
-use crate::cli::{HealthArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::{HostRuntimeHealthProbe, RuntimeHealth, RuntimeHealthProbe};
@@ -13,10 +13,21 @@ use crate::session::{
     SessionDiscoveryQuery, SessionRecord, select_stable_id_prefix, sort_session_refs_by_identity,
 };
 
-use super::output;
+use super::output::{self, OutputFormat};
 use super::session_output::{
     SessionDisplay, SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
 };
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct HealthArgs {
+    /// Output format.
+    #[arg(short = 'o', long = "output", value_enum, default_value_t = OutputFormat::Table)]
+    pub output: OutputFormat,
+
+    /// Stable session id prefix to probe.
+    #[arg(value_name = "TARGET")]
+    pub target: Option<String>,
+}
 
 pub fn run(args: HealthArgs) -> Result<()> {
     let podman = Podman::new();

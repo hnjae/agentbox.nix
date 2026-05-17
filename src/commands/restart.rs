@@ -4,8 +4,9 @@
 use std::path::PathBuf;
 
 use camino::Utf8Path;
+use clap::Args;
 
-use crate::cli::RestartArgs;
+use crate::dev_env::DevEnvMode;
 use crate::diagnostic;
 use crate::podman::Podman;
 use crate::prompt;
@@ -26,6 +27,21 @@ use super::managed_server::{
 };
 use super::session_targets::{prompt_choices, stop_prompt_label};
 use super::workspace_flow::{LockedGitRoot, with_locked_git_root_verbose};
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RestartArgs {
+    /// Development environment loading mode.
+    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
+    pub dev_env: DevEnvMode,
+
+    /// Connect after the restarted session is ready.
+    #[arg(short = 'c', long = "connect")]
+    pub connect: bool,
+
+    /// Workspace directory, exact orphan path, or stable session id prefix.
+    #[arg(value_name = "TARGET")]
+    pub target: Option<PathBuf>,
+}
 
 pub fn run(args: RestartArgs, verbose: bool) -> Result<()> {
     let target = selected_restart_target(args.target)?;
@@ -62,7 +78,7 @@ fn select_restart_target() -> Result<SessionTargetInput> {
 
 fn restart_target(
     target: &SessionTargetInput,
-    dev_env: crate::cli::DevEnvMode,
+    dev_env: DevEnvMode,
     connect: bool,
     verbose: bool,
 ) -> Result<()> {

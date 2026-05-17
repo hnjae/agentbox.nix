@@ -1,10 +1,45 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::fmt;
+
+use clap::ValueEnum;
 use comfy_table::{Table, presets::NOTHING};
 use serde::Serialize;
 
 use crate::error::Result;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    Table,
+    Json,
+}
+
+impl OutputFormat {
+    fn variants() -> &'static [Self] {
+        <Self as ValueEnum>::value_variants()
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Table => "table",
+            Self::Json => "json",
+        }
+    }
+
+    pub fn supported_values() -> Vec<&'static str> {
+        Self::variants()
+            .iter()
+            .map(|format| format.as_str())
+            .collect()
+    }
+}
+
+impl fmt::Display for OutputFormat {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
 
 pub(super) fn table(headers: impl Into<comfy_table::Row>) -> Table {
     let mut table = Table::new();

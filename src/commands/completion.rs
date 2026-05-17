@@ -1,16 +1,72 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use clap::CommandFactory;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::cli::{Cli, CompletionRootCommand, CompletionShell, DevEnvMode, OutputFormat};
+use clap::{Args, CommandFactory, ValueEnum};
+
+use crate::cli::Cli;
+use crate::dev_env::DevEnvMode;
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
 use crate::session::{SessionDiscoveryQuery, SessionRecord, SessionTargetKind};
 
+use super::output::OutputFormat;
 use super::session_targets::completion_line;
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct CompletionArgs {
+    #[arg(value_enum)]
+    pub shell: CompletionShell,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct CompletionRootsArgs {
+    pub command: CompletionRootCommand,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct GenerateManpagesArgs {
+    pub directory: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+}
+
+impl CompletionShell {
+    fn variants() -> &'static [Self] {
+        <Self as ValueEnum>::value_variants()
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+        }
+    }
+
+    pub fn supported_values() -> Vec<&'static str> {
+        Self::variants()
+            .iter()
+            .map(|shell| shell.as_str())
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CompletionRootCommand {
+    Connect,
+    Health,
+    Restart,
+    Stop,
+}
 
 pub fn run(shell: CompletionShell) -> Result<()> {
     match shell {

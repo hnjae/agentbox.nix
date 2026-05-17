@@ -4,10 +4,40 @@
 use std::fmt;
 
 use camino::{Utf8Path, Utf8PathBuf};
+use clap::ValueEnum;
 
-use crate::cli::DevEnvMode;
 use crate::process::ProcessRunner;
 use crate::{Error, Result};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+pub enum DevEnvMode {
+    Auto,
+    None,
+}
+
+impl DevEnvMode {
+    fn variants() -> &'static [Self] {
+        <Self as ValueEnum>::value_variants()
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::None => "none",
+        }
+    }
+
+    pub fn supported_values() -> Vec<&'static str> {
+        Self::variants().iter().map(|mode| mode.as_str()).collect()
+    }
+}
+
+impl fmt::Display for DevEnvMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DevEnvironment {

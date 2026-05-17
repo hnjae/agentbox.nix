@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::Result;
-use crate::cli::DevEnvMode;
+use crate::dev_env::DevEnvMode;
 use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;

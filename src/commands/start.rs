@@ -1,8 +1,13 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::path::PathBuf;
+
+use clap::Args;
+
 use crate::Result;
-use crate::cli::StartArgs;
+use crate::dev_env::DevEnvMode;
+use crate::runtime::RuntimeKind;
 
 use super::container_launch::{managed_server_launch_request, prepare_runtime_launch};
 use super::launch_policy::{CommandInterrupt, select_runtime};
@@ -15,6 +20,24 @@ use super::workspace_flow::with_locked_workspace;
 mod interrupt;
 
 use interrupt::InterruptedRunCleanupScope;
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct StartArgs {
+    /// Runtime to launch for this session.
+    #[arg(long, value_enum)]
+    pub runtime: Option<RuntimeKind>,
+
+    /// Development environment loading mode.
+    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
+    pub dev_env: DevEnvMode,
+
+    /// Connect after the new session is ready.
+    #[arg(short = 'c', long = "connect")]
+    pub connect: bool,
+
+    /// Workspace directory inside a git repository.
+    pub directory: PathBuf,
+}
 
 pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
     let runtime = select_runtime(

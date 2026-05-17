@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use camino::Utf8Path;
+use clap::Args;
 
-use crate::cli::ConnectArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
 use crate::prompt;
@@ -17,6 +17,12 @@ use crate::{Error, Result};
 use super::runtime_command::run_host_runtime_client;
 use super::session_targets::{connect_prompt_label, prompt_choices};
 use super::workspace_flow::with_locked_workspace;
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct ConnectArgs {
+    /// Workspace directory inside a git repository.
+    pub directory: Option<PathBuf>,
+}
 
 pub fn run(args: ConnectArgs) -> Result<()> {
     let directory = selected_connect_directory(args.directory)?;

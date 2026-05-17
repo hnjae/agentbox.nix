@@ -28,6 +28,8 @@ pub mod stop;
 mod transient_run;
 mod workspace_flow;
 
+pub use output::OutputFormat;
+
 pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
     tracing::debug!(?command, "dispatching CLI command");
 

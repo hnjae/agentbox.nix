@@ -2,16 +2,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
-use crate::cli::ExecArgs;
+use crate::dev_env::DevEnvMode;
 use crate::diagnostic;
 use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
+use clap::Args;
 
 use super::container_launch::{foreground_launch_request, prepare_runtime_launch};
 use super::launch_policy::exit_code;
 use super::runtime_command::codex_exec_runtime_command;
 use super::workspace_flow::with_locked_workspace;
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct ExecArgs {
+    /// Development environment loading mode.
+    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
+    pub dev_env: DevEnvMode,
+
+    /// Workspace directory inside a git repository.
+    pub directory: PathBuf,
+
+    /// Arguments passed to codex exec.
+    #[arg(value_name = "CODEX_EXEC_ARG", last = true)]
+    pub codex_args: Vec<String>,
+}
 
 pub fn run(args: ExecArgs, verbose: bool) -> Result<()> {
     let runtime = RuntimeKind::Codex;

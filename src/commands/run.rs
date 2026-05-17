@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::cli::RunArgs;
+use crate::dev_env::DevEnvMode;
 use crate::diagnostic;
+use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
+use clap::Args;
 
 use super::container_launch::{prepare_runtime_launch, transient_server_launch_request};
 use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
@@ -14,6 +16,20 @@ use super::runtime_command::run_host_runtime_client_status;
 use super::server_readiness::ServerEndpointContext;
 use super::transient_run::TransientRun;
 use super::workspace_flow::with_locked_workspace;
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RunArgs {
+    /// Runtime to launch for this run.
+    #[arg(long, value_enum)]
+    pub runtime: Option<RuntimeKind>,
+
+    /// Development environment loading mode.
+    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
+    pub dev_env: DevEnvMode,
+
+    /// Workspace directory inside a git repository.
+    pub directory: std::path::PathBuf,
+}
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     let runtime = select_runtime(

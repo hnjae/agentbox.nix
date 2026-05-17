@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::cli::StopArgs;
+use std::path::PathBuf;
+
+use clap::Args;
+
 use crate::diagnostic;
 use crate::podman::Podman;
 use crate::prompt;
@@ -13,6 +16,21 @@ use super::session_targets::{prompt_choices, stop_prompt_label};
 mod cleanup;
 
 use cleanup::{stop_all_running, stop_target};
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct StopArgs {
+    /// Stop every running managed session.
+    #[arg(long, conflicts_with = "targets")]
+    pub all: bool,
+
+    /// Clean up duplicate or failed exact matches instead of failing.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Workspace directory, exact orphan path, or stable session id prefix.
+    #[arg(value_name = "TARGET")]
+    pub targets: Vec<PathBuf>,
+}
 
 pub fn run(args: StopArgs) -> Result<()> {
     if args.all {
