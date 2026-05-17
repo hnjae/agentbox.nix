@@ -12,6 +12,7 @@ use crate::session::{
     duplicate_agentbox_containers_error, existing_session_error, select_single_session,
 };
 use crate::ssh_signing::apply_ssh_commit_signing_passthrough;
+use crate::workspace::WorkspaceIdentity;
 
 use super::runtime::ensure_default_runtime_image;
 use super::runtime_command::{ensure_host_runtime_client_available, server_runtime_command};
@@ -39,6 +40,12 @@ enum HostClientRequirement {
 enum ExistingResourceScope {
     ManagedSessions,
     AgentboxContainers,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExistingResourceCheck {
+    RequireAbsent(ExistingResourceScope),
+    AllowExisting,
 }
 
 impl ExistingResourceScope {
@@ -83,12 +90,13 @@ pub(super) fn prepare_server_launch(
     mode: ServerLaunchMode,
 ) -> Result<RuntimeLaunchPreparation> {
     let workspace = locked.workspace();
-    let preparation = prepare_container_launch(
-        locked,
+    let preparation = prepare_container_launch_for_workspace(
+        locked.podman(),
+        workspace,
         runtime,
         dev_env_mode,
         mode.host_client_requirement(),
-        ExistingResourceScope::AgentboxContainers,
+        ExistingResourceCheck::RequireAbsent(ExistingResourceScope::AgentboxContainers),
     )?;
     let server_run = server_runtime_command(
         runtime,
@@ -115,12 +123,13 @@ pub(super) fn prepare_foreground_launch(
     invocation: impl FnOnce(&DevEnvironment) -> RuntimeInvocation,
 ) -> Result<RuntimeLaunchPreparation> {
     let workspace = locked.workspace();
-    let preparation = prepare_container_launch(
-        locked,
+    let preparation = prepare_container_launch_for_workspace(
+        locked.podman(),
+        workspace,
         runtime,
         dev_env_mode,
         HostClientRequirement::NotRequired,
-        ExistingResourceScope::ManagedSessions,
+        ExistingResourceCheck::RequireAbsent(ExistingResourceScope::ManagedSessions),
     )?;
     let mut run_spec = runtime.run_spec(
         RuntimeRunMode::Foreground,
@@ -134,34 +143,86 @@ pub(super) fn prepare_foreground_launch(
     Ok(RuntimeLaunchPreparation { run_spec })
 }
 
-fn prepare_container_launch(
-    locked: &LockedWorkspace<'_>,
+pub(super) fn prepare_replacement_server_launch(
+    podman: &crate::podman::Podman,
+    workspace: &WorkspaceIdentity,
+    runtime: RuntimeKind,
+    dev_env_mode: DevEnvMode,
+    connect_after_restart: bool,
+) -> Result<RuntimeLaunchPreparation> {
+    let preparation = prepare_container_launch_for_workspace(
+        podman,
+        workspace,
+        runtime,
+        dev_env_mode,
+        if connect_after_restart {
+            HostClientRequirement::Required
+        } else {
+            HostClientRequirement::NotRequired
+        },
+        ExistingResourceCheck::AllowExisting,
+    )?;
+    let server_run = server_runtime_command(
+        runtime,
+        workspace.canonical_target.as_ref(),
+        &preparation.dev_env,
+    );
+    let mut run_spec = runtime.run_spec(
+        RuntimeRunMode::ManagedSession,
+        workspace,
+        &preparation.preflight.host_nix_mounts,
+        &preparation.preflight.runtime_mounts,
+        server_run,
+    );
+    apply_ssh_commit_signing_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
+    record_runtime_image_version(
+        runtime,
+        &preparation,
+        &mut run_spec,
+        ServerLaunchMode::ManagedSession,
+    );
+
+    Ok(RuntimeLaunchPreparation { run_spec })
+}
+
+fn prepare_container_launch_for_workspace(
+    podman: &crate::podman::Podman,
+    workspace: &WorkspaceIdentity,
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
     host_client: HostClientRequirement,
-    existing_scope: ExistingResourceScope,
+    existing_check: ExistingResourceCheck,
 ) -> Result<ContainerLaunchPreparation> {
-    let workspace = locked.workspace();
-
     diagnostic::info("checking workspace prerequisites");
     let preflight = check_host_prerequisites_for_runtime(runtime)?;
 
-    diagnostic::info(existing_scope.diagnostic_message());
-    let podman = locked.podman();
-    let sessions = match existing_scope {
-        ExistingResourceScope::ManagedSessions => locked.discover_managed_sessions()?,
-        ExistingResourceScope::AgentboxContainers => locked.discover_agentbox_containers()?,
-    };
-    let existing = match sessions.as_slice() {
-        [] => None,
-        [session] => Some(session),
-        _ if existing_scope == ExistingResourceScope::AgentboxContainers => {
-            return Err(duplicate_agentbox_containers_error(workspace));
+    if let ExistingResourceCheck::RequireAbsent(existing_scope) = existing_check {
+        diagnostic::info(existing_scope.diagnostic_message());
+        let sessions = match existing_scope {
+            ExistingResourceScope::ManagedSessions => {
+                crate::session::discover_managed_sessions_for_git_root(
+                    podman,
+                    workspace.canonical_git_root.as_ref(),
+                )?
+            }
+            ExistingResourceScope::AgentboxContainers => {
+                crate::session::discover_sessions_for_git_root(
+                    podman,
+                    workspace.canonical_git_root.as_ref(),
+                )?
+            }
+        };
+        let existing = match sessions.as_slice() {
+            [] => None,
+            [session] => Some(session),
+            _ if existing_scope == ExistingResourceScope::AgentboxContainers => {
+                return Err(duplicate_agentbox_containers_error(workspace));
+            }
+            _ => select_single_session(&sessions, workspace)?,
+        };
+        if let Some(session) = existing {
+            return Err(existing_session_error(podman, workspace, session));
         }
-        _ => select_single_session(&sessions, workspace)?,
-    };
-    if let Some(session) = existing {
-        return Err(existing_session_error(podman, workspace, session));
     }
 
     let dev_env = DevEnvironment::resolve(

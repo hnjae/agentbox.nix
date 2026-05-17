@@ -31,6 +31,18 @@ _agentbox() {
     connect)
       (( CURRENT == 3 )) && _agentbox_completion_roots connect
       ;;
+    restart)
+      if (( CURRENT > 2 && "$words[CURRENT-1]" == "--dev-env" )); then
+        _values 'dev env' @DEV_ENV_VALUES@
+      elif [[ "$PREFIX" == -* ]]; then
+        _values 'option' \
+          '--dev-env[select development environment loading mode]' \
+          '--connect[connect after the restarted session is ready]' \
+          '-c[connect after the restarted session is ready]'
+      elif (( CURRENT == 3 )); then
+        _agentbox_completion_roots restart
+      fi
+      ;;
     stop)
       if (( CURRENT >= 3 )); then
         local stop_words_before

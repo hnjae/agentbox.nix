@@ -15,6 +15,7 @@ pub mod health;
 mod launch_policy;
 pub mod ls;
 mod output;
+pub mod restart;
 pub mod run;
 pub mod runtime;
 mod runtime_command;
@@ -23,6 +24,7 @@ mod session_output;
 mod session_targets;
 pub mod start;
 pub mod stop;
+mod target;
 mod transient_run;
 mod workspace_flow;
 
@@ -33,6 +35,7 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
         Command::Run(args) => run::run(args, verbose),
         Command::Exec(args) => exec::run(args, verbose),
         Command::Start(args) => start::run(args, verbose),
+        Command::Restart(args) => restart::run(args, verbose),
         Command::Runtime(args) => runtime::run(args, verbose),
         Command::Connect(args) => connect::run(args),
         Command::Ls(args) => ls::run(args),

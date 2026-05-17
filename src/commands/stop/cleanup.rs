@@ -11,16 +11,16 @@ use crate::session::{
 use crate::{Error, Result};
 
 use super::super::container_cleanup::{ContainerCleanupFailure, cleanup_managed_containers};
+use super::super::target::{ResolvedSessionTarget, SessionTargetInput, resolve_session_target};
 use super::super::workspace_flow::{LockedGitRoot, with_locked_git_root};
-use super::target::{StopTarget, StopTargetInput, resolve_stop_target};
 
-pub(super) fn stop_target(target: &StopTargetInput, force: bool) -> Result<()> {
-    match resolve_stop_target(target)? {
-        StopTarget::ResolvedGitRoot(git_root) => stop_git_root(&git_root, force, target),
-        StopTarget::ExactStoredGitRootPath(git_root) => {
+pub(super) fn stop_target(target: &SessionTargetInput, force: bool) -> Result<()> {
+    match resolve_session_target(target)? {
+        ResolvedSessionTarget::ResolvedGitRoot(git_root) => stop_git_root(&git_root, force, target),
+        ResolvedSessionTarget::ExactStoredGitRootPath(git_root) => {
             stop_exact_stored_git_root_path(&git_root, force, target)
         }
-        StopTarget::StableId(prefix) => stop_stable_id(&prefix, force, target),
+        ResolvedSessionTarget::StableId(prefix) => stop_stable_id(&prefix, force, target),
     }
 }
 
@@ -35,14 +35,14 @@ pub(super) fn stop_all_running() -> Result<()> {
     finish_cleanup("all running agentbox containers", &failures)
 }
 
-fn stop_git_root(git_root: &Utf8Path, force: bool, target: &StopTargetInput) -> Result<()> {
+fn stop_git_root(git_root: &Utf8Path, force: bool, target: &SessionTargetInput) -> Result<()> {
     stop_exact_git_root_matches(git_root, force, target, ExactGitRootStopMode::Scoped)
 }
 
 fn stop_exact_stored_git_root_path(
     git_root: &Utf8Path,
     force: bool,
-    target: &StopTargetInput,
+    target: &SessionTargetInput,
 ) -> Result<()> {
     stop_exact_git_root_matches(
         git_root,
@@ -77,7 +77,7 @@ impl ExactGitRootStopMode {
 fn stop_exact_git_root_matches(
     git_root: &Utf8Path,
     force: bool,
-    target: &StopTargetInput,
+    target: &SessionTargetInput,
     mode: ExactGitRootStopMode,
 ) -> Result<()> {
     let failures = with_locked_git_root(git_root, |locked| {
@@ -98,7 +98,7 @@ fn stop_exact_git_root_matches(
     finish_cleanup(git_root.as_str(), &failures)
 }
 
-fn stop_stable_id(prefix: &str, force: bool, target: &StopTargetInput) -> Result<()> {
+fn stop_stable_id(prefix: &str, force: bool, target: &SessionTargetInput) -> Result<()> {
     let podman = Podman::new();
     let sessions = discover_agentbox_containers(&podman)?;
     let selection = select_agentbox_stable_id_prefix(&sessions, prefix)?;
@@ -147,7 +147,7 @@ fn require_force_for_duplicate_matches(
     has_duplicates: bool,
     force: bool,
     target_ref: &str,
-    target: &StopTargetInput,
+    target: &SessionTargetInput,
 ) -> Result<()> {
     if has_duplicates && !force {
         Err(Error::msg(format!(

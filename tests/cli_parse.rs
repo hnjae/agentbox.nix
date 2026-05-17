@@ -3,8 +3,8 @@
 
 use agentbox::cli::{
     CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, ExecArgs,
-    HealthArgs, LsArgs, OutputFormat, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs,
-    StartArgs, StopArgs,
+    HealthArgs, LsArgs, OutputFormat, RestartArgs, RunArgs, RuntimeArgs, RuntimeCommand,
+    RuntimeUpdateArgs, StartArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
@@ -21,6 +21,7 @@ fn help_lists_core_commands() {
         predicate::str::contains("run")
             .and(predicate::str::contains("exec"))
             .and(predicate::str::contains("start"))
+            .and(predicate::str::contains("restart"))
             .and(predicate::str::contains("runtime"))
             .and(predicate::str::contains("connect"))
             .and(predicate::str::contains("attach").not())
@@ -70,6 +71,15 @@ fn core_commands_parse_into_expected_variants() {
         "/tmp/workspace",
     ])
     .unwrap();
+    let restart = Cli::try_parse_from([
+        "agentbox",
+        "restart",
+        "--connect",
+        "--dev-env",
+        "none",
+        "abc123",
+    ])
+    .unwrap();
     let connect = Cli::try_parse_from(["agentbox", "connect", "/tmp/workspace"]).unwrap();
     let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
     let health = Cli::try_parse_from(["agentbox", "health"]).unwrap();
@@ -107,6 +117,14 @@ fn core_commands_parse_into_expected_variants() {
             dev_env: DevEnvMode::Auto,
             connect: true,
             directory: "/tmp/workspace".into(),
+        })
+    );
+    assert_eq!(
+        restart.command,
+        Command::Restart(RestartArgs {
+            dev_env: DevEnvMode::None,
+            connect: true,
+            target: Some("abc123".into()),
         })
     );
     assert_eq!(
@@ -524,6 +542,57 @@ fn start_accepts_connect_flag() {
                 connect: true,
                 directory: "/tmp/workspace".into(),
             })
+        );
+    }
+}
+
+#[test]
+fn restart_accepts_optional_target_connect_and_dev_env() {
+    let defaulted = Cli::try_parse_from(["agentbox", "restart"]).unwrap();
+    assert_eq!(
+        defaulted.command,
+        Command::Restart(RestartArgs {
+            dev_env: DevEnvMode::Auto,
+            connect: false,
+            target: None,
+        })
+    );
+
+    for flag in ["--connect", "-c"] {
+        let cli = Cli::try_parse_from([
+            "agentbox",
+            "restart",
+            flag,
+            "--dev-env",
+            "none",
+            "/tmp/workspace",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Restart(RestartArgs {
+                dev_env: DevEnvMode::None,
+                connect: true,
+                target: Some("/tmp/workspace".into()),
+            })
+        );
+    }
+}
+
+#[test]
+fn restart_rejects_unsupported_flags() {
+    for args in [
+        vec!["agentbox", "restart", "--runtime", "opencode", "abc123"],
+        vec!["agentbox", "restart", "--all"],
+        vec!["agentbox", "restart", "--force", "abc123"],
+    ] {
+        let error = Cli::try_parse_from(args).unwrap_err();
+
+        assert_eq!(error.exit_code(), 2);
+        assert!(
+            error.to_string().contains("unexpected argument"),
+            "expected clap to reject unsupported restart flag"
         );
     }
 }

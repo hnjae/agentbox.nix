@@ -57,6 +57,8 @@ pub enum Command {
     Exec(ExecArgs),
     /// Start a managed session as a detached runtime server.
     Start(StartArgs),
+    /// Restart a running managed session.
+    Restart(RestartArgs),
     /// Manage default runtime images.
     Runtime(RuntimeArgs),
     /// Connect to a running managed session.
@@ -102,6 +104,7 @@ pub struct GenerateManpagesArgs {
 pub enum CompletionRootCommand {
     Connect,
     Health,
+    Restart,
     Stop,
 }
 
@@ -211,6 +214,21 @@ pub struct StartArgs {
 
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
+}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RestartArgs {
+    /// Development environment loading mode.
+    #[arg(long = "dev-env", value_enum, default_value_t = DevEnvMode::Auto)]
+    pub dev_env: DevEnvMode,
+
+    /// Connect after the restarted session is ready.
+    #[arg(short = 'c', long = "connect")]
+    pub connect: bool,
+
+    /// Workspace directory, exact orphan path, or stable session id prefix.
+    #[arg(value_name = "TARGET")]
+    pub target: Option<PathBuf>,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]

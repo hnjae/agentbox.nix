@@ -25,6 +25,15 @@ _agentbox() {
                 _agentbox_completion_roots connect
             fi
             ;;
+        restart)
+            if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--dev-env" ]]; then
+                COMPREPLY=( $(compgen -W "@DEV_ENV_VALUES@" -- "$cur") )
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--dev-env --connect -c" -- "$cur") )
+            elif [[ "$COMP_CWORD" -eq 2 ]]; then
+                _agentbox_completion_roots restart
+            fi
+            ;;
         stop)
             local stop_words_before
             stop_words_before="${COMP_WORDS[*]:2:COMP_CWORD-2}"

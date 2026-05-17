@@ -58,9 +58,9 @@ fn completion_sessions(
 ) -> Result<Vec<SessionRecord>> {
     match command {
         CompletionRootCommand::Stop => discover_agentbox_containers(podman),
-        CompletionRootCommand::Connect | CompletionRootCommand::Health => {
-            discover_managed_sessions(podman)
-        }
+        CompletionRootCommand::Connect
+        | CompletionRootCommand::Health
+        | CompletionRootCommand::Restart => discover_managed_sessions(podman),
     }
 }
 
@@ -78,6 +78,7 @@ pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
 fn completion_target_kind(command: CompletionRootCommand) -> SessionTargetKind {
     match command {
         CompletionRootCommand::Connect => SessionTargetKind::ConnectRoot,
+        CompletionRootCommand::Restart => SessionTargetKind::RestartStableId,
         CompletionRootCommand::Health | CompletionRootCommand::Stop => SessionTargetKind::StableId,
     }
 }
@@ -138,6 +139,7 @@ fn completion_subcommand_description(command: &clap::Command) -> String {
         "run" => "Run a transient runtime server and host client".to_string(),
         "exec" => "Run Codex exec in a foreground container".to_string(),
         "start" => "Start a detached runtime server session".to_string(),
+        "restart" => "Restart a running managed session".to_string(),
         "completion" => "Generate shell completion".to_string(),
         _ => command
             .get_about()

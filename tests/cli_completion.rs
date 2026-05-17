@@ -111,6 +111,19 @@ fn helper_filters_connect_and_stop_candidates_by_command() {
     assert!(!connect.contains(transient_workspace.canonical_git_root.as_str()));
     assert!(!connect.contains(failed_workspace.canonical_git_root.as_str()));
 
+    let restart = harness
+        .agentbox_command()
+        .args(["__completion-roots", "restart"])
+        .output()
+        .unwrap();
+    assert!(restart.status.success());
+    assert!(restart.stderr.is_empty());
+    let restart = String::from_utf8(restart.stdout).unwrap();
+    assert_eq!(first_candidate_value(&restart), running_workspace.hash12);
+    assert!(restart.contains(&running_workspace.hash12));
+    assert!(!restart.contains(&transient_workspace.hash12));
+    assert!(!restart.contains(&failed_workspace.hash12));
+
     let stop = harness
         .agentbox_command()
         .args(["__completion-roots", "stop"])
@@ -171,7 +184,11 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(script.contains("run exec start runtime connect ls health stop clean completion help"));
+    assert!(
+        script.contains(
+            "run exec start restart runtime connect ls health stop clean completion help"
+        )
+    );
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -225,6 +242,31 @@ fn completion_scripts_offer_run_and_start_flags() {
     assert!(!fish.contains("__fish_seen_subcommand_from run\" -s c -l connect"));
     assert!(fish.contains("__fish_seen_subcommand_from start"));
     assert!(fish.contains("__fish_seen_subcommand_from start\" -s c -l connect"));
+}
+
+#[test]
+fn completion_scripts_offer_restart_flags_and_candidates() {
+    let dev_env_values = DevEnvMode::supported_values().join(" ");
+
+    let bash = capture_completion_script_shell("bash");
+    assert!(bash.contains("restart)"));
+    assert!(bash.contains("--dev-env --connect -c"));
+    assert!(bash.contains("_agentbox_completion_roots restart"));
+    assert!(bash.contains(&dev_env_values));
+
+    let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("restart)"));
+    assert!(zsh.contains("--dev-env[select development environment loading mode]"));
+    assert!(zsh.contains("--connect[connect after the restarted session is ready]"));
+    assert!(zsh.contains("_agentbox_completion_roots restart"));
+    assert!(zsh.contains(&dev_env_values));
+
+    let fish = capture_completion_script_shell("fish");
+    assert!(fish.contains("__fish_seen_subcommand_from restart"));
+    assert!(fish.contains("__fish_seen_subcommand_from restart\" -l dev-env"));
+    assert!(fish.contains("__fish_seen_subcommand_from restart\" -s c -l connect"));
+    assert!(fish.contains("(__agentbox_completion_roots restart)"));
+    assert!(fish.contains(&dev_env_values));
 }
 
 #[test]
@@ -333,6 +375,7 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
     assert!(manpage.contains("agentbox\\-run(1)"));
     assert!(manpage.contains("agentbox\\-exec(1)"));
     assert!(manpage.contains("agentbox\\-start(1)"));
+    assert!(manpage.contains("agentbox\\-restart(1)"));
     assert!(manpage.contains("agentbox\\-health(1)"));
     assert!(manpage.contains("agentbox\\-clean(1)"));
     assert!(!manpage.contains("agentbox\\-help(1)"));
@@ -363,6 +406,7 @@ fn installed_manpages_include_referenced_subcommands() {
         "agentbox-run.1",
         "agentbox-exec.1",
         "agentbox-start.1",
+        "agentbox-restart.1",
         "agentbox-runtime.1",
         "agentbox-connect.1",
         "agentbox-ls.1",
@@ -382,6 +426,7 @@ fn installed_manpages_include_referenced_subcommands() {
     assert!(agentbox.contains("agentbox\\-run(1)"));
     assert!(agentbox.contains("agentbox\\-exec(1)"));
     assert!(agentbox.contains("agentbox\\-start(1)"));
+    assert!(agentbox.contains("agentbox\\-restart(1)"));
     assert!(agentbox.contains("agentbox\\-health(1)"));
     assert!(agentbox.contains("agentbox\\-clean(1)"));
     assert!(!agentbox.contains("agentbox\\-help(1)"));
@@ -399,6 +444,11 @@ fn installed_manpages_include_referenced_subcommands() {
     assert!(start.contains(".TH agentbox-start 1"));
     assert!(start.contains("Runtime to launch for this session"));
     assert!(start.contains("Connect after the new session is ready"));
+    let restart = fs::read_to_string(directory.path().join("agentbox-restart.1")).unwrap();
+    assert!(restart.contains(".TH agentbox-restart 1"));
+    assert!(restart.contains("Development environment loading mode"));
+    assert!(restart.contains("Connect after the restarted session is ready"));
+    assert!(!restart.contains("Runtime to launch"));
 }
 
 fn capture_completion_script() -> String {

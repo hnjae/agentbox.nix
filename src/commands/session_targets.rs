@@ -9,6 +9,7 @@ use super::session_output::SessionDisplay;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SessionTargetKind {
     ConnectRoot,
+    RestartStableId,
     StableId,
 }
 
@@ -21,6 +22,7 @@ impl SessionTargetKind {
             Self::ConnectRoot if session.is_connectable_candidate() => {
                 session.canonical_git_root()?.as_str()
             }
+            Self::RestartStableId if session.is_restartable_candidate() => session.stable_id()?,
             Self::StableId if session.has_stable_id() => session.stable_id()?,
             _ => return None,
         };

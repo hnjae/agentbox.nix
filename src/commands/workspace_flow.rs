@@ -39,10 +39,6 @@ impl LockedWorkspace<'_> {
             self.workspace.canonical_git_root.as_ref(),
         )
     }
-
-    pub(crate) fn discover_agentbox_containers(&self) -> Result<Vec<SessionRecord>> {
-        discover_sessions_for_git_root(&self.podman, self.workspace.canonical_git_root.as_ref())
-    }
 }
 
 impl LockedGitRoot<'_> {
@@ -83,11 +79,19 @@ pub(crate) fn with_locked_git_root<T>(
     git_root: &Utf8Path,
     operation: impl FnOnce(LockedGitRoot<'_>) -> Result<T>,
 ) -> Result<T> {
+    with_locked_git_root_verbose(git_root, false, operation)
+}
+
+pub(crate) fn with_locked_git_root_verbose<T>(
+    git_root: &Utf8Path,
+    verbose: bool,
+    operation: impl FnOnce(LockedGitRoot<'_>) -> Result<T>,
+) -> Result<T> {
     let mut workspace_lock = lock_git_root(git_root)?;
     let _workspace_guard = workspace_lock.guard()?;
     let locked = LockedGitRoot {
         git_root,
-        podman: Podman::new(),
+        podman: Podman::new().with_verbose(verbose),
     };
 
     operation(locked)

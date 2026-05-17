@@ -79,6 +79,15 @@ impl SessionRecord {
             && self.attach_endpoint.is_some()
             && self.canonical_git_root().is_some()
     }
+
+    pub(crate) fn is_restartable_candidate(&self) -> bool {
+        self.is_managed_session()
+            && self.is_running()
+            && self.stable_id().is_some()
+            && self.runtime_kind().is_some()
+            && self.launch_directory().is_some()
+            && self.canonical_git_root().is_some()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

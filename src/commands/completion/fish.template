@@ -24,6 +24,9 @@ end
 
 complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "@SUBCOMMAND_NAMES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from connect" -a "(__agentbox_completion_roots connect)"
+complete -c agentbox -f -n "__fish_seen_subcommand_from restart" -s c -l connect -d "Connect after the restarted session is ready"
+complete -c agentbox -f -n "__fish_seen_subcommand_from restart" -l dev-env -r -a "@DEV_ENV_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from restart" -a "(__agentbox_completion_roots restart)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from ls" -s o -l output -r -a "@OUTPUT_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from health" -s o -l output -r -a "@OUTPUT_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from health" -a "(__agentbox_completion_roots health)"

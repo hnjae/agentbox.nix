@@ -10,12 +10,12 @@ use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum StopTargetInput {
+pub(super) enum SessionTargetInput {
     Cli(PathBuf),
     StableId(String),
 }
 
-impl StopTargetInput {
+impl SessionTargetInput {
     pub(super) fn display(&self) -> String {
         match self {
             Self::Cli(path) => path.display().to_string(),
@@ -25,32 +25,32 @@ impl StopTargetInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum StopTarget {
+pub(super) enum ResolvedSessionTarget {
     ResolvedGitRoot(Utf8PathBuf),
     ExactStoredGitRootPath(Utf8PathBuf),
     StableId(String),
 }
 
-pub(super) fn resolve_stop_target(target: &StopTargetInput) -> Result<StopTarget> {
+pub(super) fn resolve_session_target(target: &SessionTargetInput) -> Result<ResolvedSessionTarget> {
     match target {
-        StopTargetInput::Cli(path) => resolve_cli_stop_target(path),
-        StopTargetInput::StableId(prefix) => Ok(StopTarget::StableId(prefix.clone())),
+        SessionTargetInput::Cli(path) => resolve_cli_session_target(path),
+        SessionTargetInput::StableId(prefix) => Ok(ResolvedSessionTarget::StableId(prefix.clone())),
     }
 }
 
-fn resolve_cli_stop_target(target: &Path) -> Result<StopTarget> {
+fn resolve_cli_session_target(target: &Path) -> Result<ResolvedSessionTarget> {
     if target.exists() {
         return resolve_workspace_identity(target)
-            .map(|workspace| StopTarget::ResolvedGitRoot(workspace.canonical_git_root));
+            .map(|workspace| ResolvedSessionTarget::ResolvedGitRoot(workspace.canonical_git_root));
     }
 
-    classify_missing_cli_stop_target(target)
+    classify_missing_cli_session_target(target)
 }
 
-fn classify_missing_cli_stop_target(target: &Path) -> Result<StopTarget> {
+fn classify_missing_cli_session_target(target: &Path) -> Result<ResolvedSessionTarget> {
     if target.is_absolute() {
         let git_root = path_buf_to_utf8(target.to_path_buf())?;
-        return Ok(StopTarget::ExactStoredGitRootPath(git_root));
+        return Ok(ResolvedSessionTarget::ExactStoredGitRootPath(git_root));
     }
 
     let prefix = target.to_str().ok_or_else(|| {
@@ -60,11 +60,13 @@ fn classify_missing_cli_stop_target(target: &Path) -> Result<StopTarget> {
         ))
     })?;
 
-    Ok(StopTarget::StableId(prefix.to_string()))
+    Ok(ResolvedSessionTarget::StableId(prefix.to_string()))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
@@ -72,19 +74,24 @@ mod tests {
         let sandbox = tempfile::tempdir().unwrap();
         let target = sandbox.path().join("missing-root");
 
-        let resolved = classify_missing_cli_stop_target(&target).unwrap();
+        let resolved = classify_missing_cli_session_target(&target).unwrap();
 
         assert_eq!(
             resolved,
-            StopTarget::ExactStoredGitRootPath(Utf8PathBuf::from_path_buf(target).unwrap())
+            ResolvedSessionTarget::ExactStoredGitRootPath(
+                Utf8PathBuf::from_path_buf(target).unwrap()
+            )
         );
     }
 
     #[test]
     fn missing_relative_cli_target_is_stable_id_prefix() {
-        let target = classify_missing_cli_stop_target(Path::new("abc123")).unwrap();
+        let target = classify_missing_cli_session_target(Path::new("abc123")).unwrap();
 
-        assert_eq!(target, StopTarget::StableId("abc123".to_string()));
+        assert_eq!(
+            target,
+            ResolvedSessionTarget::StableId("abc123".to_string())
+        );
     }
 
     #[cfg(unix)]
@@ -94,7 +101,7 @@ mod tests {
         use std::os::unix::ffi::OsStrExt;
 
         let target = Path::new(OsStr::from_bytes(b"\xff"));
-        let error = classify_missing_cli_stop_target(target).unwrap_err();
+        let error = classify_missing_cli_session_target(target).unwrap_err();
 
         assert!(error.to_string().contains("non-utf8 target"));
     }

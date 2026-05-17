@@ -11,10 +11,9 @@ use crate::{Error, Result};
 use super::session_targets::SessionTargetKind;
 
 mod cleanup;
-mod target;
 
+use super::target::SessionTargetInput;
 use cleanup::{stop_all_running, stop_target};
-use target::StopTargetInput;
 
 pub fn run(args: StopArgs) -> Result<()> {
     if args.all {
@@ -28,13 +27,16 @@ pub fn run(args: StopArgs) -> Result<()> {
     let targets = if args.targets.is_empty() {
         select_stop_targets()?
     } else {
-        args.targets.into_iter().map(StopTargetInput::Cli).collect()
+        args.targets
+            .into_iter()
+            .map(SessionTargetInput::Cli)
+            .collect()
     };
 
     stop_targets(&targets, args.force)
 }
 
-fn select_stop_targets() -> Result<Vec<StopTargetInput>> {
+fn select_stop_targets() -> Result<Vec<SessionTargetInput>> {
     let non_tty_error =
         "agentbox stop requires a target or --all when stdin or stderr is not a TTY";
     prompt::require_interactive_terminal(non_tty_error)?;
@@ -59,10 +61,13 @@ fn select_stop_targets() -> Result<Vec<StopTargetInput>> {
     targets.sort();
     targets.dedup();
 
-    Ok(targets.into_iter().map(StopTargetInput::StableId).collect())
+    Ok(targets
+        .into_iter()
+        .map(SessionTargetInput::StableId)
+        .collect())
 }
 
-fn stop_targets(targets: &[StopTargetInput], force: bool) -> Result<()> {
+fn stop_targets(targets: &[SessionTargetInput], force: bool) -> Result<()> {
     if targets.is_empty() {
         return Ok(());
     }
@@ -91,7 +96,7 @@ struct TargetStopFailure {
 }
 
 impl TargetStopFailure {
-    fn new(target: &StopTargetInput, error: Error) -> Self {
+    fn new(target: &SessionTargetInput, error: Error) -> Self {
         Self {
             target: target.display(),
             error,
