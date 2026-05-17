@@ -11,21 +11,21 @@ use crate::diagnostic;
 use crate::metadata::AgentboxContainerKind;
 use crate::podman::Podman;
 use crate::prompt;
-use crate::runtime::{AttachEndpoint, RuntimeKind, RuntimeRunSpec};
+use crate::runtime::RuntimeKind;
 use crate::session::{
-    SessionRecord, SessionStatus, classify_create_error_or_else, discover_agentbox_containers,
-    exact_git_root_matches, resource_failure_requires_action_error,
-    select_agentbox_stable_id_prefix,
+    SessionRecord, SessionStatus, discover_agentbox_containers, exact_git_root_matches,
+    resource_failure_requires_action_error, select_agentbox_stable_id_prefix,
 };
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
 use super::container_cleanup::ManagedContainerCleanup;
 use super::container_launch::{prepare_runtime_launch, replacement_server_launch_request};
-use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
-use super::launch_policy::{CommandInterrupt, ContainerLogContext, error_with_container_logs};
-use super::runtime_command::run_host_runtime_client;
-use super::server_readiness::ServerEndpointContext;
+use super::launch_policy::CommandInterrupt;
+use super::managed_server::{
+    ManagedServerCompletionKind, ManagedServerLaunchPolicy, finish_managed_server_launch,
+    launch_managed_server,
+};
 use super::session_targets::SessionTargetKind;
 use super::target::{ResolvedSessionTarget, SessionTargetInput, resolve_session_target};
 use super::workspace_flow::{LockedGitRoot, with_locked_git_root_verbose};
@@ -70,10 +70,10 @@ fn restart_target(
     verbose: bool,
 ) -> Result<()> {
     diagnostic::info(format!("resolving restart target `{}`", target.display()));
-    let git_root = restart_lock_git_root(target)?;
+    let target_plan = RestartTargetPlan::resolve(target)?;
 
-    with_locked_git_root_verbose(&git_root, verbose, |locked| {
-        let session = select_restartable_session_for_locked_target(&locked, target)?;
+    with_locked_git_root_verbose(target_plan.lock_git_root(), verbose, |locked| {
+        let session = target_plan.select_restartable_session(&locked)?;
         let launch_workspace = restart_launch_workspace(&locked, &session)?;
         let runtime = session_runtime(&session)?;
         let preparation = prepare_runtime_launch(replacement_server_launch_request(
@@ -86,27 +86,100 @@ fn restart_target(
         let run_spec = preparation.run_spec;
 
         stop_existing_session(locked.podman(), &session)?;
-        let endpoint =
-            launch_replacement_server(locked.podman(), &launch_workspace, runtime, &run_spec)?;
+        let endpoint = launch_managed_server(
+            locked.podman(),
+            &launch_workspace,
+            runtime,
+            &run_spec,
+            RestartServerLaunchPolicy {
+                workspace: &launch_workspace,
+                runtime,
+            },
+        )?;
 
-        finish_restart(connect, &launch_workspace, runtime, endpoint)
+        finish_managed_server_launch(
+            ManagedServerCompletionKind::Restart,
+            connect,
+            &launch_workspace,
+            runtime,
+            endpoint,
+            launch_workspace.canonical_target.as_ref(),
+            launch_workspace.canonical_target.as_ref(),
+        )
     })?;
 
     Ok(())
 }
 
-fn restart_lock_git_root(target: &SessionTargetInput) -> Result<Utf8PathBuf> {
-    match resolve_session_target(target)? {
-        ResolvedSessionTarget::ResolvedGitRoot(git_root)
-        | ResolvedSessionTarget::ExactStoredGitRootPath(git_root) => Ok(git_root),
-        ResolvedSessionTarget::StableId(prefix) => restart_lock_git_root_for_stable_id(&prefix),
+struct RestartTargetPlan {
+    input: SessionTargetInput,
+    lock_git_root: Utf8PathBuf,
+}
+
+impl RestartTargetPlan {
+    fn resolve(target: &SessionTargetInput) -> Result<Self> {
+        let lock_git_root = match resolve_session_target(target)? {
+            ResolvedSessionTarget::ResolvedGitRoot(git_root)
+            | ResolvedSessionTarget::ExactStoredGitRootPath(git_root) => git_root,
+            ResolvedSessionTarget::StableId(prefix) => {
+                restart_lock_git_root_for_stable_id(&prefix)?
+            }
+        };
+
+        Ok(Self {
+            input: target.clone(),
+            lock_git_root,
+        })
+    }
+
+    fn lock_git_root(&self) -> &Utf8Path {
+        &self.lock_git_root
+    }
+
+    fn select_restartable_session(&self, locked: &LockedGitRoot<'_>) -> Result<SessionRecord> {
+        let sessions = self.matching_sessions(locked)?;
+        require_single_restartable_session(sessions, &self.input)
+    }
+
+    fn matching_sessions(&self, locked: &LockedGitRoot<'_>) -> Result<Vec<SessionRecord>> {
+        match resolve_session_target(&self.input)? {
+            ResolvedSessionTarget::ResolvedGitRoot(git_root) => {
+                require_locked_target_unchanged(locked.git_root(), &git_root)?;
+                locked.discover_sessions()
+            }
+            ResolvedSessionTarget::ExactStoredGitRootPath(git_root) => {
+                require_locked_target_unchanged(locked.git_root(), &git_root)?;
+                Ok(exact_git_root_matches(
+                    locked.discover_agentbox_containers()?,
+                    &git_root,
+                ))
+            }
+            ResolvedSessionTarget::StableId(prefix) => {
+                let sessions = locked.discover_agentbox_containers()?;
+                let selection = select_agentbox_stable_id_prefix(&sessions, &prefix)?;
+                let sessions = selection
+                    .into_sessions()
+                    .into_iter()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                require_stable_id_still_matches_locked_root(locked.git_root(), &sessions)?;
+                Ok(sessions)
+            }
+        }
     }
 }
 
 fn restart_lock_git_root_for_stable_id(prefix: &str) -> Result<Utf8PathBuf> {
     let podman = Podman::new();
     let sessions = discover_agentbox_containers(&podman)?;
-    let selection = select_agentbox_stable_id_prefix(&sessions, prefix)?;
+    restart_lock_git_root_for_stable_id_from_sessions(&sessions, prefix)
+}
+
+fn restart_lock_git_root_for_stable_id_from_sessions(
+    sessions: &[SessionRecord],
+    prefix: &str,
+) -> Result<Utf8PathBuf> {
+    let selection = select_agentbox_stable_id_prefix(sessions, prefix)?;
     let id = selection.id().to_string();
     let roots = selection
         .into_sessions()
@@ -122,44 +195,6 @@ fn restart_lock_git_root_for_stable_id(prefix: &str) -> Result<Utf8PathBuf> {
         _ => Err(Error::msg(format!(
             "agentbox container id `{id}` matches containers with multiple git roots; cannot restart safely"
         ))),
-    }
-}
-
-fn select_restartable_session_for_locked_target(
-    locked: &LockedGitRoot<'_>,
-    target: &SessionTargetInput,
-) -> Result<SessionRecord> {
-    let sessions = matching_sessions_for_locked_target(locked, target)?;
-    require_single_restartable_session(sessions, target)
-}
-
-fn matching_sessions_for_locked_target(
-    locked: &LockedGitRoot<'_>,
-    target: &SessionTargetInput,
-) -> Result<Vec<SessionRecord>> {
-    match resolve_session_target(target)? {
-        ResolvedSessionTarget::ResolvedGitRoot(git_root) => {
-            require_locked_target_unchanged(locked.git_root(), &git_root)?;
-            locked.discover_sessions()
-        }
-        ResolvedSessionTarget::ExactStoredGitRootPath(git_root) => {
-            require_locked_target_unchanged(locked.git_root(), &git_root)?;
-            Ok(exact_git_root_matches(
-                locked.discover_agentbox_containers()?,
-                &git_root,
-            ))
-        }
-        ResolvedSessionTarget::StableId(prefix) => {
-            let sessions = locked.discover_agentbox_containers()?;
-            let selection = select_agentbox_stable_id_prefix(&sessions, &prefix)?;
-            let sessions = selection
-                .into_sessions()
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
-            require_stable_id_still_matches_locked_root(locked.git_root(), &sessions)?;
-            Ok(sessions)
-        }
     }
 }
 
@@ -327,36 +362,13 @@ fn stop_existing_session(podman: &Podman, session: &SessionRecord) -> Result<()>
     }
 }
 
-fn launch_replacement_server(
-    podman: &Podman,
-    workspace: &WorkspaceIdentity,
-    runtime: RuntimeKind,
-    run_spec: &RuntimeRunSpec,
-) -> Result<AttachEndpoint> {
-    launch_detached_server(
-        podman,
-        workspace,
-        runtime,
-        run_spec,
-        RestartServerLifecycle {
-            podman,
-            workspace,
-            runtime,
-            run_spec,
-        },
-    )
-    .map(|ready| ready.into_endpoint())
-}
-
 #[derive(Debug, Clone, Copy)]
-struct RestartServerLifecycle<'a> {
-    podman: &'a Podman,
+struct RestartServerLaunchPolicy<'a> {
     workspace: &'a WorkspaceIdentity,
     runtime: RuntimeKind,
-    run_spec: &'a RuntimeRunSpec,
 }
 
-impl DetachedServerLifecycle for RestartServerLifecycle<'_> {
+impl ManagedServerLaunchPolicy for RestartServerLaunchPolicy<'_> {
     fn command_name(&self) -> &'static str {
         "restart"
     }
@@ -365,8 +377,8 @@ impl DetachedServerLifecycle for RestartServerLifecycle<'_> {
         "replacement container"
     }
 
-    fn readiness_context(&self) -> ServerEndpointContext {
-        ServerEndpointContext::ManagedSession
+    fn create_action(&self) -> &'static str {
+        "start the replacement runtime server command"
     }
 
     fn check_interrupted(&self, interrupt: &CommandInterrupt) -> Result<()> {
@@ -381,48 +393,9 @@ impl DetachedServerLifecycle for RestartServerLifecycle<'_> {
         }
     }
 
-    fn run_detached_error(&self, error: Error) -> Error {
-        restart_after_stop_error(
-            self.workspace,
-            self.runtime,
-            classify_replacement_create_error(self.podman, self.workspace, self.run_spec, error),
-        )
+    fn wrap_error(&self, error: Error) -> Error {
+        restart_after_stop_error(self.workspace, self.runtime, error)
     }
-
-    fn readiness_error(&self, error: Error) -> Error {
-        restart_after_stop_error(
-            self.workspace,
-            self.runtime,
-            error_with_container_logs(
-                self.podman,
-                self.workspace,
-                ContainerLogContext::ManagedSession,
-                error,
-            ),
-        )
-    }
-}
-
-fn classify_replacement_create_error(
-    podman: &Podman,
-    workspace: &WorkspaceIdentity,
-    run_spec: &RuntimeRunSpec,
-    original_error: Error,
-) -> Error {
-    let wrapped = Error::runtime_command_failed(
-        workspace.canonical_git_root.as_ref(),
-        &workspace.container_name,
-        "start the replacement runtime server command",
-        &original_error.to_string(),
-    );
-    classify_create_error_or_else(podman, workspace, run_spec.create(), wrapped, |error| {
-        error_with_container_logs(
-            podman,
-            workspace,
-            ContainerLogContext::ManagedSession,
-            error,
-        )
-    })
 }
 
 fn restart_after_stop_error(
@@ -436,37 +409,6 @@ fn restart_after_stop_error(
     ))
 }
 
-fn finish_restart(
-    connect: bool,
-    workspace: &WorkspaceIdentity,
-    runtime: RuntimeKind,
-    endpoint: AttachEndpoint,
-) -> Result<()> {
-    if connect {
-        diagnostic::info(format!(
-            "managed session `{}` for `{}` restarted and ready at `{endpoint}`; connecting",
-            workspace.container_name, workspace.canonical_git_root,
-        ));
-        run_host_runtime_client(runtime, &endpoint, workspace.canonical_target.as_ref()).map_err(
-            |error| {
-                Error::msg(format!(
-                    "failed to connect to restarted managed session `{}` for `{}`: {error}. The session remains running; retry with `agentbox connect {}` or stop it with `agentbox stop {}`.",
-                    workspace.container_name,
-                    workspace.canonical_git_root,
-                    workspace.canonical_target,
-                    workspace.canonical_target,
-                ))
-            },
-        )
-    } else {
-        diagnostic::info(format!(
-            "managed session `{}` for `{}` restarted and ready at `{endpoint}`; use `agentbox connect {}` to connect",
-            workspace.container_name, workspace.canonical_git_root, workspace.canonical_target,
-        ));
-        Ok(())
-    }
-}
-
 pub type RestartPromptCandidate = prompt::Choice<String>;
 
 pub fn restart_prompt_candidates(sessions: &[SessionRecord]) -> Vec<RestartPromptCandidate> {
@@ -475,4 +417,93 @@ pub fn restart_prompt_candidates(sessions: &[SessionRecord]) -> Vec<RestartPromp
         |candidate| candidate.value().to_string(),
         |candidate| candidate.stop_prompt_label(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::metadata::{AgentboxContainerKind, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH};
+    use crate::session::{SessionMetadata, SessionStatus};
+
+    use super::*;
+
+    #[test]
+    fn stable_id_restart_lock_root_uses_the_single_recoverable_git_root() {
+        let sessions = vec![session(Some("/workspace/project"), "abcdef123456")];
+
+        let git_root =
+            restart_lock_git_root_for_stable_id_from_sessions(&sessions, "abcdef").unwrap();
+
+        assert_eq!(git_root, Utf8PathBuf::from("/workspace/project"));
+    }
+
+    #[test]
+    fn stable_id_restart_lock_root_rejects_unrooted_matches() {
+        let sessions = vec![session(None, "abcdef123456")];
+
+        let error =
+            restart_lock_git_root_for_stable_id_from_sessions(&sessions, "abcdef").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("no matched container has a recoverable git-root label")
+        );
+    }
+
+    #[test]
+    fn stable_id_restart_lock_root_rejects_multiple_git_roots() {
+        let sessions = vec![
+            session(Some("/workspace/first"), "abcdef123456"),
+            session(Some("/workspace/second"), "abcdef123456"),
+        ];
+
+        let error =
+            restart_lock_git_root_for_stable_id_from_sessions(&sessions, "abcdef").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("matches containers with multiple git roots")
+        );
+    }
+
+    #[test]
+    fn stable_id_revalidation_requires_a_locked_root_match() {
+        let sessions = vec![session(Some("/workspace/project"), "abcdef123456")];
+
+        assert!(
+            require_stable_id_still_matches_locked_root(
+                Utf8Path::new("/workspace/project"),
+                &sessions
+            )
+            .is_ok()
+        );
+
+        let error = require_stable_id_still_matches_locked_root(
+            Utf8Path::new("/workspace/other"),
+            &sessions,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("changed away"));
+    }
+
+    fn session(canonical_git_root: Option<&str>, stable_id: &str) -> SessionRecord {
+        let mut labels = BTreeMap::from([(LABEL_GIT_ROOT_HASH.to_string(), stable_id.to_string())]);
+        if let Some(canonical_git_root) = canonical_git_root {
+            labels.insert(LABEL_GIT_ROOT.to_string(), canonical_git_root.to_string());
+        }
+
+        SessionRecord {
+            container_id: format!("{stable_id}-id"),
+            container_name: format!("agentbox-{stable_id}"),
+            container_kind: AgentboxContainerKind::Managed,
+            metadata: SessionMetadata::from_labels(&labels),
+            attach_endpoint: None,
+            container_running: true,
+            status: SessionStatus::Running,
+        }
+    }
 }

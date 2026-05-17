@@ -14,6 +14,7 @@ pub mod exec;
 pub mod health;
 mod launch_policy;
 pub mod ls;
+mod managed_server;
 mod output;
 pub mod restart;
 pub mod run;
