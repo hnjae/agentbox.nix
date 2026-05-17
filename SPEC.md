@@ -1353,8 +1353,13 @@ Rules:
   configured remotes. SCP-like URLs such as `git@github.com:owner/repo.git`,
   `ssh://` URLs, and `git+ssh://` URLs are considered SSH remotes. HTTPS
   remotes and local paths are ignored.
-- Host known_hosts lookup is limited to the detected SSH remote hosts and the
-  invoking user's `$HOME/.ssh/known_hosts` and `$HOME/.ssh/known_hosts2` files.
+- For each detected SSH remote host, `agentbox` runs `ssh -G <host>` to resolve
+  the host's OpenSSH configuration. Host known_hosts lookup uses the resolved
+  `hostname`, `port`, `hostkeyalias`, `userknownhostsfile`, and
+  `globalknownhostsfile` values.
+- If `ssh -G <host>` is unavailable or fails, host known_hosts lookup falls
+  back to the detected SSH remote host and the invoking user's
+  `$HOME/.ssh/known_hosts` and `$HOME/.ssh/known_hosts2` files.
 - Host known_hosts lookup uses `ssh-keygen -F <host> -f <file>` so hashed
   known_hosts entries can match. Missing `ssh-keygen`, missing known_hosts
   files, no match, or unexpected lookup failures are non-fatal.
