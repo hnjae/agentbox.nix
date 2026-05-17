@@ -25,7 +25,7 @@ pub struct PodmanPsContainer {
     pub ports: Option<Vec<PodmanPsPort>>,
     pub status: String,
     pub state: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_map_or_null_default")]
     pub labels: BTreeMap<String, String>,
     #[serde(default)]
     pub mounts: Option<Vec<String>>,
@@ -45,11 +45,11 @@ pub struct PodmanVolume {
     pub mountpoint: Option<String>,
     #[serde(default)]
     pub created_at: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_map_or_null_default")]
     pub labels: BTreeMap<String, String>,
     #[serde(default)]
     pub scope: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_map_or_null_default")]
     pub options: BTreeMap<String, String>,
 }
 
@@ -66,7 +66,12 @@ pub struct PodmanImage {
         deserialize_with = "deserialize_option_vec_or_string"
     )]
     pub names: Option<Vec<String>>,
-    #[serde(default, rename = "Labels", alias = "labels")]
+    #[serde(
+        default,
+        rename = "Labels",
+        alias = "labels",
+        deserialize_with = "deserialize_map_or_null_default"
+    )]
     pub labels: BTreeMap<String, String>,
 }
 
@@ -129,13 +134,13 @@ pub struct PodmanContainerInspect {
     pub id: String,
     pub created: String,
     pub path: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vec_or_null_default")]
     pub args: Vec<String>,
     pub state: PodmanContainerState,
     pub image_name: String,
     pub config: PodmanContainerConfig,
     pub host_config: PodmanHostConfig,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vec_or_null_default")]
     pub mounts: Vec<PodmanContainerMount>,
     pub network_settings: PodmanNetworkSettings,
 }
@@ -171,13 +176,13 @@ pub struct PodmanHealth {
 pub struct PodmanContainerConfig {
     #[serde(default)]
     pub user: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vec_or_null_default")]
     pub env: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vec_or_null_default")]
     pub cmd: Vec<String>,
     #[serde(default)]
     pub working_dir: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_map_or_null_default")]
     pub labels: BTreeMap<String, String>,
     #[serde(default, deserialize_with = "deserialize_option_vec_or_string")]
     pub entrypoint: Option<Vec<String>>,
@@ -256,9 +261,9 @@ impl Serialize for PodmanContainerMountKind {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanNetworkSettings {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_map_or_null_default")]
     pub networks: BTreeMap<String, PodmanNetworkEndpoint>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_map_or_null_default")]
     pub ports: BTreeMap<String, Option<Vec<PodmanPortBinding>>>,
 }
 
@@ -311,7 +316,7 @@ pub struct PodmanNetworkEndpoint {
     pub ip_address: Option<String>,
     #[serde(default)]
     pub gateway: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vec_or_null_default")]
     pub aliases: Vec<String>,
 }
 
@@ -349,6 +354,27 @@ where
     })
 }
 
+fn deserialize_map_or_null_default<'de, D, K, V>(
+    deserializer: D,
+) -> std::result::Result<BTreeMap<K, V>, D::Error>
+where
+    D: Deserializer<'de>,
+    K: Ord + Deserialize<'de>,
+    V: Deserialize<'de>,
+{
+    Ok(Option::<BTreeMap<K, V>>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+fn deserialize_vec_or_null_default<'de, D, T>(
+    deserializer: D,
+) -> std::result::Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 fn deserialize_option_string_or_number<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Option<String>, D::Error>
@@ -372,6 +398,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn podman_ps_container_treats_null_labels_as_empty() {
+        let containers: Vec<PodmanPsContainer> = serde_json::from_str(
+            r#"[
+  {
+    "Id": "0123456789abcdef",
+    "Image": "registry.example/image:latest",
+    "Command": null,
+    "Created": 1713681300,
+    "CreatedAt": "2026-04-21 10:15:00 +0000 UTC",
+    "Names": ["ambient-container"],
+    "Ports": null,
+    "Status": "Exited (0) 1 minute ago",
+    "State": "exited",
+    "Labels": null,
+    "Mounts": null,
+    "Networks": null,
+    "Namespaces": null
+  }
+]"#,
+        )
+        .unwrap();
+
+        assert_eq!(containers.len(), 1);
+        assert!(containers[0].labels.is_empty());
+    }
 
     #[test]
     fn published_tcp_host_port_returns_published_binding() {
