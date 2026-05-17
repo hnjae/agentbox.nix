@@ -1249,6 +1249,26 @@ Rules:
 - Podman `--rm` removes the managed container, not the named runtime cache
   volume.
 
+### Host Git Identity Passthrough
+
+For `run`, `start`, `restart`, and `exec`, `agentbox` passes the invoking
+repository's effective host Git identity into the runtime container so Git
+operations inside the agent environment use the same default author identity as
+the host repository.
+
+Rules:
+
+- `agentbox` reads only the effective `user.name` and `user.email` Git config
+  values from the host repository during launch preparation.
+- If either value is unset, that value is not injected.
+- If reading either value fails unexpectedly, `agentbox` prints a warning and
+  continues launching without that value.
+- Present values are injected with Git's `GIT_CONFIG_COUNT`,
+  `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment variables.
+- Host Git identity passthrough does not depend on `SSH_AUTH_SOCK`.
+- `agentbox` does not mount the host Git config files, credential helpers, or
+  other Git configuration for identity passthrough.
+
 ### SSH Commit Signing Passthrough
 
 When the invoking host environment has a usable SSH agent socket, `run`,
@@ -1266,12 +1286,12 @@ Rules:
 - If `SSH_AUTH_SOCK` points to an accessible Unix socket, `agentbox` bind-mounts
   that socket at `/run/agentbox/ssh-agent.sock` and sets
   `SSH_AUTH_SOCK=/run/agentbox/ssh-agent.sock` inside the container.
-- `agentbox` reads only the effective Git config values needed for commit
-  signing from the host repository: `user.name`, `user.email`, `gpg.format`,
+- `agentbox` reads only the additional effective Git config values needed for
+  SSH commit signing from the host repository: `gpg.format`,
   `user.signingkey`, and `commit.gpgsign`.
-- Those Git config values are injected into the container with Git's
-  `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment
-  variables.
+- Those Git config values are injected alongside host Git identity passthrough
+  values with Git's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and
+  `GIT_CONFIG_VALUE_*` environment variables.
 - Signing-specific Git config values `gpg.format`, `user.signingkey`, and
   `commit.gpgsign` are injected only when the effective host `gpg.format` is
   `ssh`; GPG signing configuration is not passed through.
