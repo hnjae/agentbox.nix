@@ -257,6 +257,13 @@ fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
     harness.write_git_config("gpg.format", "ssh\n");
     harness.write_git_config("user.signingkey", "ssh-ed25519 AAAATEST alice\n");
     harness.write_git_config("commit.gpgsign", "true\n");
+    let config_dir = harness.home_path().join(".config/agentbox");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(
+        config_dir.join("config.json"),
+        r#"{"knownHosts":["github.com ssh-ed25519 AAAACONFIG"]}"#,
+    )
+    .unwrap();
 
     let mut command = harness.locked_agentbox_command(workspace);
     command
@@ -274,6 +281,12 @@ fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
         socket_path
     )));
     assert!(run.contains("--env SSH_AUTH_SOCK=/run/agentbox/ssh-agent.sock"));
+    assert!(run.contains("dst=/run/agentbox/known_hosts,ro"));
+    assert!(
+        run.contains(
+            "--env GIT_SSH_COMMAND=ssh -o UserKnownHostsFile=/run/agentbox/known_hosts -o StrictHostKeyChecking=yes"
+        )
+    );
     assert!(run.contains("--env GIT_CONFIG_COUNT=5"));
     assert!(run.contains("--env GIT_CONFIG_KEY_0=user.name"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_0=Alice Agent"));
@@ -286,6 +299,148 @@ fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
     assert!(run.contains("--env GIT_CONFIG_KEY_4=commit.gpgsign"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_4=true"));
     assert!(!run.contains("credential.helper"));
+    assert_eq!(
+        harness.captured_known_hosts().as_deref(),
+        Some("github.com ssh-ed25519 AAAACONFIG\n")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_adds_matching_host_known_hosts_entries_from_ssh_keygen() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let (_socket_dir, socket_path, _listener) = bind_test_socket();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+    harness.write_git_remotes("origin\tgit@github.com:owner/repo.git (fetch)\n");
+    let ssh_dir = harness.home_path().join(".ssh");
+    fs::create_dir(&ssh_dir).unwrap();
+    fs::write(
+        ssh_dir.join("known_hosts"),
+        "github.com ssh-ed25519 AAAAHOST\n",
+    )
+    .unwrap();
+    harness.write_fake_program(
+        "ssh-keygen",
+        r#"#!/bin/sh
+set -eu
+if [ "$1" = "-F" ] && [ "$2" = "github.com" ]; then
+  printf '# Host github.com found: line 1\n'
+  printf 'github.com ssh-ed25519 AAAAHOST\n'
+  exit 0
+fi
+exit 1
+"#,
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("SSH_AUTH_SOCK", socket_path.as_str())
+        .args(["run", "--runtime", "opencode"])
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let log = harness.read_log();
+    let run = podman_run_command(&log);
+    assert!(run.contains("dst=/run/agentbox/known_hosts,ro"));
+    assert_eq!(
+        harness.captured_known_hosts().as_deref(),
+        Some("github.com ssh-ed25519 AAAAHOST\n")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_warns_and_continues_when_remote_host_key_is_missing() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let (_socket_dir, socket_path, _listener) = bind_test_socket();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+    harness.write_git_remotes("origin\tgit@gitlab.com:group/repo.git (fetch)\n");
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("SSH_AUTH_SOCK", socket_path.as_str())
+        .args(["run", "--runtime", "opencode"])
+        .arg(target);
+
+    command.assert().success().stderr(predicate::str::contains(
+        "WARNING: no known_hosts entry found for SSH remote host `gitlab.com`",
+    ));
+    endpoint.wait();
+
+    let log = harness.read_log();
+    let run = podman_run_command(&log);
+    assert!(!run.contains("/run/agentbox/known_hosts"));
+    assert!(harness.captured_known_hosts().is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn run_backs_up_invalid_agentbox_config_and_continues_without_entries() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let (_socket_dir, socket_path, _listener) = bind_test_socket();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+    let config_dir = harness.home_path().join(".config/agentbox");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(config_dir.join("config.json"), r#"{"knownHosts":[""]}"#).unwrap();
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("SSH_AUTH_SOCK", socket_path.as_str())
+        .args(["run", "--runtime", "opencode"])
+        .arg(target);
+
+    command.assert().success().stderr(
+        predicate::str::contains("WARNING: agentbox config")
+            .and(predicate::str::contains("backed it up")),
+    );
+    endpoint.wait();
+
+    let backups = fs::read_dir(&config_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert!(!config_dir.join("config.json").exists());
+    assert_eq!(backups.len(), 1);
+    assert!(backups[0].starts_with("config.json.bak."));
+    assert!(harness.captured_known_hosts().is_none());
 }
 
 #[cfg(unix)]

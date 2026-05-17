@@ -54,7 +54,6 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             args.dev_env,
             args.connect,
         ))?;
-        let run_spec = preparation.run_spec;
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;
         let cleanup =
@@ -63,7 +62,7 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             podman,
             workspace,
             runtime,
-            &run_spec,
+            &preparation.run_spec,
             StartServerLaunchPolicy { cleanup },
             ManagedServerCompletion::new(
                 ManagedServerCompletionKind::Start,

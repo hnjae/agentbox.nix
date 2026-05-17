@@ -160,6 +160,22 @@ impl CliHarness {
         .unwrap();
     }
 
+    pub fn write_git_remotes(&self, remotes: &str) {
+        fs::write(self.fixtures.path().join("git-remotes"), remotes).unwrap();
+    }
+
+    pub fn write_fake_program(&self, name: &str, content: &str) {
+        write_executable(self.fake_bin.path().join(name), content);
+    }
+
+    pub fn captured_known_hosts(&self) -> Option<String> {
+        match fs::read_to_string(self.fixtures.path().join("known-hosts-captured")) {
+            Ok(contents) => Some(contents),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => panic!("failed to read captured known_hosts fixture: {error}"),
+        }
+    }
+
     pub fn mark_dev_shell(&self, flake_root: &Path, attr: &str) {
         fs::write(
             self.fixtures

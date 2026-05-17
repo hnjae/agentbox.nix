@@ -58,6 +58,23 @@ safe_image_name() {
     printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '_'
 }
 
+capture_known_hosts_mount() {
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "--mount" ]; then
+            shift
+            mount=${1:-}
+            case ",$mount," in
+            *,dst=/run/agentbox/known_hosts,*)
+                src_part=${mount#*src=}
+                src=${src_part%%,*}
+                cat "$src" >"$fixtures/known-hosts-captured"
+                ;;
+            esac
+        fi
+        shift || true
+    done
+}
+
 validate_build_context() {
     containerfile=
     context_dir=
@@ -200,6 +217,7 @@ inspect)
     cat "$fixture"
     ;;
 run)
+    capture_known_hosts_mount "$@"
     record run "$@"
     maybe_fail run
     printf 'started\n'

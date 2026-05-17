@@ -108,14 +108,13 @@ fn restart_target(
             dev_env,
             connect,
         ))?;
-        let run_spec = preparation.run_spec;
 
         stop_existing_session(locked.podman(), restart_session.session())?;
         ManagedServerLaunch::new(
             locked.podman(),
             &launch_workspace,
             runtime,
-            &run_spec,
+            &preparation.run_spec,
             RestartServerLaunchPolicy {
                 workspace: &launch_workspace,
                 runtime,

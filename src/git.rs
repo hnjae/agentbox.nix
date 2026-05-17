@@ -91,10 +91,41 @@ impl Git {
             "failed to read git config `{key}` for `{git_root}`: {detail}"
         )))
     }
+
+    pub(crate) fn remote_urls(&self, git_root: &Utf8Path) -> Result<Vec<String>> {
+        let output = self.runner.capture_status("git", |command| {
+            command
+                .arg("-C")
+                .arg(git_root.as_str())
+                .args(["remote", "-v"]);
+        })?;
+
+        if output.status.success() {
+            return Ok(parse_remote_urls(&output.stdout));
+        }
+
+        let detail = output.stderr.trim();
+        let detail = if detail.is_empty() {
+            format_status(output.status)
+        } else {
+            detail.to_string()
+        };
+        Err(Error::msg(format!(
+            "failed to read git remotes for `{git_root}`: {detail}"
+        )))
+    }
 }
 
 fn trim_config_output(output: &str) -> String {
     output.trim_end_matches(['\r', '\n']).to_string()
+}
+
+fn parse_remote_urls(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| line.split_whitespace().nth(1))
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 #[derive(Debug)]
@@ -109,5 +140,24 @@ impl GitRootError {
             Self::NotRepository => Error::non_git_target(directory),
             Self::Failed(error) => error,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_remote_urls_from_verbose_git_output() {
+        assert_eq!(
+            parse_remote_urls(
+                "origin\tgit@github.com:owner/repo.git (fetch)\norigin\tgit@github.com:owner/repo.git (push)\nupstream https://example.test/repo.git (fetch)\n"
+            ),
+            [
+                "git@github.com:owner/repo.git",
+                "git@github.com:owner/repo.git",
+                "https://example.test/repo.git"
+            ]
+        );
     }
 }

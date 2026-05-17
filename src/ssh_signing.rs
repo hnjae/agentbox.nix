@@ -14,10 +14,17 @@ pub(crate) const CONTAINER_SSH_AUTH_SOCK: &str = "/run/agentbox/ssh-agent.sock";
 
 mod agent_socket;
 mod git_config;
+mod known_hosts;
 mod signing_key;
 
 use agent_socket::{HOST_SSH_AUTH_SOCK_ENV, detect_host_agent_socket, utf8_path};
 use git_config::{append_git_config_env, read_git_config_entries};
+use known_hosts::PreparedKnownHosts;
+
+#[derive(Debug, Default)]
+pub(crate) struct SshPassthroughGuard {
+    _known_hosts_file: Option<tempfile::NamedTempFile>,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct SshCommitSigningPassthrough {
@@ -35,28 +42,67 @@ impl SshCommitSigningPassthrough {
     }
 }
 
-pub(crate) fn apply_ssh_commit_signing_passthrough(
+#[derive(Debug, Default)]
+struct SshKnownHostsPassthrough {
+    prepared: Option<PreparedKnownHosts>,
+}
+
+impl SshKnownHostsPassthrough {
+    fn apply_to(self, run_spec: &mut RuntimeRunSpec) -> SshPassthroughGuard {
+        let Some(prepared) = self.prepared else {
+            return SshPassthroughGuard::default();
+        };
+        let (mount, env, file) = prepared.into_parts();
+        let create = run_spec.create_mut();
+        create.mounts.push(mount);
+        create.default_env.extend(env);
+        SshPassthroughGuard {
+            _known_hosts_file: Some(file),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct SshPassthrough {
+    commit_signing: SshCommitSigningPassthrough,
+    known_hosts: SshKnownHostsPassthrough,
+}
+
+impl SshPassthrough {
+    fn apply_to(self, run_spec: &mut RuntimeRunSpec) -> SshPassthroughGuard {
+        self.commit_signing.apply_to(run_spec);
+        self.known_hosts.apply_to(run_spec)
+    }
+}
+
+pub(crate) fn apply_ssh_passthrough(
     run_spec: &mut RuntimeRunSpec,
     git_root: &Utf8Path,
-) {
+) -> SshPassthroughGuard {
     let git = Git::new();
     detect_with(
         git_root,
         |name| std::env::var_os(name),
         |git_root, key| git.config_get(git_root, key),
+        |git_root, environment, warning| known_hosts::prepare(git_root, environment, warning),
         diagnostic::warning,
     )
-    .apply_to(run_spec);
+    .apply_to(run_spec)
 }
 
 fn detect_with(
     git_root: &Utf8Path,
     mut environment: impl FnMut(&str) -> Option<std::ffi::OsString>,
     mut git_config: impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
+    mut known_hosts: impl FnMut(
+        &Utf8Path,
+        &mut dyn FnMut(&str) -> Option<std::ffi::OsString>,
+        &mut dyn FnMut(String),
+    ) -> Option<PreparedKnownHosts>,
     mut warning: impl FnMut(String),
-) -> SshCommitSigningPassthrough {
+) -> SshPassthrough {
     let Some(host_socket) = detect_host_agent_socket(&mut environment, &mut warning) else {
-        return SshCommitSigningPassthrough::default();
+        return SshPassthrough::default();
     };
 
     let home = environment("HOME").and_then(utf8_path);
@@ -67,13 +113,19 @@ fn detect_with(
     let git_entries =
         read_git_config_entries(git_root, home.as_deref(), &mut git_config, &mut warning);
     append_git_config_env(&mut env, &git_entries);
+    let known_hosts = known_hosts(git_root, &mut environment, &mut warning);
 
-    SshCommitSigningPassthrough {
-        agent_socket_mount: Some(RuntimeMount::bind(
-            host_socket.to_string(),
-            CONTAINER_SSH_AUTH_SOCK,
-        )),
-        env,
+    SshPassthrough {
+        commit_signing: SshCommitSigningPassthrough {
+            agent_socket_mount: Some(RuntimeMount::bind(
+                host_socket.to_string(),
+                CONTAINER_SSH_AUTH_SOCK,
+            )),
+            env,
+        },
+        known_hosts: SshKnownHostsPassthrough {
+            prepared: known_hosts,
+        },
     }
 }
 
@@ -93,10 +145,15 @@ mod tests {
             Utf8Path::new("/repo"),
             |_| None,
             |_git_root, _key| panic!("git config must not be read without an agent socket"),
+            |_git_root, _environment, _warning| {
+                panic!("known_hosts must not be read without an agent socket")
+            },
             panic_warning,
         );
 
-        assert_eq!(passthrough, SshCommitSigningPassthrough::default());
+        assert!(passthrough.commit_signing.agent_socket_mount.is_none());
+        assert!(passthrough.commit_signing.env.is_empty());
+        assert!(passthrough.known_hosts.prepared.is_none());
     }
 
     #[cfg(unix)]
@@ -108,11 +165,12 @@ mod tests {
             Utf8Path::new("/repo"),
             |name| test_env(name, &socket_path, None),
             |_git_root, _key| Ok(None),
+            |_git_root, _environment, _warning| None,
             panic_warning,
         );
 
         assert_eq!(
-            passthrough.agent_socket_mount,
+            passthrough.commit_signing.agent_socket_mount,
             Some(RuntimeMount::bind(
                 socket_path.to_string(),
                 CONTAINER_SSH_AUTH_SOCK
@@ -120,12 +178,18 @@ mod tests {
         );
         assert_eq!(
             passthrough
+                .commit_signing
                 .env
                 .get(HOST_SSH_AUTH_SOCK_ENV)
                 .map(String::as_str),
             Some(CONTAINER_SSH_AUTH_SOCK)
         );
-        assert!(!passthrough.env.contains_key(GIT_CONFIG_COUNT_ENV));
+        assert!(
+            !passthrough
+                .commit_signing
+                .env
+                .contains_key(GIT_CONFIG_COUNT_ENV)
+        );
     }
 
     #[test]
@@ -138,10 +202,15 @@ mod tests {
             Utf8Path::new("/repo"),
             |name| test_env(name, &socket_path, None),
             |_git_root, _key| panic!("git config must not be read for invalid socket"),
+            |_git_root, _environment, _warning| {
+                panic!("known_hosts must not be read for invalid socket")
+            },
             |warning| warnings.push(warning),
         );
 
-        assert_eq!(passthrough, SshCommitSigningPassthrough::default());
+        assert!(passthrough.commit_signing.agent_socket_mount.is_none());
+        assert!(passthrough.commit_signing.env.is_empty());
+        assert!(passthrough.known_hosts.prepared.is_none());
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("SSH_AUTH_SOCK does not reference a usable Unix socket"));
     }
@@ -166,29 +235,42 @@ mod tests {
                     _ => Some("must-not-be-read".to_string()),
                 })
             },
+            |_git_root, _environment, _warning| None,
             panic_warning,
         );
 
         assert_eq!(requested_keys, GIT_CONFIG_KEYS);
         assert_eq!(
             passthrough
+                .commit_signing
                 .env
                 .get(GIT_CONFIG_COUNT_ENV)
                 .map(String::as_str),
             Some("5")
         );
-        assert_git_config_env(&passthrough.env, 0, "user.name", "Alice Agent");
-        assert_git_config_env(&passthrough.env, 1, "user.email", "alice@example.test");
-        assert_git_config_env(&passthrough.env, 2, "gpg.format", "ssh");
         assert_git_config_env(
-            &passthrough.env,
+            &passthrough.commit_signing.env,
+            0,
+            "user.name",
+            "Alice Agent",
+        );
+        assert_git_config_env(
+            &passthrough.commit_signing.env,
+            1,
+            "user.email",
+            "alice@example.test",
+        );
+        assert_git_config_env(&passthrough.commit_signing.env, 2, "gpg.format", "ssh");
+        assert_git_config_env(
+            &passthrough.commit_signing.env,
             3,
             "user.signingkey",
             "ssh-ed25519 AAAATEST alice",
         );
-        assert_git_config_env(&passthrough.env, 4, "commit.gpgsign", "true");
+        assert_git_config_env(&passthrough.commit_signing.env, 4, "commit.gpgsign", "true");
         assert!(
             !passthrough
+                .commit_signing
                 .env
                 .values()
                 .any(|value| value == "must-not-be-read")
@@ -214,21 +296,40 @@ mod tests {
                     _ => None,
                 })
             },
+            |_git_root, _environment, _warning| None,
             |warning| warnings.push(warning),
         );
 
         assert_eq!(
             passthrough
+                .commit_signing
                 .env
                 .get(GIT_CONFIG_COUNT_ENV)
                 .map(String::as_str),
             Some("2")
         );
-        assert_git_config_env(&passthrough.env, 0, "user.name", "Alice Agent");
-        assert_git_config_env(&passthrough.env, 1, "user.email", "alice@example.test");
-        assert!(!passthrough.env.values().any(|value| value == "openpgp"));
+        assert_git_config_env(
+            &passthrough.commit_signing.env,
+            0,
+            "user.name",
+            "Alice Agent",
+        );
+        assert_git_config_env(
+            &passthrough.commit_signing.env,
+            1,
+            "user.email",
+            "alice@example.test",
+        );
         assert!(
             !passthrough
+                .commit_signing
+                .env
+                .values()
+                .any(|value| value == "openpgp")
+        );
+        assert!(
+            !passthrough
+                .commit_signing
                 .env
                 .values()
                 .any(|value| value == "ABCDEF123456")

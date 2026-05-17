@@ -8,7 +8,7 @@ use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
 use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime};
 use crate::runtime::{RuntimeKind, RuntimeRunSpec};
-use crate::ssh_signing::apply_ssh_commit_signing_passthrough;
+use crate::ssh_signing::{SshPassthroughGuard, apply_ssh_passthrough};
 use crate::workspace::WorkspaceIdentity;
 
 use super::runtime::ensure_default_runtime_image;
@@ -36,6 +36,7 @@ struct ContainerLaunchPreparation {
 #[derive(Debug)]
 pub(super) struct RuntimeLaunchPreparation {
     pub(super) run_spec: RuntimeRunSpec,
+    _ssh_passthrough: SshPassthroughGuard,
 }
 
 pub(super) fn prepare_runtime_launch(
@@ -64,10 +65,14 @@ pub(super) fn prepare_runtime_launch(
         &preparation.preflight.runtime_mounts,
         build_runtime_invocation(invocation, runtime, workspace, &preparation.dev_env),
     );
-    apply_ssh_commit_signing_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
+    let ssh_passthrough =
+        apply_ssh_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
     record_runtime_image_version(runtime, &preparation, &mut run_spec, policy);
 
-    Ok(RuntimeLaunchPreparation { run_spec })
+    Ok(RuntimeLaunchPreparation {
+        run_spec,
+        _ssh_passthrough: ssh_passthrough,
+    })
 }
 
 fn prepare_container_launch_for_workspace(

@@ -44,13 +44,13 @@ pub fn run(args: ExecArgs, verbose: bool) -> Result<()> {
                 codex_exec_runtime_command(workspace.canonical_target.as_ref(), dev_env, codex_args)
             },
         ))?;
-        let run_spec = preparation.run_spec;
 
         diagnostic::info(format!(
             "starting foreground container `{}` for Codex exec",
             workspace.container_name
         ));
-        let status = podman.run_foreground(&workspace.container_name, &run_spec, use_tty())?;
+        let status =
+            podman.run_foreground(&workspace.container_name, &preparation.run_spec, use_tty())?;
         if status.success() {
             Ok(())
         } else if let Some(code) = status.code().and_then(exit_code) {

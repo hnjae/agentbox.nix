@@ -33,5 +33,13 @@ if [ "$1" = "-C" ] && [ "$3" = "config" ] && [ "$4" = "--get" ]; then
     exit 1
 fi
 
+if [ "$1" = "-C" ] && [ "$3" = "remote" ] && [ "$4" = "-v" ]; then
+    fixtures=${AGENTBOX_TEST_FIXTURES:-}
+    if [ "$fixtures" != "" ] && [ -f "$fixtures/git-remotes" ]; then
+        cat "$fixtures/git-remotes"
+    fi
+    exit 0
+fi
+
 printf 'unsupported git invocation: %s\n' "$*" >&2
 exit 1
