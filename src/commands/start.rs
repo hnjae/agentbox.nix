@@ -9,7 +9,7 @@ use crate::session::classify_create_error_or_else;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::container_launch::{ServerLaunchMode, prepare_server_launch};
+use super::container_launch::{managed_server_launch_request, prepare_runtime_launch};
 use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
 use super::launch_policy::{
     CommandInterrupt, ContainerLogContext, error_with_container_logs, select_runtime,
@@ -31,12 +31,11 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
         let podman = locked.podman();
-        let preparation = prepare_server_launch(
+        let preparation = prepare_runtime_launch(managed_server_launch_request(
             &locked,
             runtime,
             args.dev_env,
-            ServerLaunchMode::ManagedSession,
-        )?;
+        ))?;
         let run_spec = preparation.run_spec;
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;

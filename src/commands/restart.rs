@@ -21,7 +21,7 @@ use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
 
 use super::container_cleanup::ManagedContainerCleanup;
-use super::container_launch::prepare_replacement_server_launch;
+use super::container_launch::{prepare_runtime_launch, replacement_server_launch_request};
 use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
 use super::launch_policy::{CommandInterrupt, ContainerLogContext, error_with_container_logs};
 use super::runtime_command::run_host_runtime_client;
@@ -76,13 +76,13 @@ fn restart_target(
         let session = select_restartable_session_for_locked_target(&locked, target)?;
         let launch_workspace = restart_launch_workspace(&locked, &session)?;
         let runtime = session_runtime(&session)?;
-        let preparation = prepare_replacement_server_launch(
+        let preparation = prepare_runtime_launch(replacement_server_launch_request(
             locked.podman(),
             &launch_workspace,
             runtime,
             dev_env,
             connect,
-        )?;
+        ))?;
         let run_spec = preparation.run_spec;
 
         stop_existing_session(locked.podman(), &session)?;

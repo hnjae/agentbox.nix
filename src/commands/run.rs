@@ -5,7 +5,7 @@ use crate::cli::RunArgs;
 use crate::diagnostic;
 use crate::{Error, Result};
 
-use super::container_launch::{ServerLaunchMode, prepare_server_launch};
+use super::container_launch::{prepare_runtime_launch, transient_server_launch_request};
 use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
 use super::launch_policy::{
     CommandInterrupt, ContainerLogContext, error_with_container_logs, select_runtime,
@@ -24,12 +24,11 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
         let podman = locked.podman();
-        let preparation = prepare_server_launch(
+        let preparation = prepare_runtime_launch(transient_server_launch_request(
             &locked,
             runtime,
             args.dev_env,
-            ServerLaunchMode::TransientServer,
-        )?;
+        ))?;
 
         let transient = TransientRun::new(podman, workspace);
         let ready_server = launch_detached_server(

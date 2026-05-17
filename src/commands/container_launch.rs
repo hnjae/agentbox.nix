@@ -48,6 +48,20 @@ enum ExistingResourceCheck {
     AllowExisting,
 }
 
+pub(super) struct RuntimeLaunchRequest<'a, I> {
+    podman: &'a crate::podman::Podman,
+    workspace: &'a WorkspaceIdentity,
+    runtime: RuntimeKind,
+    dev_env_mode: DevEnvMode,
+    kind: RuntimeLaunchKind,
+    invocation: RuntimeLaunchInvocation<I>,
+}
+
+enum RuntimeLaunchInvocation<I> {
+    Server,
+    Custom(I),
+}
+
 impl ExistingResourceScope {
     fn diagnostic_message(self) -> &'static str {
         match self {
@@ -58,131 +72,183 @@ impl ExistingResourceScope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ServerLaunchMode {
-    ManagedSession,
+enum RuntimeLaunchKind {
+    ManagedServer,
     TransientServer,
+    Foreground,
+    ReplacementServer { connect_after_start: bool },
 }
 
-impl ServerLaunchMode {
+impl RuntimeLaunchKind {
     fn runtime_run_mode(self) -> RuntimeRunMode {
         match self {
-            Self::ManagedSession => RuntimeRunMode::ManagedSession,
+            Self::ManagedServer | Self::ReplacementServer { .. } => RuntimeRunMode::ManagedSession,
             Self::TransientServer => RuntimeRunMode::TransientServer,
+            Self::Foreground => RuntimeRunMode::Foreground,
         }
     }
 
     fn host_client_requirement(self) -> HostClientRequirement {
         match self {
-            Self::ManagedSession => HostClientRequirement::NotRequired,
+            Self::ManagedServer | Self::Foreground => HostClientRequirement::NotRequired,
             Self::TransientServer => HostClientRequirement::Required,
+            Self::ReplacementServer {
+                connect_after_start: true,
+            } => HostClientRequirement::Required,
+            Self::ReplacementServer {
+                connect_after_start: false,
+            } => HostClientRequirement::NotRequired,
+        }
+    }
+
+    fn existing_resource_check(self) -> ExistingResourceCheck {
+        match self {
+            Self::ManagedServer | Self::TransientServer => {
+                ExistingResourceCheck::RequireAbsent(ExistingResourceScope::AgentboxContainers)
+            }
+            Self::Foreground => {
+                ExistingResourceCheck::RequireAbsent(ExistingResourceScope::ManagedSessions)
+            }
+            Self::ReplacementServer { .. } => ExistingResourceCheck::AllowExisting,
         }
     }
 
     fn records_runtime_image_version(self) -> bool {
-        matches!(self, Self::ManagedSession)
+        matches!(self, Self::ManagedServer | Self::ReplacementServer { .. })
     }
 }
 
-pub(super) fn prepare_server_launch(
-    locked: &LockedWorkspace<'_>,
+pub(super) fn managed_server_launch_request<'a>(
+    locked: &'a LockedWorkspace<'_>,
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
-    mode: ServerLaunchMode,
-) -> Result<RuntimeLaunchPreparation> {
+) -> RuntimeLaunchRequest<'a, fn(&DevEnvironment) -> RuntimeInvocation> {
+    server_launch_request(
+        locked,
+        runtime,
+        dev_env_mode,
+        RuntimeLaunchKind::ManagedServer,
+    )
+}
+
+pub(super) fn transient_server_launch_request<'a>(
+    locked: &'a LockedWorkspace<'_>,
+    runtime: RuntimeKind,
+    dev_env_mode: DevEnvMode,
+) -> RuntimeLaunchRequest<'a, fn(&DevEnvironment) -> RuntimeInvocation> {
+    server_launch_request(
+        locked,
+        runtime,
+        dev_env_mode,
+        RuntimeLaunchKind::TransientServer,
+    )
+}
+
+fn server_launch_request<'a>(
+    locked: &'a LockedWorkspace<'_>,
+    runtime: RuntimeKind,
+    dev_env_mode: DevEnvMode,
+    kind: RuntimeLaunchKind,
+) -> RuntimeLaunchRequest<'a, fn(&DevEnvironment) -> RuntimeInvocation> {
     let workspace = locked.workspace();
-    let preparation = prepare_container_launch_for_workspace(
-        locked.podman(),
+    RuntimeLaunchRequest {
+        podman: locked.podman(),
         workspace,
         runtime,
         dev_env_mode,
-        mode.host_client_requirement(),
-        ExistingResourceCheck::RequireAbsent(ExistingResourceScope::AgentboxContainers),
-    )?;
-    let server_run = server_runtime_command(
-        runtime,
-        workspace.canonical_target.as_ref(),
-        &preparation.dev_env,
-    );
-    let mut run_spec = runtime.run_spec(
-        mode.runtime_run_mode(),
-        workspace,
-        &preparation.preflight.host_nix_mounts,
-        &preparation.preflight.runtime_mounts,
-        server_run,
-    );
-    apply_ssh_commit_signing_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
-    record_runtime_image_version(runtime, &preparation, &mut run_spec, mode);
-
-    Ok(RuntimeLaunchPreparation { run_spec })
+        kind,
+        invocation: RuntimeLaunchInvocation::Server,
+    }
 }
 
-pub(super) fn prepare_foreground_launch(
-    locked: &LockedWorkspace<'_>,
+pub(super) fn foreground_launch_request<'a, I>(
+    locked: &'a LockedWorkspace<'_>,
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
-    invocation: impl FnOnce(&DevEnvironment) -> RuntimeInvocation,
-) -> Result<RuntimeLaunchPreparation> {
-    let workspace = locked.workspace();
-    let preparation = prepare_container_launch_for_workspace(
-        locked.podman(),
+    invocation: I,
+) -> RuntimeLaunchRequest<'a, I>
+where
+    I: FnOnce(&DevEnvironment) -> RuntimeInvocation + 'a,
+{
+    RuntimeLaunchRequest {
+        podman: locked.podman(),
+        workspace: locked.workspace(),
+        runtime,
+        dev_env_mode,
+        kind: RuntimeLaunchKind::Foreground,
+        invocation: RuntimeLaunchInvocation::Custom(invocation),
+    }
+}
+
+pub(super) fn replacement_server_launch_request<'a>(
+    podman: &'a crate::podman::Podman,
+    workspace: &'a WorkspaceIdentity,
+    runtime: RuntimeKind,
+    dev_env_mode: DevEnvMode,
+    connect_after_start: bool,
+) -> RuntimeLaunchRequest<'a, fn(&DevEnvironment) -> RuntimeInvocation> {
+    RuntimeLaunchRequest {
+        podman,
         workspace,
         runtime,
         dev_env_mode,
-        HostClientRequirement::NotRequired,
-        ExistingResourceCheck::RequireAbsent(ExistingResourceScope::ManagedSessions),
-    )?;
-    let mut run_spec = runtime.run_spec(
-        RuntimeRunMode::Foreground,
-        workspace,
-        &preparation.preflight.host_nix_mounts,
-        &preparation.preflight.runtime_mounts,
-        invocation(&preparation.dev_env),
-    );
-    apply_ssh_commit_signing_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
-
-    Ok(RuntimeLaunchPreparation { run_spec })
+        kind: RuntimeLaunchKind::ReplacementServer {
+            connect_after_start,
+        },
+        invocation: RuntimeLaunchInvocation::Server,
+    }
 }
 
-pub(super) fn prepare_replacement_server_launch(
-    podman: &crate::podman::Podman,
-    workspace: &WorkspaceIdentity,
-    runtime: RuntimeKind,
-    dev_env_mode: DevEnvMode,
-    connect_after_restart: bool,
-) -> Result<RuntimeLaunchPreparation> {
+pub(super) fn prepare_runtime_launch<I>(
+    request: RuntimeLaunchRequest<'_, I>,
+) -> Result<RuntimeLaunchPreparation>
+where
+    I: FnOnce(&DevEnvironment) -> RuntimeInvocation,
+{
+    let RuntimeLaunchRequest {
+        podman,
+        workspace,
+        runtime,
+        dev_env_mode,
+        kind,
+        invocation,
+    } = request;
     let preparation = prepare_container_launch_for_workspace(
         podman,
         workspace,
         runtime,
         dev_env_mode,
-        if connect_after_restart {
-            HostClientRequirement::Required
-        } else {
-            HostClientRequirement::NotRequired
-        },
-        ExistingResourceCheck::AllowExisting,
+        kind.host_client_requirement(),
+        kind.existing_resource_check(),
     )?;
-    let server_run = server_runtime_command(
-        runtime,
-        workspace.canonical_target.as_ref(),
-        &preparation.dev_env,
-    );
     let mut run_spec = runtime.run_spec(
-        RuntimeRunMode::ManagedSession,
+        kind.runtime_run_mode(),
         workspace,
         &preparation.preflight.host_nix_mounts,
         &preparation.preflight.runtime_mounts,
-        server_run,
+        build_runtime_invocation(invocation, runtime, workspace, &preparation.dev_env),
     );
     apply_ssh_commit_signing_passthrough(&mut run_spec, workspace.canonical_git_root.as_ref());
-    record_runtime_image_version(
-        runtime,
-        &preparation,
-        &mut run_spec,
-        ServerLaunchMode::ManagedSession,
-    );
+    record_runtime_image_version(runtime, &preparation, &mut run_spec, kind);
 
     Ok(RuntimeLaunchPreparation { run_spec })
+}
+
+fn build_runtime_invocation<I>(
+    invocation: RuntimeLaunchInvocation<I>,
+    runtime: RuntimeKind,
+    workspace: &WorkspaceIdentity,
+    dev_env: &DevEnvironment,
+) -> RuntimeInvocation
+where
+    I: FnOnce(&DevEnvironment) -> RuntimeInvocation,
+{
+    match invocation {
+        RuntimeLaunchInvocation::Server => {
+            server_runtime_command(runtime, workspace.canonical_target.as_ref(), dev_env)
+        }
+        RuntimeLaunchInvocation::Custom(invocation) => invocation(dev_env),
+    }
 }
 
 fn prepare_container_launch_for_workspace(
@@ -254,9 +320,9 @@ fn record_runtime_image_version(
     runtime: RuntimeKind,
     preparation: &ContainerLaunchPreparation,
     run_spec: &mut RuntimeRunSpec,
-    mode: ServerLaunchMode,
+    kind: RuntimeLaunchKind,
 ) {
-    if !mode.records_runtime_image_version() {
+    if !kind.records_runtime_image_version() {
         return;
     }
 
@@ -265,5 +331,99 @@ fn record_runtime_image_version(
             .create_mut()
             .labels
             .insert(runtime_package_version_label(runtime), version.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launch_kind_selects_runtime_run_mode() {
+        assert_eq!(
+            RuntimeLaunchKind::ManagedServer.runtime_run_mode(),
+            RuntimeRunMode::ManagedSession
+        );
+        assert_eq!(
+            RuntimeLaunchKind::ReplacementServer {
+                connect_after_start: false
+            }
+            .runtime_run_mode(),
+            RuntimeRunMode::ManagedSession
+        );
+        assert_eq!(
+            RuntimeLaunchKind::TransientServer.runtime_run_mode(),
+            RuntimeRunMode::TransientServer
+        );
+        assert_eq!(
+            RuntimeLaunchKind::Foreground.runtime_run_mode(),
+            RuntimeRunMode::Foreground
+        );
+    }
+
+    #[test]
+    fn launch_kind_selects_host_client_requirement() {
+        assert_eq!(
+            RuntimeLaunchKind::ManagedServer.host_client_requirement(),
+            HostClientRequirement::NotRequired
+        );
+        assert_eq!(
+            RuntimeLaunchKind::TransientServer.host_client_requirement(),
+            HostClientRequirement::Required
+        );
+        assert_eq!(
+            RuntimeLaunchKind::Foreground.host_client_requirement(),
+            HostClientRequirement::NotRequired
+        );
+        assert_eq!(
+            RuntimeLaunchKind::ReplacementServer {
+                connect_after_start: true
+            }
+            .host_client_requirement(),
+            HostClientRequirement::Required
+        );
+        assert_eq!(
+            RuntimeLaunchKind::ReplacementServer {
+                connect_after_start: false
+            }
+            .host_client_requirement(),
+            HostClientRequirement::NotRequired
+        );
+    }
+
+    #[test]
+    fn launch_kind_selects_existing_resource_check() {
+        assert_eq!(
+            RuntimeLaunchKind::ManagedServer.existing_resource_check(),
+            ExistingResourceCheck::RequireAbsent(ExistingResourceScope::AgentboxContainers)
+        );
+        assert_eq!(
+            RuntimeLaunchKind::TransientServer.existing_resource_check(),
+            ExistingResourceCheck::RequireAbsent(ExistingResourceScope::AgentboxContainers)
+        );
+        assert_eq!(
+            RuntimeLaunchKind::Foreground.existing_resource_check(),
+            ExistingResourceCheck::RequireAbsent(ExistingResourceScope::ManagedSessions)
+        );
+        assert_eq!(
+            RuntimeLaunchKind::ReplacementServer {
+                connect_after_start: false
+            }
+            .existing_resource_check(),
+            ExistingResourceCheck::AllowExisting
+        );
+    }
+
+    #[test]
+    fn launch_kind_records_runtime_image_versions_only_for_managed_lifetimes() {
+        assert!(RuntimeLaunchKind::ManagedServer.records_runtime_image_version());
+        assert!(
+            RuntimeLaunchKind::ReplacementServer {
+                connect_after_start: false
+            }
+            .records_runtime_image_version()
+        );
+        assert!(!RuntimeLaunchKind::TransientServer.records_runtime_image_version());
+        assert!(!RuntimeLaunchKind::Foreground.records_runtime_image_version());
     }
 }
