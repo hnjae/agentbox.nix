@@ -9,7 +9,8 @@ use clap::ValueEnum;
 use crate::{Error, Result};
 
 use super::default_image::{self, DefaultImageBuildContext};
-use super::profile::{self, RuntimeHostStateMount, RuntimePackageSpec};
+use super::host_state::RuntimeHostStateMount;
+use super::profile::{self, RuntimePackageSpec};
 use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand, RuntimeHealthCheck};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
