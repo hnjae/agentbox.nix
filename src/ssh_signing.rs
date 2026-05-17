@@ -18,7 +18,9 @@ mod known_hosts;
 mod signing_key;
 
 use agent_socket::{HOST_SSH_AUTH_SOCK_ENV, detect_host_agent_socket, utf8_path};
-use git_config::{append_git_config_env, read_git_config_entries};
+use git_config::{
+    append_git_config_env, read_git_identity_entries, read_ssh_signing_config_entries,
+};
 use known_hosts::PreparedKnownHosts;
 
 #[derive(Debug, Default)]
@@ -75,7 +77,7 @@ impl SshPassthrough {
     }
 }
 
-pub(crate) fn apply_ssh_passthrough(
+pub(crate) fn apply_git_and_ssh_passthrough(
     run_spec: &mut RuntimeRunSpec,
     git_root: &Utf8Path,
 ) -> SshPassthroughGuard {
@@ -101,17 +103,31 @@ fn detect_with(
     ) -> Option<PreparedKnownHosts>,
     mut warning: impl FnMut(String),
 ) -> SshPassthrough {
+    let mut env = BTreeMap::new();
+    let mut git_entries = read_git_identity_entries(git_root, &mut git_config, &mut warning);
+
     let Some(host_socket) = detect_host_agent_socket(&mut environment, &mut warning) else {
-        return SshPassthrough::default();
+        append_git_config_env(&mut env, &git_entries);
+        return SshPassthrough {
+            commit_signing: SshCommitSigningPassthrough {
+                agent_socket_mount: None,
+                env,
+            },
+            known_hosts: SshKnownHostsPassthrough::default(),
+        };
     };
 
     let home = environment("HOME").and_then(utf8_path);
-    let mut env = BTreeMap::from([(
+    env.insert(
         HOST_SSH_AUTH_SOCK_ENV.to_string(),
         CONTAINER_SSH_AUTH_SOCK.to_string(),
-    )]);
-    let git_entries =
-        read_git_config_entries(git_root, home.as_deref(), &mut git_config, &mut warning);
+    );
+    git_entries.extend(read_ssh_signing_config_entries(
+        git_root,
+        home.as_deref(),
+        &mut git_config,
+        &mut warning,
+    ));
     append_git_config_env(&mut env, &git_entries);
     let known_hosts = known_hosts(git_root, &mut environment, &mut warning);
 
@@ -135,24 +151,53 @@ mod tests {
 
     use camino::Utf8PathBuf;
 
-    use super::git_config::{GIT_CONFIG_COUNT_ENV, GIT_CONFIG_KEYS};
+    use super::git_config::{GIT_CONFIG_COUNT_ENV, GIT_IDENTITY_KEYS, GIT_SIGNING_KEYS};
     use super::*;
     use crate::runtime::{RuntimeCreateSpec, RuntimeRunSpec};
 
     #[test]
-    fn unset_ssh_auth_sock_adds_no_mount_env_or_git_config() {
+    fn unset_ssh_auth_sock_still_adds_host_git_identity() {
+        let mut requested_keys = Vec::new();
+
         let passthrough = detect_with(
             Utf8Path::new("/repo"),
             |_| None,
-            |_git_root, _key| panic!("git config must not be read without an agent socket"),
+            |_git_root, key| {
+                requested_keys.push(key.to_string());
+                Ok(match key {
+                    "user.name" => Some("Alice Agent".to_string()),
+                    "user.email" => Some("alice@example.test".to_string()),
+                    _ => Some("must-not-be-read".to_string()),
+                })
+            },
             |_git_root, _environment, _warning| {
                 panic!("known_hosts must not be read without an agent socket")
             },
             panic_warning,
         );
 
+        assert_eq!(requested_keys, GIT_IDENTITY_KEYS);
         assert!(passthrough.commit_signing.agent_socket_mount.is_none());
-        assert!(passthrough.commit_signing.env.is_empty());
+        assert_eq!(
+            passthrough
+                .commit_signing
+                .env
+                .get(GIT_CONFIG_COUNT_ENV)
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_git_config_env(
+            &passthrough.commit_signing.env,
+            0,
+            "user.name",
+            "Alice Agent",
+        );
+        assert_git_config_env(
+            &passthrough.commit_signing.env,
+            1,
+            "user.email",
+            "alice@example.test",
+        );
         assert!(passthrough.known_hosts.prepared.is_none());
     }
 
@@ -201,7 +246,7 @@ mod tests {
         let passthrough = detect_with(
             Utf8Path::new("/repo"),
             |name| test_env(name, &socket_path, None),
-            |_git_root, _key| panic!("git config must not be read for invalid socket"),
+            |_git_root, _key| Ok(None),
             |_git_root, _environment, _warning| {
                 panic!("known_hosts must not be read for invalid socket")
             },
@@ -239,7 +284,14 @@ mod tests {
             panic_warning,
         );
 
-        assert_eq!(requested_keys, GIT_CONFIG_KEYS);
+        assert_eq!(
+            requested_keys,
+            GIT_IDENTITY_KEYS
+                .iter()
+                .chain(GIT_SIGNING_KEYS.iter())
+                .copied()
+                .collect::<Vec<_>>()
+        );
         assert_eq!(
             passthrough
                 .commit_signing

@@ -10,35 +10,36 @@ use crate::Result;
 use super::signing_key::normalize_signing_key_value;
 
 pub(super) const GIT_CONFIG_COUNT_ENV: &str = "GIT_CONFIG_COUNT";
-pub(super) const GIT_CONFIG_KEYS: &[&str] = &[
-    "user.name",
-    "user.email",
-    "gpg.format",
-    "user.signingkey",
-    "commit.gpgsign",
-];
+pub(super) const GIT_IDENTITY_KEYS: &[&str] = &["user.name", "user.email"];
+pub(super) const GIT_SIGNING_KEYS: &[&str] = &["gpg.format", "user.signingkey", "commit.gpgsign"];
 
-pub(super) fn read_git_config_entries(
+pub(super) fn read_git_identity_entries(
+    git_root: &Utf8Path,
+    git_config: &mut impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
+    warning: &mut impl FnMut(String),
+) -> Vec<(String, String)> {
+    read_git_config_keys(
+        git_root,
+        GIT_IDENTITY_KEYS,
+        "host Git identity passthrough",
+        git_config,
+        warning,
+    )
+}
+
+pub(super) fn read_ssh_signing_config_entries(
     git_root: &Utf8Path,
     home: Option<&Utf8Path>,
     git_config: &mut impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
     warning: &mut impl FnMut(String),
 ) -> Vec<(String, String)> {
-    let mut values = Vec::new();
-
-    for key in GIT_CONFIG_KEYS {
-        let value = match git_config(git_root, key) {
-            Ok(Some(value)) => value,
-            Ok(None) => continue,
-            Err(error) => {
-                warning(format!(
-                    "failed to read host Git config `{key}` for SSH commit signing passthrough: {error}"
-                ));
-                continue;
-            }
-        };
-        values.push((key.to_string(), value));
-    }
+    let values = read_git_config_keys(
+        git_root,
+        GIT_SIGNING_KEYS,
+        "SSH commit signing passthrough",
+        git_config,
+        warning,
+    );
 
     let ssh_signing_configured = values
         .iter()
@@ -63,6 +64,32 @@ pub(super) fn read_git_config_entries(
     }
 
     entries
+}
+
+fn read_git_config_keys(
+    git_root: &Utf8Path,
+    keys: &[&str],
+    context: &str,
+    git_config: &mut impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
+    warning: &mut impl FnMut(String),
+) -> Vec<(String, String)> {
+    let mut values = Vec::new();
+
+    for key in keys {
+        let value = match git_config(git_root, key) {
+            Ok(Some(value)) => value,
+            Ok(None) => continue,
+            Err(error) => {
+                warning(format!(
+                    "failed to read host Git config `{key}` for {context}: {error}"
+                ));
+                continue;
+            }
+        };
+        values.push((key.to_string(), value));
+    }
+
+    values
 }
 
 pub(super) fn append_git_config_env(

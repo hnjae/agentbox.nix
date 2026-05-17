@@ -234,6 +234,34 @@ fn exec_launches_codex_exec_foreground_without_managed_metadata() {
     assert!(!log.iter().any(|line| line.starts_with("codex ")));
 }
 
+#[test]
+fn exec_passes_host_git_identity_without_ssh_agent() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    harness.write_git_config("user.name", "Alice Agent\n");
+    harness.write_git_config("user.email", "alice@example.test\n");
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .args(["exec", "--dev-env", "none"])
+        .arg(target)
+        .arg("--")
+        .arg("fix-tests");
+
+    command.assert().success();
+
+    let log = harness.read_log();
+    let run = podman_run_command(&log);
+    assert!(run.contains("--env GIT_CONFIG_COUNT=2"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_0=user.name"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_0=Alice Agent"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_1=alice@example.test"));
+    assert!(!run.contains("/run/agentbox/ssh-agent.sock"));
+}
+
 #[cfg(unix)]
 #[test]
 fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
