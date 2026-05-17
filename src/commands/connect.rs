@@ -9,13 +9,13 @@ use crate::cli::ConnectArgs;
 use crate::diagnostic;
 use crate::podman::Podman;
 use crate::prompt;
-use crate::session::{SessionRecord, discover_managed_sessions};
+use crate::session::{SessionDiscoveryQuery, SessionRecord, SessionTargetKind};
 use crate::session::{prepare_connect_session, run_command_hint, select_single_session};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::runtime_command::run_host_runtime_client;
-use super::session_targets::SessionTargetKind;
+use super::session_targets::{connect_prompt_label, prompt_choices};
 use super::workspace_flow::with_locked_workspace;
 
 pub fn run(args: ConnectArgs) -> Result<()> {
@@ -35,7 +35,8 @@ fn select_connect_directory() -> Result<PathBuf> {
         "agentbox connect requires a target when stdin or stderr is not a TTY",
     )?;
     let podman = Podman::new();
-    let candidates = connect_prompt_candidates(&discover_managed_sessions(&podman)?);
+    let candidates =
+        connect_prompt_candidates(&SessionDiscoveryQuery::managed_sessions().discover(&podman)?);
 
     if candidates.is_empty() {
         return Err(Error::msg("no connectable managed sessions exist"));
@@ -83,10 +84,11 @@ fn connect_directory(directory: &Path) -> Result<()> {
 pub type ConnectPromptCandidate = prompt::Choice<PathBuf>;
 
 pub fn connect_prompt_candidates(sessions: &[SessionRecord]) -> Vec<ConnectPromptCandidate> {
-    SessionTargetKind::ConnectRoot.prompt_choices(
+    prompt_choices(
+        SessionTargetKind::ConnectRoot,
         sessions,
         |candidate| PathBuf::from(candidate.value()),
-        |candidate| candidate.connect_prompt_label(),
+        connect_prompt_label,
     )
 }
 

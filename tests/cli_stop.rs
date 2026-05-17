@@ -5,7 +5,7 @@ use std::path::Path;
 
 use agentbox::commands::stop::stop_prompt_candidates;
 use agentbox::metadata::{LABEL_ATTACH_SCHEME, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH};
-use agentbox::session::discover_agentbox_containers_from_ps;
+use agentbox::session::SessionDiscoveryQuery;
 use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
 
@@ -177,16 +177,17 @@ fn stop_prompt_candidates_include_stop_completion_eligible_sessions() {
         .labels
         .remove(LABEL_GIT_ROOT_HASH);
 
-    let sessions = discover_agentbox_containers_from_ps(
-        vec![running_ps, run_ps, failed_ps, unidentifiable_ps],
-        inspect_models_by_id(vec![
-            running_inspect,
-            run_inspect,
-            failed_inspect,
-            unidentifiable_inspect,
-        ]),
-    )
-    .unwrap();
+    let sessions = SessionDiscoveryQuery::agentbox_containers()
+        .discover_from_ps(
+            vec![running_ps, run_ps, failed_ps, unidentifiable_ps],
+            inspect_models_by_id(vec![
+                running_inspect,
+                run_inspect,
+                failed_inspect,
+                unidentifiable_inspect,
+            ]),
+        )
+        .unwrap();
 
     let candidates = stop_prompt_candidates(&sessions);
     let mut targets = candidates

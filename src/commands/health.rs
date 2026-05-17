@@ -10,8 +10,7 @@ use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::{HostRuntimeHealthProbe, RuntimeHealth, RuntimeHealthProbe};
 use crate::session::{
-    SessionRecord, discover_managed_sessions, select_stable_id_prefix,
-    sort_session_refs_by_identity,
+    SessionDiscoveryQuery, SessionRecord, select_stable_id_prefix, sort_session_refs_by_identity,
 };
 
 use super::output;
@@ -21,7 +20,7 @@ use super::session_output::{
 
 pub fn run(args: HealthArgs) -> Result<()> {
     let podman = Podman::new();
-    let sessions = discover_managed_sessions(&podman)?;
+    let sessions = SessionDiscoveryQuery::managed_sessions().discover(&podman)?;
     let sessions = selected_health_sessions(&sessions, args.target.as_deref())?;
     let rows = health_rows(sessions, &HostRuntimeHealthProbe);
     match args.output {

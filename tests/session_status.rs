@@ -8,9 +8,7 @@ use agentbox::metadata::{
     LABEL_RUNTIME,
 };
 use agentbox::session::{
-    SessionFailure, SessionStatus, discover_agentbox_containers_from_ps,
-    discover_managed_sessions_from_ps, discover_sessions_for_git_root_from_ps,
-    group_sessions_by_git_root,
+    SessionDiscoveryQuery, SessionFailure, SessionStatus, group_sessions_by_git_root,
 };
 use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
@@ -31,11 +29,12 @@ fn duplicate_root_group_marks_each_row_duplicate() {
     let first = managed_container("dup-a", root, true, true);
     let second = managed_container("dup-b", root, true, true);
 
-    let sessions = discover_managed_sessions_from_ps(
-        vec![first.0, second.0],
-        inspect_by_id(vec![first.1, second.1]),
-    )
-    .unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(
+            vec![first.0, second.0],
+            inspect_by_id(vec![first.1, second.1]),
+        )
+        .unwrap();
 
     assert_eq!(sessions.len(), 2);
     assert!(
@@ -55,8 +54,9 @@ fn transient_run_containers_are_discovered_as_run_resources() {
     let root = Utf8Path::from_path(repo.path()).unwrap();
     let run = transient_run_container("transient-run", root, true, true);
 
-    let sessions =
-        discover_agentbox_containers_from_ps(vec![run.0], inspect_by_id(vec![run.1])).unwrap();
+    let sessions = SessionDiscoveryQuery::agentbox_containers()
+        .discover_from_ps(vec![run.0], inspect_by_id(vec![run.1]))
+        .unwrap();
 
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].container_kind(), AgentboxContainerKind::Run);
@@ -79,11 +79,12 @@ fn transient_run_status_uses_existing_orphan_failed_and_duplicate_rules() {
     let duplicate_b = transient_run_container("duplicate-run-b", duplicate_root, true, true);
     drop(orphan_repo);
 
-    let sessions = discover_agentbox_containers_from_ps(
-        vec![orphan.0, failed.0, duplicate_a.0, duplicate_b.0],
-        inspect_by_id(vec![orphan.1, failed.1, duplicate_a.1, duplicate_b.1]),
-    )
-    .unwrap();
+    let sessions = SessionDiscoveryQuery::agentbox_containers()
+        .discover_from_ps(
+            vec![orphan.0, failed.0, duplicate_a.0, duplicate_b.0],
+            inspect_by_id(vec![orphan.1, failed.1, duplicate_a.1, duplicate_b.1]),
+        )
+        .unwrap();
 
     assert_eq!(status_for(&sessions, "orphan-run"), SessionStatus::Orphaned);
     assert_eq!(
@@ -107,9 +108,9 @@ fn managed_discovery_excludes_transient_run_containers() {
     let managed = managed_container("managed", root, true, true);
     let run = transient_run_container("transient-run", root, true, true);
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![managed.0, run.0], inspect_by_id(vec![managed.1]))
-            .unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![managed.0, run.0], inspect_by_id(vec![managed.1]))
+        .unwrap();
 
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].container_name, "managed");
@@ -122,8 +123,9 @@ fn transient_run_without_kind_label_is_not_discovered_by_name_or_image() {
     let (mut ps, inspect) = transient_run_container("agentbox-unlabeled", root, true, true);
     ps.labels.remove(LABEL_CONTAINER_KIND);
 
-    let sessions =
-        discover_agentbox_containers_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::agentbox_containers()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert!(sessions.is_empty());
 }
@@ -135,8 +137,9 @@ fn missing_required_labels_marks_failed() {
     let (ps, mut inspect) = managed_container("missing-runtime", root, true, true);
     inspect.config.labels.remove(LABEL_RUNTIME);
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert!(sessions[0].status.is_failed());
 }
@@ -149,9 +152,10 @@ fn scoped_discovery_keeps_matching_root_when_identity_hash_is_missing() {
     ps.labels.remove(LABEL_GIT_ROOT_HASH);
     inspect.config.labels.remove(LABEL_GIT_ROOT_HASH);
 
-    let sessions =
-        discover_sessions_for_git_root_from_ps(vec![ps], root, inspect_by_id(vec![inspect]))
-            .unwrap();
+    let sessions = SessionDiscoveryQuery::agentbox_containers()
+        .for_git_root(root)
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert_eq!(sessions.len(), 1);
     assert!(sessions[0].status.is_failed());
@@ -170,12 +174,10 @@ fn scoped_discovery_skips_nonmatching_hash_without_inspect() {
     let target = managed_container("target", target_root, true, true);
     let unrelated = managed_container("unrelated", unrelated_root, true, true);
 
-    let sessions = discover_sessions_for_git_root_from_ps(
-        vec![unrelated.0, target.0],
-        target_root,
-        inspect_by_id(vec![target.1]),
-    )
-    .unwrap();
+    let sessions = SessionDiscoveryQuery::agentbox_containers()
+        .for_git_root(target_root)
+        .discover_from_ps(vec![unrelated.0, target.0], inspect_by_id(vec![target.1]))
+        .unwrap();
 
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].container_name, "target");
@@ -188,8 +190,9 @@ fn missing_cache_mount_marks_failed() {
     let (ps, mut inspect) = managed_container("missing-cache", root, true, true);
     inspect.mounts.clear();
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert!(sessions[0].status.is_failed());
 }
@@ -204,8 +207,9 @@ fn unsupported_runtime_label_records_specific_failure() {
         .labels
         .insert(LABEL_RUNTIME.to_string(), "future-runtime".to_string());
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert_eq!(
         sessions[0].status.failure(),
@@ -223,8 +227,9 @@ fn malformed_endpoint_labels_record_specific_failure() {
         .labels
         .insert(LABEL_CONTAINER_PORT.to_string(), "4097".to_string());
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert_eq!(
         sessions[0].status.failure(),
@@ -239,8 +244,9 @@ fn missing_published_attach_port_records_specific_failure() {
     let (ps, mut inspect) = managed_container("missing-port", root, true, true);
     inspect.network_settings.ports.clear();
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert_eq!(
         sessions[0].status.failure(),
@@ -262,8 +268,9 @@ fn malformed_published_attach_port_records_specific_failure() {
         .expect("fixture should publish an attach port");
     bindings[0].host_port = Some("not-a-port".to_string());
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert_eq!(
         sessions[0].status.failure(),
@@ -281,11 +288,12 @@ fn non_running_containers_are_failed_in_the_live_session_model() {
     let running = managed_container("running", running_root, true, true);
     let stopped = managed_container("stopped", stopped_root, false, true);
 
-    let sessions = discover_managed_sessions_from_ps(
-        vec![running.0, stopped.0],
-        inspect_by_id(vec![running.1, stopped.1]),
-    )
-    .unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(
+            vec![running.0, stopped.0],
+            inspect_by_id(vec![running.1, stopped.1]),
+        )
+        .unwrap();
 
     assert_eq!(status_for(&sessions, "running"), SessionStatus::Running);
     assert!(status_for(&sessions, "stopped").is_failed());
@@ -298,8 +306,9 @@ fn missing_git_root_path_marks_orphaned() {
     let (ps, inspect) = managed_container("orphaned", &root, true, true);
     drop(missing_repo);
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert_eq!(sessions[0].status, SessionStatus::Orphaned);
 }
@@ -319,8 +328,9 @@ fn existing_git_root_path_that_resolves_to_different_repo_marks_orphaned() {
     fs::remove_dir_all(stored_repo.join(".git")).unwrap();
     support::init_git_repo(workspace.path());
 
-    let sessions =
-        discover_managed_sessions_from_ps(vec![ps], inspect_by_id(vec![inspect])).unwrap();
+    let sessions = SessionDiscoveryQuery::managed_sessions()
+        .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
+        .unwrap();
 
     assert_eq!(sessions[0].status, SessionStatus::Orphaned);
 }
@@ -336,12 +346,13 @@ fn hash_collision_between_different_roots_fails_clearly() {
         managed_container_with_hash("target", target_root, forced_hash.as_str(), true, true);
     let other = managed_container_with_hash("other", other_root, forced_hash.as_str(), true, true);
 
-    let error = discover_sessions_for_git_root_from_ps(
-        vec![target.0, other.0],
-        target_root,
-        inspect_by_id(vec![target.1, other.1]),
-    )
-    .unwrap_err();
+    let error = SessionDiscoveryQuery::agentbox_containers()
+        .for_git_root(target_root)
+        .discover_from_ps(
+            vec![target.0, other.0],
+            inspect_by_id(vec![target.1, other.1]),
+        )
+        .unwrap_err();
 
     assert!(error.to_string().contains("managed identity collision"));
     assert!(error.to_string().contains(target_root.as_str()));

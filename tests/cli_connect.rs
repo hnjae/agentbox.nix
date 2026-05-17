@@ -6,7 +6,7 @@ use std::fs;
 use agentbox::commands::connect::connect_prompt_candidates;
 use agentbox::metadata::{LABEL_ATTACH_SCHEME, LABEL_LAUNCH_DIRECTORY};
 use agentbox::runtime::RuntimeKind;
-use agentbox::session::discover_agentbox_containers_from_ps;
+use agentbox::session::SessionDiscoveryQuery;
 use agentbox::workspace::resolve_workspace_identity;
 
 #[path = "support/mod.rs"]
@@ -108,16 +108,17 @@ fn connect_prompt_candidates_include_only_connectable_running_sessions() {
     );
     failed_inspect.config.labels.remove(LABEL_ATTACH_SCHEME);
 
-    let sessions = discover_agentbox_containers_from_ps(
-        vec![running_ps, run_ps, stopped_ps, failed_ps],
-        inspect_models_by_id(vec![
-            running_inspect,
-            run_inspect,
-            stopped_inspect,
-            failed_inspect,
-        ]),
-    )
-    .unwrap();
+    let sessions = SessionDiscoveryQuery::agentbox_containers()
+        .discover_from_ps(
+            vec![running_ps, run_ps, stopped_ps, failed_ps],
+            inspect_models_by_id(vec![
+                running_inspect,
+                run_inspect,
+                stopped_inspect,
+                failed_inspect,
+            ]),
+        )
+        .unwrap();
 
     let candidates = connect_prompt_candidates(&sessions);
 

@@ -17,92 +17,47 @@ use super::labels::SessionLabelReport;
 use super::record::{SessionMetadata, SessionRecord};
 use super::status::{SessionStatusInput, derive_status, mark_duplicate_sessions};
 
-pub fn discover_managed_sessions(podman: &Podman) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_podman(
-        podman,
-        SessionDiscoveryScope::All,
-        ContainerDiscoveryScope::ManagedSessions,
-    )
+pub struct SessionDiscoveryQuery<'a> {
+    scope: SessionDiscoveryScope<'a>,
+    container_scope: ContainerDiscoveryScope,
 }
 
-pub fn discover_agentbox_containers(podman: &Podman) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_podman(
-        podman,
-        SessionDiscoveryScope::All,
-        ContainerDiscoveryScope::AgentboxOwned,
-    )
-}
+impl<'a> SessionDiscoveryQuery<'a> {
+    pub fn managed_sessions() -> Self {
+        Self {
+            scope: SessionDiscoveryScope::All,
+            container_scope: ContainerDiscoveryScope::ManagedSessions,
+        }
+    }
 
-pub fn discover_managed_sessions_from_ps(
-    containers: Vec<PodmanPsContainer>,
-    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
-) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_ps(
-        containers,
-        SessionDiscoveryScope::All,
-        ContainerDiscoveryScope::ManagedSessions,
-        inspect_container,
-    )
-}
+    pub fn agentbox_containers() -> Self {
+        Self {
+            scope: SessionDiscoveryScope::All,
+            container_scope: ContainerDiscoveryScope::AgentboxOwned,
+        }
+    }
 
-pub fn discover_agentbox_containers_from_ps(
-    containers: Vec<PodmanPsContainer>,
-    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
-) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_ps(
-        containers,
-        SessionDiscoveryScope::All,
-        ContainerDiscoveryScope::AgentboxOwned,
-        inspect_container,
-    )
-}
+    pub fn for_git_root(mut self, git_root: &'a Utf8Path) -> Self {
+        self.scope = SessionDiscoveryScope::for_git_root(git_root);
+        self
+    }
 
-pub fn discover_sessions_for_git_root(
-    podman: &Podman,
-    git_root: &Utf8Path,
-) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_podman(
-        podman,
-        SessionDiscoveryScope::for_git_root(git_root),
-        ContainerDiscoveryScope::AgentboxOwned,
-    )
-}
+    pub fn discover(self, podman: &Podman) -> Result<Vec<SessionRecord>> {
+        discover_scoped_sessions_from_podman(podman, self.scope, self.container_scope)
+    }
 
-pub fn discover_managed_sessions_for_git_root(
-    podman: &Podman,
-    git_root: &Utf8Path,
-) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_podman(
-        podman,
-        SessionDiscoveryScope::for_git_root(git_root),
-        ContainerDiscoveryScope::ManagedSessions,
-    )
-}
-
-pub fn discover_sessions_for_git_root_from_ps(
-    containers: Vec<PodmanPsContainer>,
-    git_root: &Utf8Path,
-    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
-) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_ps(
-        containers,
-        SessionDiscoveryScope::for_git_root(git_root),
-        ContainerDiscoveryScope::AgentboxOwned,
-        inspect_container,
-    )
-}
-
-pub fn discover_managed_sessions_for_git_root_from_ps(
-    containers: Vec<PodmanPsContainer>,
-    git_root: &Utf8Path,
-    inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
-) -> Result<Vec<SessionRecord>> {
-    discover_scoped_sessions_from_ps(
-        containers,
-        SessionDiscoveryScope::for_git_root(git_root),
-        ContainerDiscoveryScope::ManagedSessions,
-        inspect_container,
-    )
+    pub fn discover_from_ps(
+        self,
+        containers: Vec<PodmanPsContainer>,
+        inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+    ) -> Result<Vec<SessionRecord>> {
+        discover_scoped_sessions_from_ps(
+            containers,
+            self.scope,
+            self.container_scope,
+            inspect_container,
+        )
+    }
 }
 
 fn discover_scoped_sessions_from_podman(

@@ -21,10 +21,6 @@ impl<'a> StableIdPrefixSelection<'a> {
         &self.id
     }
 
-    pub(crate) fn has_duplicate_sessions(&self) -> bool {
-        self.sessions.len() > 1
-    }
-
     pub(crate) fn into_single_session(self) -> Option<&'a SessionRecord> {
         if self.sessions.len() == 1 {
             self.sessions.into_iter().next()

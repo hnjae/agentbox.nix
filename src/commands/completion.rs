@@ -8,9 +8,9 @@ use crate::cli::{Cli, CompletionRootCommand, CompletionShell, DevEnvMode, Output
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
-use crate::session::{SessionRecord, discover_agentbox_containers, discover_managed_sessions};
+use crate::session::{SessionDiscoveryQuery, SessionRecord, SessionTargetKind};
 
-use super::session_targets::SessionTargetKind;
+use super::session_targets::completion_line;
 
 pub fn run(shell: CompletionShell) -> Result<()> {
     match shell {
@@ -57,10 +57,14 @@ fn completion_sessions(
     command: CompletionRootCommand,
 ) -> Result<Vec<SessionRecord>> {
     match command {
-        CompletionRootCommand::Stop => discover_agentbox_containers(podman),
+        CompletionRootCommand::Stop => {
+            SessionDiscoveryQuery::agentbox_containers().discover(podman)
+        }
         CompletionRootCommand::Connect
         | CompletionRootCommand::Health
-        | CompletionRootCommand::Restart => discover_managed_sessions(podman),
+        | CompletionRootCommand::Restart => {
+            SessionDiscoveryQuery::managed_sessions().discover(podman)
+        }
     }
 }
 
@@ -69,7 +73,7 @@ pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
     let sessions = live_roots(command)?;
     let lines = target_kind
         .candidates(&sessions)
-        .map(|candidate| candidate.completion_line())
+        .map(completion_line)
         .collect::<Vec<_>>();
 
     Ok(lines.join("\n"))

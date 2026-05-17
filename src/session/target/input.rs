@@ -10,32 +10,32 @@ use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum SessionTargetInput {
+pub(crate) enum SessionTargetInput {
     Cli(PathBuf),
     StableId(String),
 }
 
 impl SessionTargetInput {
-    pub(super) fn display(&self) -> String {
+    pub(crate) fn display(&self) -> String {
         match self {
             Self::Cli(path) => path.display().to_string(),
             Self::StableId(id) => id.clone(),
         }
     }
+
+    pub(crate) fn resolve(&self) -> Result<ResolvedSessionTarget> {
+        match self {
+            Self::Cli(path) => resolve_cli_session_target(path),
+            Self::StableId(prefix) => Ok(ResolvedSessionTarget::StableId(prefix.clone())),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum ResolvedSessionTarget {
+pub(crate) enum ResolvedSessionTarget {
     ResolvedGitRoot(Utf8PathBuf),
     ExactStoredGitRootPath(Utf8PathBuf),
     StableId(String),
-}
-
-pub(super) fn resolve_session_target(target: &SessionTargetInput) -> Result<ResolvedSessionTarget> {
-    match target {
-        SessionTargetInput::Cli(path) => resolve_cli_session_target(path),
-        SessionTargetInput::StableId(prefix) => Ok(ResolvedSessionTarget::StableId(prefix.clone())),
-    }
 }
 
 fn resolve_cli_session_target(target: &Path) -> Result<ResolvedSessionTarget> {

@@ -1,32 +1,35 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use camino::Utf8Path;
-
 use crate::podman::Podman;
 use crate::session::{
-    SessionGroup, SessionRecord, discover_agentbox_containers, exact_git_root_matches,
-    partition_sessions_by_git_root, select_agentbox_stable_id_prefix,
+    SessionDiscoveryQuery, SessionGroup, SessionRecord, SessionTargetInput, StopExactGitRootTarget,
+    StopSessionTargetPlan, StopStableIdTarget, exact_git_root_matches,
+    partition_sessions_by_git_root,
 };
 use crate::{Error, Result};
 
 use super::super::container_cleanup::{ContainerCleanupFailure, cleanup_managed_containers};
-use super::super::target::{ResolvedSessionTarget, SessionTargetInput, resolve_session_target};
 use super::super::workspace_flow::{LockedGitRoot, with_locked_git_root};
 
 pub(super) fn stop_target(target: &SessionTargetInput, force: bool) -> Result<()> {
-    match resolve_session_target(target)? {
-        ResolvedSessionTarget::ResolvedGitRoot(git_root) => stop_git_root(&git_root, force, target),
-        ResolvedSessionTarget::ExactStoredGitRootPath(git_root) => {
-            stop_exact_stored_git_root_path(&git_root, force, target)
+    let plan = StopSessionTargetPlan::resolve(target, || {
+        let podman = Podman::new();
+        SessionDiscoveryQuery::agentbox_containers().discover(&podman)
+    })?;
+
+    match plan {
+        StopSessionTargetPlan::ExactGitRoot(plan) => {
+            stop_exact_git_root_matches(plan, force, target)
         }
-        ResolvedSessionTarget::StableId(prefix) => stop_stable_id(&prefix, force, target),
+        StopSessionTargetPlan::StableId(plan) => stop_stable_id(plan, force, target),
     }
 }
 
 pub(super) fn stop_all_running() -> Result<()> {
     let podman = Podman::new();
-    let sessions = discover_agentbox_containers(&podman)?
+    let sessions = SessionDiscoveryQuery::agentbox_containers()
+        .discover(&podman)?
         .into_iter()
         .filter(|session| session.container_running())
         .collect::<Vec<_>>();
@@ -35,128 +38,38 @@ pub(super) fn stop_all_running() -> Result<()> {
     finish_cleanup("all running agentbox containers", &failures)
 }
 
-fn stop_git_root(git_root: &Utf8Path, force: bool, target: &SessionTargetInput) -> Result<()> {
-    stop_exact_git_root_matches(git_root, force, target, ExactGitRootStopMode::Scoped)
-}
-
-fn stop_exact_stored_git_root_path(
-    git_root: &Utf8Path,
-    force: bool,
-    target: &SessionTargetInput,
-) -> Result<()> {
-    stop_exact_git_root_matches(
-        git_root,
-        force,
-        target,
-        ExactGitRootStopMode::ExactStoredPath,
-    )
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExactGitRootStopMode {
-    Scoped,
-    ExactStoredPath,
-}
-
-impl ExactGitRootStopMode {
-    fn target_ref(self, git_root: &Utf8Path) -> String {
-        match self {
-            Self::Scoped => format!("`{git_root}`"),
-            Self::ExactStoredPath => format!("exact stored git-root path `{git_root}`"),
-        }
-    }
-
-    fn discover_sessions(self, locked: &LockedGitRoot<'_>) -> Result<Vec<SessionRecord>> {
-        match self {
-            Self::Scoped => locked.discover_sessions(),
-            Self::ExactStoredPath => locked.discover_agentbox_containers(),
-        }
-    }
-}
-
 fn stop_exact_git_root_matches(
-    git_root: &Utf8Path,
+    plan: StopExactGitRootTarget,
     force: bool,
     target: &SessionTargetInput,
-    mode: ExactGitRootStopMode,
 ) -> Result<()> {
-    let failures = with_locked_git_root(git_root, |locked| {
-        let sessions = exact_git_root_matches(mode.discover_sessions(&locked)?, git_root);
-        let target_ref = mode.target_ref(git_root);
+    let failures = with_locked_git_root(plan.git_root(), |locked| {
+        let discovered_sessions = if plan.uses_locked_root_scope() {
+            locked.discover_sessions()
+        } else {
+            locked.discover_agentbox_containers()
+        }?;
+        let sessions = plan.exact_matches_from(discovered_sessions);
 
-        if sessions.is_empty() {
-            return Err(Error::msg(format!(
-                "no agentbox container exists for {target_ref}"
-            )));
-        }
-
-        require_force_for_duplicate_matches(sessions.len() > 1, force, &target_ref, target)?;
+        plan.require_non_empty_matches(&sessions)?;
+        plan.require_force_for_matches(sessions.len(), force, target)?;
 
         cleanup_selected_sessions(&locked, &sessions)
     })?;
 
-    finish_cleanup(git_root.as_str(), &failures)
+    finish_cleanup(plan.git_root().as_str(), &failures)
 }
 
-fn stop_stable_id(prefix: &str, force: bool, target: &SessionTargetInput) -> Result<()> {
-    let podman = Podman::new();
-    let sessions = discover_agentbox_containers(&podman)?;
-    let selection = select_agentbox_stable_id_prefix(&sessions, prefix)?;
-    let id = selection.id().to_string();
-
-    require_force_for_duplicate_matches(
-        selection.has_duplicate_sessions(),
-        force,
-        &format!("stable id `{id}`"),
-        target,
-    )?;
-
-    let sessions = lockable_stable_id_matches(selection.into_sessions(), &id)?;
-    let failures = cleanup_stable_id_matches(sessions)?;
-
-    finish_cleanup(&format!("id {id}"), &failures)
-}
-
-fn lockable_stable_id_matches(
-    sessions: Vec<&SessionRecord>,
-    id: &str,
-) -> Result<Vec<SessionRecord>> {
-    let selected_count = sessions.len();
-    let lockable = sessions
-        .into_iter()
-        .filter(|session| session.canonical_git_root().is_some())
-        .cloned()
-        .collect::<Vec<_>>();
-
-    if lockable.is_empty() {
-        return Err(Error::msg(format!(
-            "agentbox container id `{id}` cannot be stopped safely because no matched container has a recoverable git-root label"
-        )));
-    }
-
-    if lockable.len() != selected_count {
-        return Err(Error::msg(format!(
-            "agentbox container id `{id}` includes matched containers without a recoverable git-root label; cannot stop them safely"
-        )));
-    }
-
-    Ok(lockable)
-}
-
-fn require_force_for_duplicate_matches(
-    has_duplicates: bool,
+fn stop_stable_id(
+    plan: StopStableIdTarget,
     force: bool,
-    target_ref: &str,
     target: &SessionTargetInput,
 ) -> Result<()> {
-    if has_duplicates && !force {
-        Err(Error::msg(format!(
-            "duplicate agentbox containers exist for {target_ref}; rerun `agentbox stop --force {}` to remove all exact matches",
-            target.display()
-        )))
-    } else {
-        Ok(())
-    }
+    plan.require_force(force, target)?;
+    let id = plan.id().to_string();
+    let failures = cleanup_stable_id_matches(plan.into_sessions())?;
+
+    finish_cleanup(&format!("id {id}"), &failures)
 }
 
 fn cleanup_stable_id_matches(sessions: Vec<SessionRecord>) -> Result<Vec<ContainerCleanupFailure>> {

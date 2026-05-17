@@ -9,7 +9,8 @@ use crate::metadata::runtime_package_version_label;
 use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime};
 use crate::runtime::{RuntimeInvocation, RuntimeKind, RuntimeRunMode, RuntimeRunSpec};
 use crate::session::{
-    duplicate_agentbox_containers_error, existing_session_error, select_single_session,
+    SessionDiscoveryQuery, duplicate_agentbox_containers_error, existing_session_error,
+    select_single_session,
 };
 use crate::ssh_signing::apply_ssh_commit_signing_passthrough;
 use crate::workspace::WorkspaceIdentity;
@@ -265,17 +266,13 @@ fn prepare_container_launch_for_workspace(
     if let ExistingResourceCheck::RequireAbsent(existing_scope) = existing_check {
         diagnostic::info(existing_scope.diagnostic_message());
         let sessions = match existing_scope {
-            ExistingResourceScope::ManagedSessions => {
-                crate::session::discover_managed_sessions_for_git_root(
-                    podman,
-                    workspace.canonical_git_root.as_ref(),
-                )?
-            }
+            ExistingResourceScope::ManagedSessions => SessionDiscoveryQuery::managed_sessions()
+                .for_git_root(workspace.canonical_git_root.as_ref())
+                .discover(podman)?,
             ExistingResourceScope::AgentboxContainers => {
-                crate::session::discover_sessions_for_git_root(
-                    podman,
-                    workspace.canonical_git_root.as_ref(),
-                )?
+                SessionDiscoveryQuery::agentbox_containers()
+                    .for_git_root(workspace.canonical_git_root.as_ref())
+                    .discover(podman)?
             }
         };
         let existing = match sessions.as_slice() {

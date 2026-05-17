@@ -9,8 +9,11 @@ mod endpoint;
 mod labels;
 mod mounts;
 mod record;
+mod restartable;
 mod selection;
 mod status;
+mod target;
+mod target_candidate;
 
 pub use collection::group_sessions_by_git_root;
 pub(crate) use collection::{
@@ -20,18 +23,16 @@ pub(crate) use collection::{
 pub(crate) use conflict::duplicate_agentbox_containers_error;
 pub(crate) use conflict::{classify_create_error_or_else, existing_session_error};
 pub(crate) use connectable::prepare_connect_session;
-pub use discovery::{
-    discover_agentbox_containers, discover_agentbox_containers_from_ps, discover_managed_sessions,
-    discover_managed_sessions_for_git_root, discover_managed_sessions_for_git_root_from_ps,
-    discover_managed_sessions_from_ps, discover_sessions_for_git_root,
-    discover_sessions_for_git_root_from_ps,
-};
+pub use discovery::SessionDiscoveryQuery;
 pub use endpoint::discover_attach_endpoint_from_inspect;
 pub use record::{SessionGroup, SessionMetadata, SessionRecord};
-pub(crate) use selection::{
-    run_command_hint, select_agentbox_stable_id_prefix, select_single_session,
-    select_stable_id_prefix,
+pub(crate) use restartable::prepare_restart_session;
+pub(crate) use selection::{run_command_hint, select_single_session, select_stable_id_prefix};
+pub(crate) use target::{
+    RestartSessionTargetPlan, SessionTargetInput, StopExactGitRootTarget, StopSessionTargetPlan,
+    StopStableIdTarget,
 };
+pub(crate) use target_candidate::{SessionTargetCandidate, SessionTargetKind};
 
 pub use status::{
     SessionFailure, SessionStatus, failed_session_requires_action_error,

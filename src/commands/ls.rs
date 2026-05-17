@@ -7,16 +7,14 @@ use serde::Serialize;
 use crate::cli::{LsArgs, OutputFormat};
 use crate::error::Result;
 use crate::podman::Podman;
-use crate::session::{
-    SessionRecord, discover_agentbox_containers, sorted_session_refs_by_identity,
-};
+use crate::session::{SessionDiscoveryQuery, SessionRecord, sorted_session_refs_by_identity};
 
 use super::output;
 use super::session_output::{SessionDisplay, SessionJsonFields};
 
 pub fn run(args: LsArgs) -> Result<()> {
     let podman = Podman::new();
-    let sessions = discover_agentbox_containers(&podman)?;
+    let sessions = SessionDiscoveryQuery::agentbox_containers().discover(&podman)?;
     match args.output {
         OutputFormat::Table => print_table(&sessions),
         OutputFormat::Json => print_json(&sessions)?,
