@@ -1251,21 +1251,28 @@ Rules:
 
 ### Host Git Identity Passthrough
 
-For `run`, `start`, `restart`, and `exec`, `agentbox` passes the invoking
-repository's effective host Git identity into the runtime container so Git
-operations inside the agent environment use the same default author identity as
-the host repository.
+For `run`, `start`, and `restart`, `agentbox` passes the invoking repository's
+effective host Git identity into the runtime container so Git operations inside
+the agent environment use the same default author identity as the host
+repository. `agentbox exec` is a Codex-only one-shot mode and uses a fixed
+Codex author identity instead.
 
 Rules:
 
-- `agentbox` reads only the effective `user.name` and `user.email` Git config
-  values from the host repository during launch preparation.
-- If either value is unset, that value is not injected.
-- If reading either value fails unexpectedly, `agentbox` prints a warning and
-  continues launching without that value.
+- For `run`, `start`, and `restart`, `agentbox` reads only the effective
+  `user.name` and `user.email` Git config values from the host repository
+  during launch preparation.
+- For `run`, `start`, and `restart`, if either value is unset, that value is
+  not injected.
+- For `run`, `start`, and `restart`, if reading either value fails
+  unexpectedly, `agentbox` prints a warning and continues launching without
+  that value.
+- For `exec`, `agentbox` injects `user.name=Codex` and
+  `user.email=noreply@openai.com` instead of reading those values from the host
+  repository.
 - Present values are injected with Git's `GIT_CONFIG_COUNT`,
   `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment variables.
-- Host Git identity passthrough does not depend on `SSH_AUTH_SOCK`.
+- Git identity passthrough does not depend on `SSH_AUTH_SOCK`.
 - `agentbox` does not mount the host Git config files, credential helpers, or
   other Git configuration for identity passthrough.
 
