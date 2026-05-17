@@ -1660,6 +1660,9 @@ Required drift behavior:
   to synthesize a bundled Nix installation.
 - Runtime image setup failure: fail clearly and preserve inspectable runtime
   state when Podman has not already removed the container.
+- Container readiness and discovery diagnostics must inspect Podman containers
+  specifically, so a same-named runtime cache volume never masks a missing or
+  auto-removed container as malformed container JSON.
 - Identity collision between different canonical git roots: fail clearly and do
   not treat them as the same workspace.
 - Stop failure: report exactly which managed containers are still running or
