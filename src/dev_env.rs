@@ -73,14 +73,12 @@ impl DevEnvironment {
                 wrapped.extend(argv);
                 wrapped
             }
-            Self::Devenv { root } => {
-                let mut wrapped = Vec::with_capacity(argv.len() + 6);
+            Self::Devenv { .. } => {
+                let mut wrapped = Vec::with_capacity(argv.len() + 4);
                 wrapped.extend([
                     "devenv".to_string(),
                     "shell".to_string(),
                     "--no-tui".to_string(),
-                    "--from".to_string(),
-                    path_flake_ref(root),
                     "--".to_string(),
                 ]);
                 wrapped.extend(argv);
@@ -303,16 +301,7 @@ mod tests {
                 root: "/repo".into(),
             }
             .wrap_argv(server.clone()),
-            vec![
-                "devenv",
-                "shell",
-                "--no-tui",
-                "--from",
-                "path:/repo",
-                "--",
-                "opencode",
-                "serve",
-            ]
+            vec!["devenv", "shell", "--no-tui", "--", "opencode", "serve"]
         );
         assert_eq!(
             DevEnvironment::NixDevelop {

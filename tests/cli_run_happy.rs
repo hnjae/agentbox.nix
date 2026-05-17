@@ -606,10 +606,9 @@ fn exec_wraps_codex_exec_command_with_devenv_when_selected() {
     let log = exec_codex_success(&fixture, &harness, &[], &["fix-tests"]);
     let run = podman_run_command(&log);
 
-    assert!(run.contains(&format!(
-        "devenv shell --no-tui --from path:{} -- codex --dangerously-bypass-approvals-and-sandbox exec --disable codex_git_commit fix-tests",
-        fixture.workspace.canonical_git_root
-    )));
+    assert!(run.contains(
+        "devenv shell --no-tui -- codex --dangerously-bypass-approvals-and-sandbox exec --disable codex_git_commit fix-tests"
+    ));
     assert!(!run.contains("app-server"));
 }
 
@@ -639,10 +638,7 @@ fn run_wraps_server_command_with_devenv_when_selected() {
     let log = run_opencode_success(&fixture, &harness, &[]);
     let run = podman_run_command(&log);
 
-    assert!(run.contains(&format!(
-        "devenv shell --no-tui --from path:{} -- opencode serve --hostname 0.0.0.0 --port 4096",
-        fixture.workspace.canonical_git_root
-    )));
+    assert!(run.contains("devenv shell --no-tui -- opencode serve --hostname 0.0.0.0 --port 4096"));
 }
 
 #[test]
@@ -855,10 +851,7 @@ fn start_uses_parent_devenv_without_changing_container_workdir() {
     let run = podman_run_command(&log);
 
     assert!(run.contains(&format!("--workdir {}", fixture.workspace.canonical_target)));
-    assert!(run.contains(&format!(
-        "devenv shell --no-tui --from path:{} -- opencode serve --hostname 0.0.0.0 --port 4096",
-        fixture.workspace.canonical_git_root
-    )));
+    assert!(run.contains("devenv shell --no-tui -- opencode serve --hostname 0.0.0.0 --port 4096"));
     assert!(!log.iter().any(|line| line.starts_with("nix ")));
 }
 
