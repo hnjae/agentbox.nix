@@ -18,12 +18,14 @@ pub(super) fn select_runtime(
 ) -> Result<RuntimeKind> {
     match runtime {
         Some(runtime) => Ok(runtime),
-        None => prompt::select_one(
-            "Select runtime",
-            RuntimeKind::variants().to_vec(),
-            non_tty_error,
-        ),
+        None => prompt::select_one("Select runtime", runtime_prompt_options(), non_tty_error),
     }
+}
+
+fn runtime_prompt_options() -> Vec<RuntimeKind> {
+    let mut runtimes = RuntimeKind::variants().to_vec();
+    runtimes.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    runtimes
 }
 
 pub(super) fn exit_code(code: i32) -> Option<u8> {
@@ -106,5 +108,20 @@ impl Drop for CommandInterrupt {
         if let Some(signal_id) = self.signal_id.take() {
             signal_hook::low_level::unregister(signal_id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_prompt_options_are_sorted_by_runtime_name() {
+        let names = runtime_prompt_options()
+            .into_iter()
+            .map(RuntimeKind::as_str)
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["codex", "opencode"]);
     }
 }
