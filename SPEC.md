@@ -235,6 +235,10 @@ port and listen address. Transient `run` containers are discovered by `ls` and
 labels, image references, and container name patterns alone do not prove
 ownership.
 
+During live Podman discovery, missing or `null` JSON collection fields such as
+container labels are treated as empty collections. Ambient containers without
+agentbox ownership labels are ignored and must not make lifecycle commands fail.
+
 When a command is scoped to one canonical git root, containers that advertise a
 different git-root identity token are outside that command's discovery scope and
 must not block it. Containers with a missing identity token remain in scope
