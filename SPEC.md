@@ -52,6 +52,12 @@ development environment for the launch directory; `--dev-env none` disables
 that automatic wrapping. If `--connect` is set, `start` connects with the
 runtime host-side client after the new runtime server endpoint is ready.
 
+`agentbox restart [--connect|-c] [--dev-env <auto|none>] [target]` replaces
+one running managed workspace session with a new managed session for the same
+repository. It recovers the runtime and launch directory from existing session
+metadata, reuses the same named cache volume, and re-evaluates development
+environment loading for the stored launch directory.
+
 `agentbox connect [directory]` discovers the running server endpoint for the
 resolved repository or selected session and runs the running session's runtime
 host-side client command from the session's stored launch directory. A provided
@@ -64,9 +70,10 @@ Foreground `exec`, transient `run`, and managed containers are started with
 Podman's `--rm` cleanup flag. When a foreground `exec` exits, when a transient
 `run` container is stopped, when a managed runtime server exits, or when
 `agentbox stop [target]...` stops a managed session or transient `run`
+container, or when `agentbox restart [target]` stops the old managed
 container, Podman removes the stopped container. Default runtime images and the
-named runtime cache volume are
-intentionally left for explicit later cleanup with `agentbox clean` or update.
+named runtime cache volume are intentionally left for explicit later cleanup
+with `agentbox clean` or update.
 
 If a matching managed session already exists for a repository, `run`, `exec`,
 and `start` fail clearly instead of reusing, replacing, or changing it. If a
@@ -551,11 +558,109 @@ Runtime rules:
   managed session remains running so the user can retry
   `agentbox connect <directory>` or stop it with `agentbox stop <directory>`.
 
+### `agentbox restart [--connect|-c] [--dev-env <auto|none>] [target]`
+
+`restart` replaces one running managed workspace session with a newly-created
+managed session for the same canonical git root. It preserves the selected
+runtime, deterministic container name, stored launch directory, and named
+runtime cache volume, while re-evaluating the development environment used to
+start the server command.
+
+Optional flags and arguments:
+
+- `--connect`, `-c`: connect with the runtime host-side client after the new
+  session is ready
+- `--dev-env <auto|none>`: choose whether `restart` automatically starts the
+  replacement runtime server through the applicable development environment.
+  The default is `auto`.
+- `[target]`: workspace directory, exact stored git-root absolute path, or
+  stable session id prefix
+
+Expected behavior:
+
+1. If `[target]` is omitted and stdin and stderr are terminals, discover
+   restartable running managed sessions and prompt on stderr with a fuzzy
+   single-select list.
+2. If `[target]` is omitted and either stdin or stderr is not a terminal, fail
+   with a clear error that a restart target is required in non-interactive use.
+3. If `[target]` names an existing path, resolve it to a canonical git root.
+4. If `[target]` is an absolute path that does not exist, require it to exactly
+   match a live running managed session's stored `io.agentbox.git_root`
+   absolute path string.
+5. If `[target]` is not resolved as a path, treat it as a case-insensitive
+   stable id prefix.
+6. Select exactly one running managed session. A transient `run` container,
+   stopped session, orphaned session, failed session, duplicate session,
+   malformed runtime or launch-directory label, or missing target match is a
+   clear failure and is not restarted.
+7. Lock the selected canonical git root and re-discover the target before any
+   lifecycle mutation. If the selected target is no longer exactly one running
+   managed session, fail before stopping anything.
+8. Read the runtime and stored launch directory from the existing managed
+   session. The requested target identifies the session only; it does not
+   update the launch directory.
+9. Validate Podman, the recovered runtime, and host-attached Nix prerequisites.
+10. Resolve the development environment from the stored launch directory.
+11. If `--connect` is present, verify that the recovered runtime's host client
+    command is available before stopping the existing container.
+12. Ensure the recovered runtime's default image is available before stopping
+    the existing container.
+13. Stop the existing managed container and verify that it is gone. If stop or
+    cleanup verification fails, do not start a replacement container and report
+    the remaining container.
+14. Start detached `podman run --detach --rm` with the same deterministic
+    container name, selected runtime, stored launch directory as the container
+    working directory, required labels and mounts, default runtime image,
+    local-only published attach endpoint, and existing named runtime cache
+    volume.
+15. Wait until the replacement runtime server endpoint is ready for connection
+    or the container exits.
+16. If `--connect` is absent, report that the replacement session is ready and
+    suggest `agentbox connect <launch-directory>`.
+17. If `--connect` is present, report that the replacement session is ready and
+    execute the runtime host client command from the stored launch directory
+    with stdio inherited, using the same client command behavior as
+    `agentbox connect`.
+
+Progress and diagnostics:
+
+- `restart` prints short `INFO` log progress to stderr while checking
+  prerequisites, resolving the target, ensuring the runtime image, stopping the
+  old container, starting the replacement container, and waiting for the
+  runtime server endpoint.
+- `restart` prints its final success message as an `INFO` log on stderr.
+  Successful `restart` does not write to stdout.
+- With `--verbose`, `restart` also prints the external commands it executes and
+  forwards non-JSON Podman command output as `DEBUG` logs on stderr.
+- If replacement container startup or readiness fails after the old container
+  was stopped, `restart` reports that the previous session may already be gone
+  and includes a short `podman logs --tail` excerpt for the replacement
+  managed container when Podman can provide one.
+
+Runtime rules:
+
+- `restart` does not accept `--runtime`; the runtime is recovered from the
+  existing session metadata.
+- `restart` does not accept `--all` or `--force`.
+- `--dev-env auto` is the default and re-evaluates automatic development
+  environment loading for the replacement server command from the stored launch
+  directory.
+- `--dev-env none` disables automatic development environment loading for the
+  replacement server command.
+- `--connect` does not change session identity, runtime recovery, container
+  startup, endpoint readiness checks, or target selection.
+- Transient `run` containers are never restartable.
+- Stopped, failed, orphaned, and duplicate managed sessions are not
+  restartable. They require explicit `agentbox stop` cleanup followed by
+  `agentbox start` if a new session is desired.
+- Restart is not all-or-nothing. After the old container is stopped, a later
+  replacement start or readiness failure can leave no running managed session.
+
 Image rules:
 
-- `run` and `start` do not accept a user-supplied image reference.
-- `run` and `start` always use the selected runtime's current default image
-  reference.
+- `run`, `start`, and `restart` do not accept a user-supplied image reference.
+- `run`, `start`, and `restart` always use the selected runtime's current
+  default image reference.
 - The default image may be built or reused by `agentbox`; users do not need to
   supply a build context.
 - The selected runtime's current default image reference is
@@ -569,21 +674,22 @@ Image rules:
   `tests/**` are not image inputs and do not affect the default image
   reference.
 - If the selected runtime is `codex` and the current default image is missing,
-  `run` or `start` resolves the latest `@openai/codex` npm version, builds the
-  Codex default image with that version, and records the version metadata,
-  image reference, and image context hash in agentbox state.
+  `run`, `start`, or `restart` resolves the latest `@openai/codex` npm
+  version, builds the Codex default image with that version, and records the
+  version metadata, image reference, and image context hash in agentbox state.
 - If the selected runtime is `opencode` and the current default image is
-  missing, `run` or `start` resolves the latest `opencode-ai` npm version,
-  builds the OpenCode default image with that version, and records the version
-  metadata, image reference, and image context hash in agentbox state.
-- If the selected runtime's default image already exists, `run` or `start`
-  reuses it without checking the npm registry.
+  missing, `run`, `start`, or `restart` resolves the latest `opencode-ai` npm
+  version, builds the OpenCode default image with that version, and records the
+  version metadata, image reference, and image context hash in agentbox state.
+- If the selected runtime's default image already exists, `run`, `start`, or
+  `restart` reuses it without checking the npm registry.
 - Existing legacy `localhost/agentbox-opencode:local` and
   `localhost/agentbox-codex:local` images are not current default image
-  references and do not prevent `run` or `start` from building the current
-  content-hash-tagged image.
+  references and do not prevent `run`, `start`, or `restart` from building the
+  current content-hash-tagged image.
 - `agentbox` records the exact default image reference on a running managed
-  `start` container so live discovery can report it while the container exists.
+  `start` or `restart` container so live discovery can report it while the
+  container exists.
 - Default runtime images are not removed by `stop`; image cleanup and image
   updates are explicit operator actions.
 
@@ -975,7 +1081,7 @@ Safety rules:
 
 ## Completion And Installed Assets
 
-Shell completion for `connect`, `stop`, and `health` is dynamic.
+Shell completion for `connect`, `restart`, `stop`, and `health` is dynamic.
 
 Required behavior:
 
@@ -986,8 +1092,11 @@ Required behavior:
   candidates, but remain visible through `agentbox ls`.
 - `connect` completion includes only connectable `running` managed sessions
   with valid endpoint metadata.
-- Transient `run` containers are not `connect` or `health` completion
-  candidates.
+- `restart` candidate values are stable ids.
+- `restart` completion includes only running managed sessions with recoverable
+  runtime and launch-directory metadata.
+- Transient `run` containers are not `connect`, `restart`, or `health`
+  completion candidates.
 - `stop` and `health` candidate values are stable ids.
 - `stop` completion includes running, orphaned, duplicate, and failed sessions
   and transient `run` containers when a stable id is known.
@@ -1009,10 +1118,10 @@ Required package output paths:
 - `share/zsh/site-functions/_agentbox`
 - `share/fish/vendor_completions.d/agentbox.fish`
 - `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`,
-  `share/man/man1/agentbox-start.1`, `share/man/man1/agentbox-connect.1`,
-  `share/man/man1/agentbox-ls.1`, `share/man/man1/agentbox-health.1`,
-  `share/man/man1/agentbox-stop.1`, `share/man/man1/agentbox-clean.1`,
-  `share/man/man1/agentbox-runtime.1`, and
+  `share/man/man1/agentbox-start.1`, `share/man/man1/agentbox-restart.1`,
+  `share/man/man1/agentbox-connect.1`, `share/man/man1/agentbox-ls.1`,
+  `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`,
+  `share/man/man1/agentbox-clean.1`, `share/man/man1/agentbox-runtime.1`, and
   `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the Nix
   fixup phase compresses manual pages
 
@@ -1044,13 +1153,15 @@ mutate workspace ownership or permissions to achieve this.
 
 ### Launch Directory CWD
 
-The effective working directory for a running session is the stored launch
-directory, not always the git root. `start` sets the launch directory from its
-canonical target directory. `connect` uses the requested directory only to find
-the workspace session, then runs the host client from the stored launch
-directory. Transient `run` uses the canonical target directory as both the
-runtime server container working directory and the host-client process working
-directory, and does not create a stored launch directory.
+The effective working directory for a managed running session is the stored
+launch directory, not always the git root. `start` sets the launch directory
+from its canonical target directory. `restart` preserves the existing stored
+launch directory and starts the replacement server from that directory.
+`connect` uses the requested directory only to find the workspace session, then
+runs the host client from the stored launch directory. Transient `run` uses the
+canonical target directory as both the runtime server container working
+directory and the host-client process working directory, and does not create a
+stored launch directory.
 
 Examples:
 
@@ -1059,6 +1170,9 @@ Examples:
 - working directory seen by the runtime server: `/aaa/bbb/subdir`
 - command: `agentbox connect /aaa/bbb/other`
 - working directory of the host runtime client process: `/aaa/bbb/subdir`
+- command: `agentbox restart /aaa/bbb/other`
+- working directory seen by the replacement runtime server:
+  `/aaa/bbb/subdir`
 - command: `agentbox run --runtime opencode /aaa/bbb/subdir`
 - working directory seen by the runtime server and host client:
   `/aaa/bbb/subdir`
@@ -1067,6 +1181,9 @@ Rules:
 
 - `start` starts the runtime server from the canonical target directory inside
   the container and records that directory as the session launch directory.
+- `restart` starts the replacement runtime server from the existing stored
+  launch directory inside the container and records that same directory again
+  as the session launch directory.
 - `run` starts the transient runtime server from the canonical target directory
   inside the container, starts the runtime host client from the same canonical
   target directory on the host, and records no session metadata.
@@ -1074,6 +1191,8 @@ Rules:
   the host.
 - `connect` does not change the already-running server process working
   directory.
+- `restart` uses the requested target only to identify the managed session; it
+  does not change the launch directory for the replacement session.
 - To use a different launch directory for the same git root, the user stops the
   current session and starts a new one from the desired directory.
 - Runtime-specific remote project behavior must be provided by the runtime
@@ -1116,6 +1235,8 @@ Rules:
   it is named by a runtime-specific passthrough rule.
 - `agentbox stop <directory>` does not explicitly delete the runtime cache
   volume.
+- `agentbox restart <target>` preserves and reuses the named runtime cache
+  volume for the selected managed session.
 - Once no container uses the cache volume, it remains available for explicit
   reclamation, for example with `podman volume rm <container-name>` or
   `podman volume prune --all`.
@@ -1125,8 +1246,9 @@ Rules:
 ### SSH Commit Signing Passthrough
 
 When the invoking host environment has a usable SSH agent socket, `run`,
-`start`, and `exec` make SSH-based Git commit signing available inside the
-runtime container without mounting private keys or host SSH configuration.
+`start`, `restart`, and `exec` make SSH-based Git commit signing available
+inside the runtime container without mounting private keys or host SSH
+configuration.
 
 Rules:
 
@@ -1169,15 +1291,16 @@ the runtime Codex home.
 
 Rules:
 
-- For `agentbox run --runtime codex` and `agentbox start --runtime codex`, the
-  host `${HOME}/.codex` directory is bind-mounted read-write at
-  `/home/user/.codex`.
+- For `agentbox run --runtime codex`, `agentbox start --runtime codex`, and
+  `agentbox restart` of a Codex session, the host `${HOME}/.codex` directory
+  is bind-mounted read-write at `/home/user/.codex`.
 - The mount is required so auth refreshes, skills, MCP configuration, plugins,
   rules, and other Codex user state remain consistent between host and
   container Codex clients.
-- `run --runtime codex` and `start --runtime codex` fail before starting a
-  container if `${HOME}/.codex` is missing, is not a directory, or is not
-  readable and writable by the invoking host user.
+- `run --runtime codex`, `start --runtime codex`, and `restart` of a Codex
+  session fail before starting or replacing a container if `${HOME}/.codex` is
+  missing, is not a directory, or is not readable and writable by the invoking
+  host user.
 - `agentbox` does not create, migrate, or write files inside `${HOME}/.codex`.
 - OpenCode sessions do not receive the Codex passthrough mount.
 
@@ -1188,20 +1311,21 @@ directories as the runtime OpenCode state.
 
 Rules:
 
-- For `agentbox run --runtime opencode` and
-  `agentbox start --runtime opencode`, the host
+- For `agentbox run --runtime opencode`, `agentbox start --runtime opencode`,
+  and `agentbox restart` of an OpenCode session, the host
   `${XDG_CONFIG_HOME:-$HOME/.config}/opencode` directory is bind-mounted
   read-write at `/home/user/.config/opencode`.
-- For `agentbox run --runtime opencode` and
-  `agentbox start --runtime opencode`, the host
+- For `agentbox run --runtime opencode`, `agentbox start --runtime opencode`,
+  and `agentbox restart` of an OpenCode session, the host
   `${XDG_DATA_HOME:-$HOME/.local/share}/opencode` directory is bind-mounted
   read-write at `/home/user/.local/share/opencode`.
 - Both host directories are required so global configuration, provider
   settings, authentication state, and other OpenCode user state remain
   consistent between host and container OpenCode clients.
-- `run --runtime opencode` and `start --runtime opencode` fail before starting
-  a container if either host OpenCode directory is missing, is not a directory,
-  or is not readable and writable by the invoking host user.
+- `run --runtime opencode`, `start --runtime opencode`, and `restart` of an
+  OpenCode session fail before starting or replacing a container if either host
+  OpenCode directory is missing, is not a directory, or is not readable and
+  writable by the invoking host user.
 - `agentbox` validates the OpenCode state directories only. It does not require
   a specific authentication file such as `auth.json`, because OpenCode may also
   be configured through environment variables or provider configuration.
@@ -1211,10 +1335,11 @@ Rules:
 
 ### Dev Environment Loading
 
-When `run` or `start` uses the default `--dev-env auto`, it starts the runtime
-command through the first applicable development environment provider for the
-launch directory. For `run` and `start`, the runtime command is the runtime
-server inside the container. The provider priority is:
+When `run`, `start`, or `restart` uses the default `--dev-env auto`, it starts
+the runtime command through the first applicable development environment
+provider for the launch directory. For `run`, `start`, and `restart`, the
+runtime command is the runtime server inside the container. The provider
+priority is:
 
 1. `direnv`
 2. `devenv`
@@ -1226,8 +1351,11 @@ Rules:
 - `run` and `start` use the canonical target directory as the runtime process
   working directory even when a development environment wrapper is selected.
   `start` also records that directory as the session launch directory.
-- `run --dev-env none` and `start --dev-env none` disable automatic
-  development environment loading and start the runtime command directly.
+- `restart` uses the stored launch directory as the runtime process working
+  directory and re-evaluates wrapper selection from that directory.
+- `run --dev-env none`, `start --dev-env none`, and `restart --dev-env none`
+  disable automatic development environment loading and start the runtime
+  command directly.
 - Only the selected provider is used. If the selected provider command is
   missing, blocked, exits unsuccessfully, or otherwise fails during runtime
   process startup, the container startup fails through the normal error path and
@@ -1238,6 +1366,8 @@ Rules:
   directory and does not re-evaluate `.envrc`, `devenv.nix`, or `flake.nix`.
 - When `start` launches a session, the server environment is fixed by the
   launch directory and development environment selection used for that `start`.
+- When `restart` replaces a session, the server environment is recomputed from
+  the stored launch directory and selected `--dev-env` mode.
 - `connect` to an already-running session does not reevaluate or replace the
   server environment.
 - The MVP does not persist development environment selection or state for
@@ -1247,47 +1377,49 @@ Rules:
 
 `direnv` selection:
 
-- A matching `.envrc` applies when `.envrc` exists in the canonical target
-  directory or in any ancestor up to and including the canonical git root.
-- If a matching `.envrc` applies, `run --dev-env auto` or
-  `start --dev-env auto` starts the runtime command as
-  `direnv exec . <runtime argv>` from the canonical target directory.
+- A matching `.envrc` applies when `.envrc` exists in the launch directory or
+  in any ancestor up to and including the canonical git root.
+- If a matching `.envrc` applies, `run --dev-env auto`,
+  `start --dev-env auto`, or `restart --dev-env auto` starts the runtime
+  command as `direnv exec . <runtime argv>` from the launch directory.
 
 `devenv` selection:
 
 - `devenv` is considered only when no matching `.envrc` applies.
-- The selected `devenv.nix` is the closest `devenv.nix` found in the canonical
-  target directory or in any ancestor up to and including the canonical git
-  root.
-- If a `devenv.nix` is selected, `run --dev-env auto` or
-  `start --dev-env auto` starts the runtime command as
-  `devenv shell --no-tui --from path:<root> -- <runtime argv>`, where `<root>`
-  is the directory containing the selected `devenv.nix`.
+- The selected `devenv.nix` is the closest `devenv.nix` found in the launch
+  directory or in any ancestor up to and including the canonical git root.
+- If a `devenv.nix` is selected, `run --dev-env auto`,
+  `start --dev-env auto`, or `restart --dev-env auto` starts the runtime
+  command as `devenv shell --no-tui --from path:<root> -- <runtime argv>`,
+  where `<root>` is the directory containing the selected `devenv.nix`.
 
 `nix develop` selection:
 
 - `nix develop` is considered only when no matching `.envrc` or `devenv.nix`
   applies.
-- The selected flake is the closest `flake.nix` found in the canonical target
-  directory or in any ancestor up to and including the canonical git root.
+- The selected flake is the closest `flake.nix` found in the launch directory
+  or in any ancestor up to and including the canonical git root.
 - Automatic flake selection considers only `devShells.<system>.<attr>`.
   `packages` and `legacyPackages` are not automatic development environment
   candidates.
-- If the selected `flake.nix` is in the canonical target directory, `run
-  --dev-env auto` or `start --dev-env auto` looks for the `default` dev shell.
-- If the selected `flake.nix` is in a parent directory of the canonical target
-  directory, `run --dev-env auto` or `start --dev-env auto` first looks for a
-  dev shell named `basename(<directory>)`, then falls back to `default`.
-- If a candidate dev shell exists, `run --dev-env auto` or
-  `start --dev-env auto` starts the runtime command as
+- If the selected `flake.nix` is in the launch directory, `run --dev-env auto`,
+  `start --dev-env auto`, or `restart --dev-env auto` looks for the `default`
+  dev shell.
+- If the selected `flake.nix` is in a parent directory of the launch directory,
+  `run --dev-env auto`, `start --dev-env auto`, or `restart --dev-env auto`
+  first looks for a dev shell named `basename(<directory>)`, then falls back to
+  `default`.
+- If a candidate dev shell exists, `run --dev-env auto`,
+  `start --dev-env auto`, or `restart --dev-env auto` starts the runtime
+  command as
   `nix develop --no-write-lock-file path:<flake_root>#<attr> --command
   <runtime argv>`.
 - If the selected flake can be evaluated but none of the candidate dev shells
-  exists, `run --dev-env auto` or `start --dev-env auto` starts the runtime
-  command directly.
+  exists, `run --dev-env auto`, `start --dev-env auto`, or
+  `restart --dev-env auto` starts the runtime command directly.
 - If automatic flake evaluation itself fails for reasons other than a missing
-  candidate dev shell attribute, `run` or `start` fails clearly before starting a
-  container.
+  candidate dev shell attribute, `run`, `start`, or `restart` fails clearly
+  before starting or replacing a container.
 
 ### Runtime Server And Client Behavior
 
@@ -1313,27 +1445,30 @@ Endpoint rules:
 - The runtime server command must pass the configured listen address to
   runtimes whose default bind address would not be reachable through the
   published attach endpoint.
-- For OpenCode `http` attach endpoints, `run` and `start` treat the endpoint as
-  ready only after `GET /global/health` on the same host-published endpoint
-  returns `HTTP 200` and a JSON response body whose `healthy` field is `true`.
-  A TCP connection, TCP accept followed by a reset, arbitrary HTTP response,
-  malformed JSON response, or health response with `healthy: false` is not
-  sufficient readiness.
-- For Codex `ws` attach endpoints, `run` and `start` treat the endpoint as
-  ready only after `GET /readyz` on the same host-published endpoint returns
-  `HTTP 200`. A TCP connection alone is not sufficient readiness.
+- For OpenCode `http` attach endpoints, `run`, `start`, and `restart` treat
+  the endpoint as ready only after `GET /global/health` on the same
+  host-published endpoint returns `HTTP 200` and a JSON response body whose
+  `healthy` field is `true`. A TCP connection, TCP accept followed by a reset,
+  arbitrary HTTP response, malformed JSON response, or health response with
+  `healthy: false` is not sufficient readiness.
+- For Codex `ws` attach endpoints, `run`, `start`, and `restart` treat the
+  endpoint as ready only after `GET /readyz` on the same host-published
+  endpoint returns `HTTP 200`. A TCP connection alone is not sufficient
+  readiness.
 - The attach endpoint is published only on the host loopback interface by
   default.
 - The default host attach IP is `127.0.0.1`.
 - `agentbox` may let Podman allocate the host port, but it must discover the
   concrete host port from Podman before reporting success from `start` or
-  executing the `run`, `start --connect`, or `connect` host client.
+  `restart`, or executing the `run`, `start --connect`, `restart --connect`, or
+  `connect` host client.
 - The attach endpoint must be discoverable from the runtime's attach
   specification plus Podman's published port data. For managed sessions, stored
   managed-container metadata must also be consistent with that endpoint.
 - The host client command is executed with inherited stdio. `run` executes it
-  from the canonical target directory, while `start --connect` and `connect`
-  execute it from the running session's stored launch directory.
+  from the canonical target directory, while `start --connect`,
+  `restart --connect`, and `connect` execute it from the running session's
+  stored launch directory.
 
 ### Host-Attached Nix Model
 
@@ -1353,8 +1488,8 @@ Rules:
 - `/etc/static/nix` is mounted only when needed because `/etc/nix` resolves
   there on the host model.
 - If a file under `/etc/nix`, such as `/etc/nix/nix.custom.conf`, points into
-  `/etc/static/nix`, `run` or `start` treats `/etc/static/nix` as needed even
-  when that static file ultimately resolves into `/nix/store`.
+  `/etc/static/nix`, `run`, `start`, or `restart` treats `/etc/static/nix` as
+  needed even when that static file ultimately resolves into `/nix/store`.
 - Runtime profile state lives under `$XDG_STATE_HOME/nix/profile`, with fallback
   to `$HOME/.local/state/nix/profile` or `/home/user/.local/state/nix/profile`
   when needed.
@@ -1364,10 +1499,12 @@ Rules:
   at the version resolved by `agentbox` for that image build.
 - The runtime image provides its own CA bundle. Host SSL trust-store mounts are
   out of scope for the MVP.
-- If a host-attached Nix prerequisite is missing, `run` or `start` fails
-  clearly and does not attempt to synthesize a bundled Nix installation.
+- If a host-attached Nix prerequisite is missing, `run`, `start`, or `restart`
+  fails clearly and does not attempt to synthesize a bundled Nix installation.
 - If the selected runtime host client command is missing, `run` fails clearly
   before starting a transient container.
+- If `restart --connect` is selected and the selected runtime host client
+  command is missing, `restart` fails before stopping the old container.
 
 ## Lifecycle And Drift Recovery
 
@@ -1377,6 +1514,8 @@ Valid lifecycle behavior:
   selected host client, stops the transient container before exiting, and does
   not create a managed session.
 - `start` creates the workspace session as a detached runtime server container.
+- `restart` stops one running managed session and creates its replacement as a
+  detached runtime server container for the same runtime and launch directory.
 - `connect` discovers an existing running workspace session and runs the runtime
   host client against its published endpoint.
 - `ls` derives agentbox container status from live Podman state and host path
@@ -1389,27 +1528,28 @@ Valid lifecycle behavior:
 
 Default runtime image lifecycle is separate from managed sessions. When a
 foreground `exec` exits, when a transient `run` container is stopped, when a
-managed runtime server exits, or when `agentbox stop` stops a managed session
-or transient `run` container, Podman removes the container but keeps the
-default runtime image. Current
-default runtime images are tagged by embedded build-context content hash.
+managed runtime server exits, when `agentbox stop` stops a managed session or
+transient `run` container, or when `agentbox restart` stops the old managed
+session, Podman removes the container but keeps the default runtime image.
+Current default runtime images are tagged by embedded build-context content hash.
 Runtime image package updates happen through
 `agentbox runtime update <opencode|codex>`, and unused current, old
 content-hash-tagged, or legacy `:local` default images can be removed through
 `agentbox clean`; `stop` does not remove or rebuild images.
 
 Named runtime cache volume lifecycle remains separate. Transient `run`,
-foreground `exec`, and `agentbox stop` leave the workspace cache volume intact
-so later one-shot runs or detached sessions can reuse it. Volume reclamation is
-explicit through `agentbox clean` or direct Podman commands.
+foreground `exec`, `agentbox stop`, and `agentbox restart` leave the workspace
+cache volume intact so later one-shot runs or detached sessions can reuse it.
+Volume reclamation is explicit through `agentbox clean` or direct Podman
+commands.
 
 Required drift behavior:
 
 - Duplicate agentbox containers for one git root: mark the resources as
-  `duplicate`, fail `run` and `start`, fail `connect` when duplicate managed
-  sessions exist, and do not guess which container to use. `stop --force` may
-  stop all duplicate agentbox containers that exactly claim the resolved
-  canonical git root or exact stored git-root path.
+  `duplicate`, fail `run`, `start`, and `restart`, fail `connect` when
+  duplicate managed sessions exist, and do not guess which container to use.
+  `stop --force` may stop all duplicate agentbox containers that exactly claim
+  the resolved canonical git root or exact stored git-root path.
 - Missing or malformed agentbox-container metadata: mark the resource as
   `failed` and require explicit cleanup or recreation before it can be used
   again.
@@ -1428,6 +1568,11 @@ Required drift behavior:
   not treat them as the same workspace.
 - Stop failure: report exactly which managed containers are still running or
   still inspectable.
+- Restart stop failure: report the old managed container that is still
+  inspectable and do not start a replacement container.
+- Restart replacement failure after the old container is stopped: report that
+  the previous managed session may already be gone and include replacement
+  container logs when available.
 - A `failed` session is not connectable. If enough metadata remains to identify
   it by git root or exact stored git-root path,
   `agentbox stop --force <directory>` may stop it. If the session cannot be
@@ -1447,6 +1592,7 @@ Required error cases:
 - requested directory escapes the resolved git root
 - unsupported runtime
 - unsupported `run --connect` or `run -c`
+- unsupported `restart --runtime`, `restart --all`, or `restart --force`
 - Podman not installed
 - Git not installed
 - unsupported or malformed runtime metadata on an existing managed session
@@ -1458,6 +1604,10 @@ Required error cases:
 - missing published attach port
 - duplicate managed containers for one git root
 - `run` or `start` called for a git root that already has a managed session
+- `restart` target does not resolve to exactly one running managed session
+- `restart` target resolves to a transient `run`, stopped session, failed
+  session, orphaned session, duplicate session, malformed runtime label, or
+  malformed launch-directory label
 - name conflict with a non-matching Podman object
 - identity collision between different canonical git roots
 - missing required managed-container metadata on an existing session
@@ -1468,10 +1618,11 @@ Required error cases:
 - missing nix-daemon socket at `/nix/var/nix/daemon-socket/socket`
 - missing `/etc/nix` host mount or unreadable `/etc/nix/nix.conf`
 - missing readable `/etc/static/nix` target when `/etc/nix` resolves there
-- missing or unusable host `${HOME}/.codex` for `run --runtime codex` or
-  `start --runtime codex`
+- missing or unusable host `${HOME}/.codex` for `run --runtime codex`,
+  `start --runtime codex`, or `restart` of a Codex session
 - missing or unusable host OpenCode configuration or data directories for
-  `run --runtime opencode` or `start --runtime opencode`
+  `run --runtime opencode`, `start --runtime opencode`, or `restart` of an
+  OpenCode session
 - missing host `npm` when a runtime npm version must be resolved
 - unusable runtime profile path under the XDG state or HOME fallback location
 - runtime image setup failure
@@ -1515,8 +1666,8 @@ Runtime user and bind-mount rules:
 - `agentbox` must not `chown`, `chmod`, remount, or elevate privileges to force
   access.
 - If the runtime user cannot read or write a required path inside the bind
-  mount, `run`, `start`, or `connect` fails clearly with the affected path and
-  the permission problem.
+  mount, `run`, `start`, `restart`, or `connect` fails clearly with the
+  affected path and the permission problem.
 - `agentbox` must not repair host workspace permissions by mutating the host
   mount.
 - `agentbox` must not repair host Nix access by mutating host permissions or
