@@ -5,34 +5,85 @@ use std::process::ExitStatus;
 
 use crate::diagnostic;
 use crate::podman::Podman;
-use crate::runtime::{AttachEndpoint, RuntimeKind};
+use crate::runtime::{AttachEndpoint, RuntimeKind, RuntimeRunSpec};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::container_cleanup::ManagedContainerCleanup;
-use super::launch_policy::{CommandInterrupt, exit_code};
-use super::runtime_command::host_client_status_error;
+use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
+use super::launch_policy::{
+    CommandInterrupt, ContainerLogContext, error_with_container_logs, exit_code,
+};
+use super::runtime_command::{host_client_status_error, run_host_runtime_client_status};
+use super::server_readiness::ServerEndpointContext;
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct TransientRun<'a> {
+pub(super) struct TransientRunLaunch<'a> {
+    podman: &'a Podman,
+    workspace: &'a WorkspaceIdentity,
+    runtime: RuntimeKind,
+    run_spec: &'a RuntimeRunSpec,
+}
+
+impl<'a> TransientRunLaunch<'a> {
+    pub(super) fn new(
+        podman: &'a Podman,
+        workspace: &'a WorkspaceIdentity,
+        runtime: RuntimeKind,
+        run_spec: &'a RuntimeRunSpec,
+    ) -> Self {
+        Self {
+            podman,
+            workspace,
+            runtime,
+            run_spec,
+        }
+    }
+
+    pub(super) fn execute(self) -> Result<()> {
+        let transient = TransientRun::new(self.podman, self.workspace);
+        let ready_server = launch_detached_server(
+            self.podman,
+            self.workspace,
+            self.runtime,
+            self.run_spec,
+            TransientServerLifecycle { transient },
+        )?;
+        let endpoint = ready_server.endpoint();
+
+        diagnostic::info(format!(
+            "transient container `{}` for `{}` is ready at `{endpoint}`; connecting",
+            self.workspace.container_name, self.workspace.canonical_git_root,
+        ));
+        let status = run_host_runtime_client_status(
+            self.runtime,
+            endpoint,
+            self.workspace.canonical_target.as_ref(),
+        );
+        transient.finish_host_client_run(self.runtime, endpoint, status)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TransientRun<'a> {
     podman: &'a Podman,
     workspace: &'a WorkspaceIdentity,
 }
 
 impl<'a> TransientRun<'a> {
-    pub(super) fn new(podman: &'a Podman, workspace: &'a WorkspaceIdentity) -> Self {
+    fn new(podman: &'a Podman, workspace: &'a WorkspaceIdentity) -> Self {
         Self { podman, workspace }
     }
 
-    pub(super) fn podman(self) -> &'a Podman {
+    fn podman(self) -> &'a Podman {
         self.podman
     }
 
-    pub(super) fn workspace(self) -> &'a WorkspaceIdentity {
+    fn workspace(self) -> &'a WorkspaceIdentity {
         self.workspace
     }
 
-    pub(super) fn check_interrupted(self, interrupt: &CommandInterrupt) -> Result<()> {
+    fn check_interrupted(self, interrupt: &CommandInterrupt) -> Result<()> {
         if interrupt.interrupted() {
             Err(self.interrupted_error())
         } else {
@@ -40,7 +91,7 @@ impl<'a> TransientRun<'a> {
         }
     }
 
-    pub(super) fn interrupted_error(self) -> Error {
+    fn interrupted_error(self) -> Error {
         let error = Error::msg(format!(
             "run interrupted before transient container `{}` for `{}` finished",
             self.workspace.container_name, self.workspace.canonical_git_root,
@@ -49,7 +100,7 @@ impl<'a> TransientRun<'a> {
         self.with_cleanup_result(error)
     }
 
-    pub(super) fn finish_host_client_run(
+    fn finish_host_client_run(
         self,
         runtime: RuntimeKind,
         endpoint: &AttachEndpoint,
@@ -81,7 +132,7 @@ impl<'a> TransientRun<'a> {
         }
     }
 
-    pub(super) fn with_cleanup_result(self, error: Error) -> Error {
+    fn with_cleanup_result(self, error: Error) -> Error {
         combine_error_with_cleanup_result(error, self.cleanup())
     }
 
@@ -101,6 +152,48 @@ impl<'a> TransientRun<'a> {
         } else {
             Ok(())
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TransientServerLifecycle<'a> {
+    transient: TransientRun<'a>,
+}
+
+impl DetachedServerLifecycle for TransientServerLifecycle<'_> {
+    fn command_name(&self) -> &'static str {
+        "run"
+    }
+
+    fn launch_description(&self) -> &'static str {
+        "transient container"
+    }
+
+    fn readiness_context(&self) -> ServerEndpointContext {
+        ServerEndpointContext::TransientRunContainer
+    }
+
+    fn check_interrupted(&self, interrupt: &CommandInterrupt) -> Result<()> {
+        self.transient.check_interrupted(interrupt)
+    }
+
+    fn run_detached_error(&self, error: Error) -> Error {
+        Error::msg(format!(
+            "failed to start transient run container `{}` for `{}`: {error}",
+            self.transient.workspace().container_name,
+            self.transient.workspace().canonical_git_root,
+        ))
+    }
+
+    fn readiness_error(&self, error: Error) -> Error {
+        let workspace = self.transient.workspace();
+        let error = error_with_container_logs(
+            self.transient.podman(),
+            workspace,
+            ContainerLogContext::TransientRun,
+            error,
+        );
+        self.transient.with_cleanup_result(error)
     }
 }
 
