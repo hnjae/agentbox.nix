@@ -28,7 +28,7 @@ pub(super) trait ManagedServerLaunchPolicy {
     }
 }
 
-pub(super) fn launch_managed_server<P>(
+fn launch_managed_server<P>(
     podman: &Podman,
     workspace: &WorkspaceIdentity,
     runtime: RuntimeKind,
@@ -53,27 +53,103 @@ where
     .map(|ready| ready.into_endpoint())
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ManagedServerLaunch<'a, P> {
+    podman: &'a Podman,
+    workspace: &'a WorkspaceIdentity,
+    runtime: RuntimeKind,
+    run_spec: &'a RuntimeRunSpec,
+    policy: P,
+    completion: ManagedServerCompletion<'a>,
+}
+
+impl<'a, P> ManagedServerLaunch<'a, P>
+where
+    P: ManagedServerLaunchPolicy,
+{
+    pub(super) fn new(
+        podman: &'a Podman,
+        workspace: &'a WorkspaceIdentity,
+        runtime: RuntimeKind,
+        run_spec: &'a RuntimeRunSpec,
+        policy: P,
+        completion: ManagedServerCompletion<'a>,
+    ) -> Self {
+        Self {
+            podman,
+            workspace,
+            runtime,
+            run_spec,
+            policy,
+            completion,
+        }
+    }
+
+    pub(super) fn execute(self) -> Result<()> {
+        let endpoint = launch_managed_server(
+            self.podman,
+            self.workspace,
+            self.runtime,
+            self.run_spec,
+            self.policy,
+        )?;
+        finish_managed_server_launch(self.completion, self.workspace, self.runtime, endpoint)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ManagedServerCompletion<'a> {
+    kind: ManagedServerCompletionKind,
+    connect: bool,
+    client_launch_directory: &'a Utf8Path,
+    retry_target: &'a Utf8Path,
+}
+
+impl<'a> ManagedServerCompletion<'a> {
+    pub(super) fn new(
+        kind: ManagedServerCompletionKind,
+        connect: bool,
+        client_launch_directory: &'a Utf8Path,
+        retry_target: &'a Utf8Path,
+    ) -> Self {
+        Self {
+            kind,
+            connect,
+            client_launch_directory,
+            retry_target,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ManagedServerCompletionKind {
     Start,
     Restart,
 }
 
-pub(super) fn finish_managed_server_launch(
-    kind: ManagedServerCompletionKind,
-    connect: bool,
+fn finish_managed_server_launch(
+    completion: ManagedServerCompletion<'_>,
     workspace: &WorkspaceIdentity,
     runtime: RuntimeKind,
     endpoint: AttachEndpoint,
-    client_launch_directory: &Utf8Path,
-    retry_target: &Utf8Path,
 ) -> Result<()> {
-    if connect {
-        crate::diagnostic::info(kind.connecting_message(workspace, &endpoint));
-        run_host_runtime_client(runtime, &endpoint, client_launch_directory)
-            .map_err(|error| Error::msg(kind.connect_error_message(workspace, retry_target, error)))
+    if completion.connect {
+        crate::diagnostic::info(completion.kind.connecting_message(workspace, &endpoint));
+        run_host_runtime_client(runtime, &endpoint, completion.client_launch_directory).map_err(
+            |error| {
+                Error::msg(completion.kind.connect_error_message(
+                    workspace,
+                    completion.retry_target,
+                    error,
+                ))
+            },
+        )
     } else {
-        crate::diagnostic::info(kind.ready_message(workspace, &endpoint, retry_target));
+        crate::diagnostic::info(completion.kind.ready_message(
+            workspace,
+            &endpoint,
+            completion.retry_target,
+        ));
         Ok(())
     }
 }

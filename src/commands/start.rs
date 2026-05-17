@@ -12,8 +12,8 @@ use crate::runtime::RuntimeKind;
 use super::container_launch::{managed_server_launch_request, prepare_runtime_launch};
 use super::launch_policy::{CommandInterrupt, select_runtime};
 use super::managed_server::{
-    ManagedServerCompletionKind, ManagedServerLaunchPolicy, finish_managed_server_launch,
-    launch_managed_server,
+    ManagedServerCompletion, ManagedServerCompletionKind, ManagedServerLaunch,
+    ManagedServerLaunchPolicy,
 };
 use super::workspace_flow::with_locked_workspace;
 
@@ -59,22 +59,20 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;
         let cleanup =
             InterruptedRunCleanupScope::new(podman, workspace, cache_volume_existed_before);
-        let endpoint = launch_managed_server(
+        ManagedServerLaunch::new(
             podman,
             workspace,
             runtime,
             &run_spec,
             StartServerLaunchPolicy { cleanup },
-        )?;
-        finish_managed_server_launch(
-            ManagedServerCompletionKind::Start,
-            args.connect,
-            workspace,
-            runtime,
-            endpoint,
-            workspace.canonical_target.as_ref(),
-            workspace.requested_target.as_ref(),
+            ManagedServerCompletion::new(
+                ManagedServerCompletionKind::Start,
+                args.connect,
+                workspace.canonical_target.as_ref(),
+                workspace.requested_target.as_ref(),
+            ),
         )
+        .execute()
     })?;
     Ok(())
 }

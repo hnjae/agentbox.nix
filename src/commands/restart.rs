@@ -22,8 +22,8 @@ use super::container_cleanup::ManagedContainerCleanup;
 use super::container_launch::{prepare_runtime_launch, replacement_server_launch_request};
 use super::launch_policy::CommandInterrupt;
 use super::managed_server::{
-    ManagedServerCompletionKind, ManagedServerLaunchPolicy, finish_managed_server_launch,
-    launch_managed_server,
+    ManagedServerCompletion, ManagedServerCompletionKind, ManagedServerLaunch,
+    ManagedServerLaunchPolicy,
 };
 use super::session_targets::{prompt_choices, stop_prompt_label};
 use super::workspace_flow::{LockedGitRoot, with_locked_git_root_verbose};
@@ -111,7 +111,7 @@ fn restart_target(
         let run_spec = preparation.run_spec;
 
         stop_existing_session(locked.podman(), restart_session.session())?;
-        let endpoint = launch_managed_server(
+        ManagedServerLaunch::new(
             locked.podman(),
             &launch_workspace,
             runtime,
@@ -120,17 +120,14 @@ fn restart_target(
                 workspace: &launch_workspace,
                 runtime,
             },
-        )?;
-
-        finish_managed_server_launch(
-            ManagedServerCompletionKind::Restart,
-            connect,
-            &launch_workspace,
-            runtime,
-            endpoint,
-            launch_workspace.canonical_target.as_ref(),
-            launch_workspace.canonical_target.as_ref(),
+            ManagedServerCompletion::new(
+                ManagedServerCompletionKind::Restart,
+                connect,
+                launch_workspace.canonical_target.as_ref(),
+                launch_workspace.canonical_target.as_ref(),
+            ),
         )
+        .execute()
     })?;
 
     Ok(())
