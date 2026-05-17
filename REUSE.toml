@@ -1,0 +1,28 @@
+version = 1
+SPDX-PackageName = "agentbox"
+
+[[annotations]]
+path = [
+  "**/*.json",
+  "**/*.jsonc",
+  "**/*.lock",
+  "**/*.md",
+  "**/*.toml",
+  "**/*.yaml",
+  ".biome.json",
+  ".editorconfig",
+  ".envrc",
+  ".gitignore",
+  ".rumdl.toml",
+  ".taplo.toml",
+  ".typos.toml",
+  "Cargo.lock",
+  "Cargo.toml",
+  "cog.toml",
+  "flake.lock",
+  "justfile",
+  "statix.toml",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 KIM Hyunjae"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

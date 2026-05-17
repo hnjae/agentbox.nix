@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 KIM Hyunjae
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 {
   partitions.dev.module =
     { inputs, self, ... }:
@@ -76,6 +79,15 @@
                 statix.enable = true;
 
                 # Miscellaneous Static Checkers:
+                reuse = {
+                  enable = true;
+                  name = "reuse lint";
+                  description = "Check REUSE license metadata.";
+                  package = devPkgs.reuse;
+                  entry = "${lib.getExe devPkgs.reuse} lint";
+                  always_run = true;
+                  pass_filenames = false;
+                };
                 shellcheck-env = {
                   enable = true;
                   name = "shellcheck";

@@ -1,5 +1,8 @@
 #compdef agentbox
 
+# SPDX-FileCopyrightText: 2026 KIM Hyunjae
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 _agentbox_completion_roots() {
   local command
   command="${1:?missing command}"

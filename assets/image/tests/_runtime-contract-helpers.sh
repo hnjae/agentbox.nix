@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 KIM Hyunjae
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # shellcheck disable=SC2154
 
 # Runtime contract matrix (frozen from README + current test behavior):

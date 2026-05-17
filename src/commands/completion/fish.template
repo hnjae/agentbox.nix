@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 KIM Hyunjae
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 function __agentbox_has_subcommand
     set -l tokens (commandline -opc)
     for token in $tokens[2..-1]

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 KIM Hyunjae
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Development container for a host-attached Nix wrapper on NixOS and Linux with multi-user Nix.
 #
 # The image expects the host /nix tree, a host nix client and a host /etc/nix
