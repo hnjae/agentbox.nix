@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::process::{ProcessCaptureError, ProcessRunner, ProcessStatusOutput, format_status};
+use crate::process::{ProcessCaptureError, ProcessRunner, ProcessStatusOutput};
 
 use super::remote::{SshRemoteHost, format_known_host, parse_port};
 
@@ -58,11 +58,9 @@ impl SshLookupCommands {
             return Ok(parse_ssh_config_output(&output.stdout, host));
         }
 
-        Err(SshConfigLookupError::Failed(format!(
-            "{}: {}",
-            format_status(output.status),
-            output.output_detail()
-        )))
+        Err(SshConfigLookupError::Failed(
+            output.status_with_output_detail(),
+        ))
     }
 
     pub(super) fn ssh_keygen_lookup(&self, host: &str, file: &Path) -> KnownHostsLookup {
@@ -73,11 +71,9 @@ impl SshLookupCommands {
         match output.status.code() {
             Some(0) => Ok(parse_ssh_keygen_lines(&output.stdout)),
             Some(1) => Ok(Vec::new()),
-            _ => Err(KnownHostsLookupError::Failed(format!(
-                "{}: {}",
-                format_status(output.status),
-                output.output_detail()
-            ))),
+            _ => Err(KnownHostsLookupError::Failed(
+                output.status_with_output_detail(),
+            )),
         }
     }
 

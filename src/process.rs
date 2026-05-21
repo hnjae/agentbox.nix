@@ -25,6 +25,19 @@ impl ProcessStatusOutput {
     pub(crate) fn output_detail(&self) -> String {
         output_detail(&self.stdout, &self.stderr)
     }
+
+    pub(crate) fn stderr_or_status_detail(&self) -> String {
+        let detail = self.stderr.trim();
+        if detail.is_empty() {
+            format_status(self.status)
+        } else {
+            detail.to_string()
+        }
+    }
+
+    pub(crate) fn status_with_output_detail(&self) -> String {
+        format!("{}: {}", format_status(self.status), self.output_detail())
+    }
 }
 
 #[derive(Debug)]
@@ -234,4 +247,52 @@ fn output_detail(stdout: &str, stderr: &str) -> String {
         .find(|detail| !detail.is_empty())
         .unwrap_or("no output")
         .to_string()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    use super::*;
+
+    #[test]
+    fn stderr_or_status_detail_prefers_stderr() {
+        let output = ProcessStatusOutput {
+            status: exit_status(42),
+            stdout: "stdout detail\n".to_string(),
+            stderr: "stderr detail\n".to_string(),
+        };
+
+        assert_eq!(output.stderr_or_status_detail(), "stderr detail");
+    }
+
+    #[test]
+    fn stderr_or_status_detail_falls_back_to_status() {
+        let output = ProcessStatusOutput {
+            status: exit_status(42),
+            stdout: "stdout detail\n".to_string(),
+            stderr: String::new(),
+        };
+
+        assert_eq!(output.stderr_or_status_detail(), "exit status 42");
+    }
+
+    #[test]
+    fn status_with_output_detail_includes_status_and_best_output_detail() {
+        let output = ProcessStatusOutput {
+            status: exit_status(42),
+            stdout: "stdout detail\n".to_string(),
+            stderr: String::new(),
+        };
+
+        assert_eq!(
+            output.status_with_output_detail(),
+            "exit status 42: stdout detail"
+        );
+    }
+
+    fn exit_status(code: i32) -> ExitStatus {
+        ExitStatus::from_raw(code << 8)
+    }
 }

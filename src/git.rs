@@ -3,7 +3,7 @@
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use crate::process::{ProcessRunner, format_status};
+use crate::process::ProcessRunner;
 use crate::{Error, Result};
 
 #[derive(Debug, Clone, Default)]
@@ -45,11 +45,7 @@ impl Git {
                 return Err(GitRootError::NotRepository);
             }
 
-            let detail = if detail.is_empty() {
-                format_status(output.status)
-            } else {
-                detail.to_string()
-            };
+            let detail = output.stderr_or_status_detail();
             return Err(GitRootError::Failed(Error::msg(format!(
                 "failed to resolve git root for `{directory}` via `git -C {directory} rev-parse --show-toplevel`: {detail}. Choose a directory inside a readable git worktree."
             ))));
@@ -81,12 +77,7 @@ impl Git {
             return Ok(None);
         }
 
-        let detail = output.stderr.trim();
-        let detail = if detail.is_empty() {
-            format_status(output.status)
-        } else {
-            detail.to_string()
-        };
+        let detail = output.stderr_or_status_detail();
         Err(Error::msg(format!(
             "failed to read git config `{key}` for `{git_root}`: {detail}"
         )))
@@ -104,12 +95,7 @@ impl Git {
             return Ok(parse_remote_urls(&output.stdout));
         }
 
-        let detail = output.stderr.trim();
-        let detail = if detail.is_empty() {
-            format_status(output.status)
-        } else {
-            detail.to_string()
-        };
+        let detail = output.stderr_or_status_detail();
         Err(Error::msg(format!(
             "failed to read git remotes for `{git_root}`: {detail}"
         )))
