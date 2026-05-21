@@ -1,11 +1,16 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use crate::podman::{PodmanContainerInspect, PodmanVolume};
+use crate::podman::PodmanVolume;
 use crate::runtime::RuntimeKind;
 use crate::workspace::is_agentbox_workspace_resource_name;
+
+use super::inventory::{CleanInventory, DefaultRuntimeImageCandidate};
+use super::resource::{CleanResource, ResourceKind};
+use super::scope::CleanScope;
+use super::usage::ResourceUsage;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct CleanPlan {
@@ -51,75 +56,6 @@ pub(super) struct SkippedResource {
     pub(super) reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct CleanResource {
-    kind: ResourceKind,
-    name: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum ResourceKind {
-    Image,
-    Volume,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct CleanScope {
-    resources: BTreeSet<ResourceKind>,
-}
-
-impl CleanScope {
-    pub(super) fn from_flags(images: bool, volumes: bool) -> Self {
-        let resources = match (images, volumes) {
-            (false, false) | (true, true) => {
-                BTreeSet::from([ResourceKind::Image, ResourceKind::Volume])
-            }
-            (true, false) => BTreeSet::from([ResourceKind::Image]),
-            (false, true) => BTreeSet::from([ResourceKind::Volume]),
-        };
-
-        Self { resources }
-    }
-
-    pub(super) fn includes(&self, kind: ResourceKind) -> bool {
-        self.resources.contains(&kind)
-    }
-}
-
-impl ResourceKind {
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::Image => "image",
-            Self::Volume => "volume",
-        }
-    }
-}
-
-impl CleanResource {
-    pub(super) fn image(name: impl Into<String>) -> Self {
-        Self::new(ResourceKind::Image, name)
-    }
-
-    pub(super) fn volume(name: impl Into<String>) -> Self {
-        Self::new(ResourceKind::Volume, name)
-    }
-
-    fn new(kind: ResourceKind, name: impl Into<String>) -> Self {
-        Self {
-            kind,
-            name: name.into(),
-        }
-    }
-
-    pub(super) fn kind(&self) -> ResourceKind {
-        self.kind
-    }
-
-    pub(super) fn name(&self) -> &str {
-        &self.name
-    }
-}
-
 impl CleanCandidate {
     pub(super) fn default_runtime_image(runtime: RuntimeKind, resource: CleanResource) -> Self {
         Self::DefaultRuntimeImage { runtime, resource }
@@ -141,60 +77,6 @@ impl CleanCandidate {
 
     pub(super) fn name(&self) -> &str {
         self.resource().name()
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct CleanInventory {
-    pub(super) containers: Vec<PodmanContainerInspect>,
-    pub(super) default_runtime_images: Vec<DefaultRuntimeImageCandidate>,
-    pub(super) volumes: Vec<PodmanVolume>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct DefaultRuntimeImageCandidate {
-    pub(super) runtime: RuntimeKind,
-    pub(super) image: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct ResourceUsage {
-    users: BTreeMap<CleanResource, String>,
-}
-
-impl ResourceUsage {
-    fn from_containers(containers: &[PodmanContainerInspect]) -> Self {
-        let mut usage = Self::default();
-
-        for container in containers {
-            usage.mark_image_used(&container.image_name, &container.id);
-
-            for mount in &container.mounts {
-                if mount.kind.is_volume() {
-                    usage.mark_volume_used(&mount.source, &container.id);
-                }
-            }
-        }
-
-        usage
-    }
-
-    fn mark_image_used(&mut self, image: &str, container_id: &str) {
-        self.mark_used(CleanResource::image(image), container_id);
-    }
-
-    fn mark_volume_used(&mut self, volume: &str, container_id: &str) {
-        self.mark_used(CleanResource::volume(volume), container_id);
-    }
-
-    fn mark_used(&mut self, resource: CleanResource, container_id: &str) {
-        self.users
-            .entry(resource)
-            .or_insert_with(|| container_id.to_string());
-    }
-
-    fn user(&self, resource: &CleanResource) -> Option<&str> {
-        self.users.get(resource).map(String::as_str)
     }
 }
 
@@ -274,78 +156,10 @@ fn add_candidate_or_skip(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::podman::{
-        PodmanContainerInspect, PodmanContainerMount, PodmanContainerMountKind,
-        PodmanContainerState,
-    };
+    use crate::podman::{PodmanContainerInspect, PodmanContainerMount, PodmanContainerMountKind};
 
     const USED_VOLUME: &str = "agentbox-used-abcdef123456";
     const UNUSED_VOLUME: &str = "agentbox-unused-abcdef123456";
-
-    #[test]
-    fn clean_scope_defaults_to_all_resources_when_no_flags_are_selected() {
-        let scope = CleanScope::from_flags(false, false);
-
-        assert!(scope.includes(ResourceKind::Image));
-        assert!(scope.includes(ResourceKind::Volume));
-    }
-
-    #[test]
-    fn clean_scope_can_select_only_images_or_only_volumes() {
-        let images = CleanScope::from_flags(true, false);
-        let volumes = CleanScope::from_flags(false, true);
-
-        assert!(images.includes(ResourceKind::Image));
-        assert!(!images.includes(ResourceKind::Volume));
-        assert!(!volumes.includes(ResourceKind::Image));
-        assert!(volumes.includes(ResourceKind::Volume));
-    }
-
-    #[test]
-    fn clean_scope_selects_all_resources_when_both_flags_are_selected() {
-        let scope = CleanScope::from_flags(true, true);
-
-        assert!(scope.includes(ResourceKind::Image));
-        assert!(scope.includes(ResourceKind::Volume));
-    }
-
-    #[test]
-    fn resource_usage_indexes_first_container_for_images_and_mount_sources() {
-        let containers = vec![
-            inspect_container("first", "shared-image", &[USED_VOLUME]),
-            inspect_container("second", "shared-image", &[USED_VOLUME, UNUSED_VOLUME]),
-        ];
-
-        let usage = ResourceUsage::from_containers(&containers);
-
-        assert_eq!(
-            usage.user(&CleanResource::image("shared-image")),
-            Some("first")
-        );
-        assert_eq!(
-            usage.user(&CleanResource::volume(USED_VOLUME)),
-            Some("first")
-        );
-        assert_eq!(
-            usage.user(&CleanResource::volume(UNUSED_VOLUME)),
-            Some("second")
-        );
-    }
-
-    #[test]
-    fn resource_usage_ignores_bind_mount_sources_when_indexing_volumes() {
-        let mut container = inspect_container("bind-user", "image", &[]);
-        container.mounts.push(PodmanContainerMount {
-            kind: PodmanContainerMountKind::Bind,
-            source: USED_VOLUME.to_string(),
-            destination: "/workspace".to_string(),
-            rw: true,
-        });
-
-        let usage = ResourceUsage::from_containers(&[container]);
-
-        assert_eq!(usage.user(&CleanResource::volume(USED_VOLUME)), None);
-    }
 
     #[test]
     fn clean_plan_from_inventory_skips_used_resources_and_keeps_unused_candidates() {
@@ -432,12 +246,6 @@ mod tests {
     ) -> PodmanContainerInspect {
         PodmanContainerInspect {
             id: id.to_string(),
-            state: PodmanContainerState {
-                status: "running".to_string(),
-                running: true,
-                pid: 1,
-                ..PodmanContainerState::default()
-            },
             image_name: image_name.to_string(),
             mounts: mount_sources
                 .iter()

@@ -8,13 +8,18 @@ use crate::podman::Podman;
 use crate::prompt;
 
 use apply::apply_clean_plan;
-use plan::{CleanInventory, CleanPlan, CleanScope};
+use inventory::CleanInventory;
+use plan::CleanPlan;
 use render::render_plan;
+use scope::CleanScope;
 
 mod apply;
 mod inventory;
 mod plan;
 mod render;
+mod resource;
+mod scope;
+mod usage;
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct CleanArgs {

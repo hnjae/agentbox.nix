@@ -4,7 +4,8 @@
 use crate::podman::Podman;
 use crate::{Error, Result};
 
-use super::plan::{CleanCandidate, CleanPlan, CleanResource};
+use super::plan::{CleanCandidate, CleanPlan};
+use super::resource::CleanResource;
 
 pub(super) fn apply_clean_plan(podman: &Podman, plan: &CleanPlan) -> Result<()> {
     let mut removal = PodmanCleanRemoval { podman };

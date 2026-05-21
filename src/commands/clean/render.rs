@@ -43,7 +43,8 @@ mod tests {
     use crate::runtime::RuntimeKind;
 
     use super::*;
-    use crate::commands::clean::plan::{CleanCandidate, CleanResource, SkippedResource};
+    use crate::commands::clean::plan::{CleanCandidate, SkippedResource};
+    use crate::commands::clean::resource::CleanResource;
 
     #[test]
     fn render_plan_reports_empty_plans() {

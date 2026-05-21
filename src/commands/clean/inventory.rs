@@ -3,10 +3,25 @@
 
 use crate::Result;
 use crate::metadata::{DefaultRuntimeImageMetadata, default_runtime_image_label_filter};
-use crate::podman::{Podman, PodmanContainerInspect, PodmanImage};
+use crate::podman::{Podman, PodmanContainerInspect, PodmanImage, PodmanVolume};
+use crate::runtime::RuntimeKind;
 use crate::runtime::default_image;
 
-use super::plan::{CleanInventory, CleanScope, DefaultRuntimeImageCandidate, ResourceKind};
+use super::resource::ResourceKind;
+use super::scope::CleanScope;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct CleanInventory {
+    pub(super) containers: Vec<PodmanContainerInspect>,
+    pub(super) default_runtime_images: Vec<DefaultRuntimeImageCandidate>,
+    pub(super) volumes: Vec<PodmanVolume>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DefaultRuntimeImageCandidate {
+    pub(super) runtime: RuntimeKind,
+    pub(super) image: String,
+}
 
 impl CleanInventory {
     pub(super) fn from_podman(podman: &Podman, scope: &CleanScope) -> Result<Self> {
