@@ -51,20 +51,16 @@ pub(super) fn derive_attach_endpoint(
     attach_labels: AttachLabels,
     inspect: &PodmanContainerInspect,
 ) -> Result<AttachEndpoint> {
-    let container_port = attach_labels.container_port();
-    let port_key = format!("{container_port}/tcp");
+    let attach = attach_labels.attach_spec();
+    let port_key = attach.tcp_port_key();
     let published_port = inspect
         .network_settings
-        .published_tcp_host_port(container_port)?
+        .published_attach_endpoint(attach)?
         .ok_or_else(|| {
             Error::msg(format!(
                 "managed session has no published attach port for `{port_key}`"
             ))
         })?;
 
-    Ok(AttachEndpoint {
-        scheme: attach_labels.scheme().to_string(),
-        host_ip: published_port.host_ip,
-        host_port: published_port.host_port,
-    })
+    Ok(published_port)
 }

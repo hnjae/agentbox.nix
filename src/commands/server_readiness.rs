@@ -214,21 +214,17 @@ fn discover_attach_endpoint_from_runtime_inspect(
     inspect: &PodmanContainerInspect,
 ) -> Result<AttachEndpoint> {
     let attach = runtime.attach_spec();
-    let port_key = format!("{}/tcp", attach.container_port);
+    let port_key = attach.tcp_port_key();
     let published_port = inspect
         .network_settings
-        .published_tcp_host_port(attach.container_port)?
+        .published_attach_endpoint(attach)?
         .ok_or_else(|| {
             Error::msg(format!(
                 "transient run container has no published attach port for `{port_key}`"
             ))
         })?;
 
-    Ok(AttachEndpoint {
-        scheme: attach.scheme.to_string(),
-        host_ip: published_port.host_ip,
-        host_port: published_port.host_port,
-    })
+    Ok(published_port)
 }
 
 #[cfg(test)]

@@ -324,6 +324,10 @@ impl RuntimeAttachSpec {
         )
     }
 
+    pub fn tcp_port_key(self) -> String {
+        format!("{}/tcp", self.container_port)
+    }
+
     pub fn published_port(self, host_ip: &str) -> String {
         format!("{host_ip}::{}", self.container_port)
     }

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::runtime::{AttachEndpoint, RuntimeAttachSpec};
 use crate::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -268,6 +269,19 @@ pub struct PodmanNetworkSettings {
 }
 
 impl PodmanNetworkSettings {
+    pub fn published_attach_endpoint(
+        &self,
+        attach: RuntimeAttachSpec,
+    ) -> Result<Option<AttachEndpoint>> {
+        Ok(self
+            .published_tcp_host_port(attach.container_port)?
+            .map(|published_port| AttachEndpoint {
+                scheme: attach.scheme.to_string(),
+                host_ip: published_port.host_ip,
+                host_port: published_port.host_port,
+            }))
+    }
+
     pub fn published_tcp_host_port(
         &self,
         container_port: u16,
@@ -439,6 +453,32 @@ mod tests {
         assert_eq!(
             network.published_tcp_host_port(4096).unwrap(),
             Some(PodmanPublishedPort {
+                host_ip: "127.0.0.2".to_string(),
+                host_port: 49152,
+            })
+        );
+    }
+
+    #[test]
+    fn published_attach_endpoint_uses_runtime_attach_metadata() {
+        let network = network_with_binding(
+            "4096/tcp",
+            PodmanPortBinding {
+                host_ip: Some("127.0.0.2".to_string()),
+                host_port: Some("49152".to_string()),
+            },
+        );
+
+        assert_eq!(
+            network
+                .published_attach_endpoint(crate::runtime::RuntimeAttachSpec {
+                    scheme: "https",
+                    container_listen_ip: "127.0.0.1",
+                    container_port: 4096,
+                })
+                .unwrap(),
+            Some(crate::runtime::AttachEndpoint {
+                scheme: "https".to_string(),
                 host_ip: "127.0.0.2".to_string(),
                 host_port: 49152,
             })

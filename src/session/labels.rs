@@ -266,12 +266,8 @@ impl AttachLabels {
         Ok(Self { runtime, attach })
     }
 
-    pub(super) fn scheme(self) -> &'static str {
-        self.attach.scheme
-    }
-
-    pub(super) fn container_port(self) -> u16 {
-        self.attach.container_port
+    pub(super) fn attach_spec(self) -> RuntimeAttachSpec {
+        self.attach
     }
 }
 
