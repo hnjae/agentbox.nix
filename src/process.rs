@@ -85,7 +85,7 @@ impl ProcessRunner {
         self
     }
 
-    pub fn command(&self, program: &str) -> Result<Command> {
+    fn command(&self, program: &str) -> Result<Command> {
         let mut command = Command::new(program);
 
         if !self.path_prepend.is_empty() {
@@ -105,14 +105,22 @@ impl ProcessRunner {
         Ok(command)
     }
 
+    pub(crate) fn configured_command(
+        &self,
+        program: &str,
+        configure: impl FnOnce(&mut Command),
+    ) -> Result<ProcessCommand> {
+        let mut command = self.command(program)?;
+        configure(&mut command);
+        Ok(ProcessCommand { command })
+    }
+
     pub fn capture(
         &self,
         program: &str,
         configure: impl FnOnce(&mut Command),
     ) -> Result<ProcessOutput> {
-        let mut command = self.command(program)?;
-        configure(&mut command);
-        run_command(&mut command)
+        self.configured_command(program, configure)?.capture()
     }
 
     pub(crate) fn capture_status(
@@ -129,13 +137,39 @@ impl ProcessRunner {
         program: &str,
         configure: impl FnOnce(&mut Command),
     ) -> std::result::Result<ProcessStatusOutput, ProcessCaptureError> {
-        let mut command = self.command(program).map_err(ProcessCaptureError::Setup)?;
-        configure(&mut command);
-        try_run_command_capture_status(&mut command)
+        let command = self
+            .configured_command(program, configure)
+            .map_err(ProcessCaptureError::Setup)?;
+        command.try_capture_status()
     }
 }
 
-pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {
+#[derive(Debug)]
+pub(crate) struct ProcessCommand {
+    command: Command,
+}
+
+impl ProcessCommand {
+    pub(crate) fn description(&self) -> String {
+        describe_command(&self.command)
+    }
+
+    pub(crate) fn capture(mut self) -> Result<ProcessOutput> {
+        run_command(&mut self.command)
+    }
+
+    pub(crate) fn try_capture_status(
+        mut self,
+    ) -> std::result::Result<ProcessStatusOutput, ProcessCaptureError> {
+        try_run_command_capture_status(&mut self.command)
+    }
+
+    pub(crate) fn status(mut self) -> Result<ExitStatus> {
+        run_command_status(&mut self.command)
+    }
+}
+
+fn run_command(command: &mut Command) -> Result<ProcessOutput> {
     let output = run_command_capture_status(command)?;
     let ProcessStatusOutput {
         status,
@@ -173,7 +207,7 @@ fn try_run_command_capture_status(
     })
 }
 
-pub fn run_command_status(command: &mut Command) -> Result<ExitStatus> {
+fn run_command_status(command: &mut Command) -> Result<ExitStatus> {
     let context = CommandContext::from_command(command);
     command.status().map_err(|error| context.spawn_error(error))
 }
@@ -213,7 +247,7 @@ impl CommandContext {
     }
 }
 
-pub fn describe_command(command: &Command) -> String {
+fn describe_command(command: &Command) -> String {
     std::iter::once(command.get_program())
         .chain(command.get_args())
         .map(shell_quote)
@@ -234,7 +268,7 @@ fn shell_quote(value: &OsStr) -> String {
     }
 }
 
-pub fn format_status(status: ExitStatus) -> String {
+pub(crate) fn format_status(status: ExitStatus) -> String {
     match status.code() {
         Some(code) => format!("exit status {code}"),
         None => "signal".to_string(),

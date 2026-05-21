@@ -8,9 +8,7 @@ use serde::de::DeserializeOwned;
 
 use crate::diagnostic;
 use crate::metadata::managed_label_filter;
-use crate::process::{
-    ProcessOutput, ProcessRunner, describe_command, format_status, run_command, run_command_status,
-};
+use crate::process::{ProcessCommand, ProcessOutput, ProcessRunner, format_status};
 use crate::runtime::RuntimeRunSpec;
 use crate::{Error, Result};
 
@@ -120,9 +118,9 @@ impl Podman {
     }
 
     fn exists_status(&self, configure: impl FnOnce(&mut Command)) -> Result<bool> {
-        let mut command = self.podman_command(configure)?;
-        let description = describe_command(&command);
-        let status = self.status(&mut command)?;
+        let command = self.podman_command(configure)?;
+        let description = command.description();
+        let status = self.status(command)?;
 
         match status.code() {
             Some(0) => Ok(true),
@@ -190,7 +188,7 @@ impl Podman {
         use_tty: bool,
     ) -> Result<ExitStatus> {
         let host_gid = run::current_primary_gid();
-        let mut command = self.podman_command(|command| {
+        let command = self.podman_command(|command| {
             command.args(run::run_foreground_args(
                 container_name,
                 spec,
@@ -201,27 +199,25 @@ impl Podman {
             command.stdout(Stdio::inherit());
             command.stderr(Stdio::inherit());
         })?;
-        self.status(&mut command)
+        self.status(command)
     }
 
-    fn podman_command(&self, configure: impl FnOnce(&mut Command)) -> Result<Command> {
-        let mut command = self.runner.command(PODMAN_PROGRAM)?;
-        configure(&mut command);
-        Ok(command)
+    fn podman_command(&self, configure: impl FnOnce(&mut Command)) -> Result<ProcessCommand> {
+        self.runner.configured_command(PODMAN_PROGRAM, configure)
     }
 
     fn run_podman_quiet(&self, configure: impl FnOnce(&mut Command)) -> Result<ProcessOutput> {
-        let mut command = self.podman_command(configure)?;
-        self.run_quiet(&mut command)
+        let command = self.podman_command(configure)?;
+        self.run_quiet(command)
     }
 
     fn run_podman_json<T: DeserializeOwned>(
         &self,
         configure: impl FnOnce(&mut Command),
     ) -> Result<T> {
-        let mut command = self.podman_command(configure)?;
-        let context = format!("`{}`", describe_command(&command));
-        let output = self.run_quiet(&mut command)?;
+        let command = self.podman_command(configure)?;
+        let context = format!("`{}`", command.description());
+        let output = self.run_quiet(command)?;
         parse_json(&context, &output.stdout)
     }
 
@@ -229,16 +225,16 @@ impl Podman {
         &self,
         configure: impl FnOnce(&mut Command),
     ) -> Result<ProcessOutput> {
-        let mut command = self.podman_command(configure)?;
-        self.run_forwarding_output_when_verbose(&mut command)
+        let command = self.podman_command(configure)?;
+        self.run_forwarding_output_when_verbose(command)
     }
 
-    fn run_quiet(&self, command: &mut Command) -> Result<ProcessOutput> {
-        self.trace(command);
-        run_command(command)
+    fn run_quiet(&self, command: ProcessCommand) -> Result<ProcessOutput> {
+        self.trace(&command);
+        command.capture()
     }
 
-    fn run_forwarding_output_when_verbose(&self, command: &mut Command) -> Result<ProcessOutput> {
+    fn run_forwarding_output_when_verbose(&self, command: ProcessCommand) -> Result<ProcessOutput> {
         let output = self.run_quiet(command)?;
         if self.verbose {
             emit_output(&output);
@@ -247,14 +243,14 @@ impl Podman {
         Ok(output)
     }
 
-    fn status(&self, command: &mut Command) -> Result<std::process::ExitStatus> {
-        self.trace(command);
-        run_command_status(command)
+    fn status(&self, command: ProcessCommand) -> Result<std::process::ExitStatus> {
+        self.trace(&command);
+        command.status()
     }
 
-    fn trace(&self, command: &Command) {
+    fn trace(&self, command: &ProcessCommand) {
         if self.verbose {
-            diagnostic::debug(format!("running {}", describe_command(command)));
+            diagnostic::debug(format!("running {}", command.description()));
         }
     }
 }

@@ -6,7 +6,7 @@ use std::process::{ExitStatus, Stdio};
 use camino::Utf8Path;
 
 use crate::dev_env::DevEnvironment;
-use crate::process::{ProcessRunner, format_status, run_command_status};
+use crate::process::{ProcessRunner, format_status};
 use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeInvocation, RuntimeKind};
 use crate::{Error, Result};
 
@@ -114,14 +114,15 @@ fn run_host_client(
         return Err(Error::msg("runtime host client command is empty"));
     };
 
-    let mut command = process_runner.command(program)?;
-    command.args(args);
-    command.current_dir(client.workdir().as_std_path());
-    command.stdin(Stdio::inherit());
-    command.stdout(Stdio::inherit());
-    command.stderr(Stdio::inherit());
-
-    run_command_status(&mut command)
+    process_runner
+        .configured_command(program, |command| {
+            command.args(args);
+            command.current_dir(client.workdir().as_std_path());
+            command.stdin(Stdio::inherit());
+            command.stdout(Stdio::inherit());
+            command.stderr(Stdio::inherit());
+        })?
+        .status()
 }
 
 fn host_client_not_found_message(program: &str) -> String {
