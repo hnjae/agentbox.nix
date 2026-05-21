@@ -1,0 +1,150 @@
+// SPDX-FileCopyrightText: 2026 KIM Hyunjae
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use crate::session::SessionRecord;
+use crate::session::selection::select_stable_id_prefix;
+use crate::{Error, Result};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HealthSessionTargetPlan {
+    RunningSessions,
+    StableIdPrefix(String),
+}
+
+impl HealthSessionTargetPlan {
+    pub(crate) fn from_target(target: Option<&str>) -> Self {
+        match target {
+            Some(target) => Self::StableIdPrefix(target.to_string()),
+            None => Self::RunningSessions,
+        }
+    }
+
+    pub(crate) fn select_sessions<'a>(
+        &self,
+        sessions: &'a [SessionRecord],
+    ) -> Result<Vec<&'a SessionRecord>> {
+        match self {
+            Self::RunningSessions => Ok(sessions
+                .iter()
+                .filter(|session| session.is_running())
+                .collect()),
+            Self::StableIdPrefix(prefix) => select_stable_id_health_session(sessions, prefix),
+        }
+    }
+}
+
+fn select_stable_id_health_session<'a>(
+    sessions: &'a [SessionRecord],
+    prefix: &str,
+) -> Result<Vec<&'a SessionRecord>> {
+    let selection = select_stable_id_prefix(sessions, prefix)?;
+    let selection_id = selection.id().to_string();
+    let Some(session) = selection.into_single_session() else {
+        return Err(Error::msg(format!(
+            "stable id `{selection_id}` matches multiple managed sessions; health requires a single running session",
+        )));
+    };
+    if !session.is_running() {
+        return Err(Error::msg(format!(
+            "managed session `{}` is `{}`; health only probes running sessions",
+            session.stable_id().unwrap_or(&selection_id),
+            session.status().as_str()
+        )));
+    }
+
+    Ok(vec![session])
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::metadata::{AgentboxContainerKind, LABEL_GIT_ROOT_HASH};
+    use crate::session::{SessionMetadata, SessionStatus};
+
+    use super::*;
+
+    #[test]
+    fn running_sessions_plan_filters_out_non_running_sessions() {
+        let sessions = vec![
+            session("running", "abcdef123456", SessionStatus::Running),
+            session("stopped", "fedcba654321", SessionStatus::failed_unknown()),
+            session("failed", "aaaaaa111111", SessionStatus::failed_unknown()),
+        ];
+
+        let selected = HealthSessionTargetPlan::RunningSessions
+            .select_sessions(&sessions)
+            .unwrap()
+            .into_iter()
+            .map(|session| session.container_name())
+            .collect::<Vec<_>>();
+
+        assert_eq!(selected, ["running"]);
+    }
+
+    #[test]
+    fn stable_id_prefix_plan_selects_one_running_session() {
+        let sessions = vec![
+            session("selected", "abcdef123456", SessionStatus::Running),
+            session("other", "fedcba654321", SessionStatus::Running),
+        ];
+
+        let selected = HealthSessionTargetPlan::from_target(Some("abc"))
+            .select_sessions(&sessions)
+            .unwrap();
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].container_name(), "selected");
+    }
+
+    #[test]
+    fn stable_id_prefix_plan_rejects_duplicate_sessions_for_one_id() {
+        let sessions = vec![
+            session("first", "abcdef123456", SessionStatus::Running),
+            session("second", "abcdef123456", SessionStatus::Running),
+        ];
+
+        let error = HealthSessionTargetPlan::from_target(Some("abc"))
+            .select_sessions(&sessions)
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("health requires a single running session")
+        );
+    }
+
+    #[test]
+    fn stable_id_prefix_plan_rejects_non_running_session() {
+        let sessions = vec![session(
+            "stopped",
+            "abcdef123456",
+            SessionStatus::failed_unknown(),
+        )];
+
+        let error = HealthSessionTargetPlan::from_target(Some("abc"))
+            .select_sessions(&sessions)
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("health only probes running sessions")
+        );
+    }
+
+    fn session(container_name: &str, stable_id: &str, status: SessionStatus) -> SessionRecord {
+        let labels = BTreeMap::from([(LABEL_GIT_ROOT_HASH.to_string(), stable_id.to_string())]);
+
+        SessionRecord::new(
+            format!("{container_name}-id"),
+            container_name,
+            AgentboxContainerKind::Managed,
+            SessionMetadata::from_labels(&labels),
+            None,
+            status == SessionStatus::Running,
+            status,
+        )
+    }
+}

@@ -5,12 +5,11 @@ use clap::Args;
 use comfy_table::Cell;
 use serde::Serialize;
 
-use crate::Error;
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::{HostRuntimeHealthProbe, RuntimeHealth, RuntimeHealthProbe};
 use crate::session::{
-    SessionDiscoveryQuery, SessionRecord, select_stable_id_prefix, sort_session_refs_by_identity,
+    HealthSessionTargetPlan, SessionDiscoveryQuery, SessionRecord, sort_session_refs_by_identity,
 };
 
 use super::output::{self, OutputFormat};
@@ -90,29 +89,7 @@ fn selected_health_sessions<'a>(
     sessions: &'a [SessionRecord],
     target: Option<&str>,
 ) -> Result<Vec<&'a SessionRecord>> {
-    let Some(target) = target else {
-        return Ok(sessions
-            .iter()
-            .filter(|session| session.is_running())
-            .collect());
-    };
-
-    let selection = select_stable_id_prefix(sessions, target)?;
-    let selection_id = selection.id().to_string();
-    let Some(session) = selection.into_single_session() else {
-        return Err(Error::msg(format!(
-            "stable id `{selection_id}` matches multiple managed sessions; health requires a single running session",
-        )));
-    };
-    if !session.is_running() {
-        return Err(Error::msg(format!(
-            "managed session `{}` is `{}`; health only probes running sessions",
-            session.stable_id().unwrap_or(&selection_id),
-            session.status().as_str()
-        )));
-    }
-
-    Ok(vec![session])
+    HealthSessionTargetPlan::from_target(target).select_sessions(sessions)
 }
 
 fn health_rows<'a>(

@@ -27,10 +27,10 @@ pub use discovery::SessionDiscoveryQuery;
 pub use endpoint::discover_attach_endpoint_from_inspect;
 pub use record::{SessionGroup, SessionMetadata, SessionRecord};
 pub(crate) use restartable::prepare_restart_session;
-pub(crate) use selection::{run_command_hint, select_single_session, select_stable_id_prefix};
+pub(crate) use selection::{run_command_hint, select_single_session};
 pub(crate) use target::{
-    RestartSessionTargetPlan, SessionTargetInput, StopExactGitRootTarget, StopSessionTargetPlan,
-    StopStableIdTarget,
+    HealthSessionTargetPlan, RestartSessionTargetPlan, SessionTargetInput, StopExactGitRootTarget,
+    StopSessionTargetPlan, StopStableIdTarget,
 };
 pub(crate) use target_candidate::{SessionTargetCandidate, SessionTargetKind};
 
