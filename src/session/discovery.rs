@@ -3,7 +3,6 @@
 
 use camino::Utf8Path;
 
-use crate::git::Git;
 use crate::metadata::{
     AgentboxContainerKind, LABEL_GIT_ROOT_HASH, agentbox_container_kind_from_labels,
     required_label_value,
@@ -15,7 +14,9 @@ use crate::{Error, Result};
 use super::endpoint::AttachEndpointReport;
 use super::labels::SessionLabelReport;
 use super::record::{SessionMetadata, SessionRecord, SessionRecordInput};
-use super::status::{SessionStatusInput, derive_status, mark_duplicate_sessions};
+use super::status::{
+    GitRootProbe, HostGitRootProbe, SessionStatusInput, derive_status, mark_duplicate_sessions,
+};
 
 pub struct SessionDiscoveryQuery<'a> {
     scope: SessionDiscoveryScope<'a>,
@@ -80,8 +81,14 @@ fn discover_scoped_sessions_from_ps(
     container_scope: ContainerDiscoveryScope,
     inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
 ) -> Result<Vec<SessionRecord>> {
-    let git = Git::new();
-    discover_sessions_from_ps_with_git(containers, scope, container_scope, inspect_container, &git)
+    let git_root_probe = HostGitRootProbe::new();
+    discover_sessions_from_ps_with_git_root_probe(
+        containers,
+        scope,
+        container_scope,
+        inspect_container,
+        &git_root_probe,
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,12 +214,12 @@ impl<'a> SessionCollector<'a> {
     }
 }
 
-fn discover_sessions_from_ps_with_git(
+fn discover_sessions_from_ps_with_git_root_probe(
     containers: Vec<PodmanPsContainer>,
     scope: SessionDiscoveryScope<'_>,
     container_scope: ContainerDiscoveryScope,
     mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
-    git: &Git,
+    git_root_probe: &dyn GitRootProbe,
 ) -> Result<Vec<SessionRecord>> {
     let mut collector = SessionCollector::new(scope);
 
@@ -225,7 +232,7 @@ fn discover_sessions_from_ps_with_git(
         }
 
         let inspect = inspect_container(&container.id)?;
-        let record = build_session_record(container, inspect, container_kind, git);
+        let record = build_session_record(container, inspect, container_kind, git_root_probe);
         collector.collect(record);
     }
 
@@ -236,10 +243,10 @@ fn build_session_record(
     container: PodmanPsContainer,
     inspect: PodmanContainerInspect,
     container_kind: AgentboxContainerKind,
-    git: &Git,
+    git_root_probe: &dyn GitRootProbe,
 ) -> SessionRecord {
     InspectedAgentboxContainer::from_podman(container, inspect, container_kind)
-        .into_session_record(git)
+        .into_session_record(git_root_probe)
 }
 
 struct InspectedAgentboxContainer {
@@ -285,13 +292,13 @@ impl InspectedAgentboxContainer {
         }
     }
 
-    fn into_session_record(self, git: &Git) -> SessionRecord {
+    fn into_session_record(self, git_root_probe: &dyn GitRootProbe) -> SessionRecord {
         let status = derive_status(SessionStatusInput {
             label_report: &self.label_report,
             attach_endpoint: &self.attach_endpoint,
             running: self.running,
             mounts: &self.mounts,
-            git,
+            git_root_probe,
         });
         let attach_endpoint = self.attach_endpoint.into_endpoint();
 
