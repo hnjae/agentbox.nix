@@ -274,8 +274,8 @@ mod tests {
             contents,
             "github.com ssh-ed25519 AAAA\n|1|hashed ssh-ed25519 BBBB\nextra.example ssh-ed25519 CCCC\n"
         );
-        assert!(prepared.mount.read_only);
-        assert_eq!(prepared.mount.destination, CONTAINER_KNOWN_HOSTS);
+        assert!(prepared.mount.is_read_only());
+        assert_eq!(prepared.mount.destination(), CONTAINER_KNOWN_HOSTS);
         assert_eq!(
             prepared.env.get(GIT_SSH_COMMAND_ENV).map(String::as_str),
             Some(GIT_SSH_COMMAND)

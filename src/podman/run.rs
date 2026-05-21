@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::runtime::{RuntimeMount, RuntimeRunSpec};
+use crate::runtime::{RuntimeMount, RuntimeMountKind, RuntimeRunSpec};
 
 use super::args::PodmanArgs;
 
@@ -75,17 +75,24 @@ fn append_common_run_args(
 
 fn render_mount(mount: &RuntimeMount) -> String {
     let mut options = vec![
-        format!("type={}", mount.kind.podman_type()),
-        format!("src={}", mount.source),
-        format!("dst={}", mount.destination),
+        format!("type={}", podman_mount_type(mount.kind())),
+        format!("src={}", mount.source()),
+        format!("dst={}", mount.destination()),
     ];
-    if mount.read_only {
+    if mount.is_read_only() {
         options.push("ro".to_string());
     }
-    if mount.kind == crate::runtime::RuntimeMountKind::Volume {
+    if mount.is_volume() {
         options.push("U".to_string());
     }
     options.join(",")
+}
+
+fn podman_mount_type(kind: RuntimeMountKind) -> &'static str {
+    match kind {
+        RuntimeMountKind::Bind => "bind",
+        RuntimeMountKind::Volume => "volume",
+    }
 }
 
 #[cfg(test)]

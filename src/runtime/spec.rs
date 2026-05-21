@@ -21,20 +21,17 @@ pub enum RuntimeMountKind {
 }
 
 impl RuntimeMountKind {
-    pub(crate) fn podman_type(self) -> &'static str {
-        match self {
-            Self::Bind => "bind",
-            Self::Volume => "volume",
-        }
+    pub fn is_volume(self) -> bool {
+        matches!(self, Self::Volume)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeMount {
-    pub kind: RuntimeMountKind,
-    pub source: String,
-    pub destination: String,
-    pub read_only: bool,
+    kind: RuntimeMountKind,
+    source: String,
+    destination: String,
+    read_only: bool,
 }
 
 impl RuntimeMount {
@@ -62,6 +59,26 @@ impl RuntimeMount {
             destination: destination.into(),
             read_only,
         }
+    }
+
+    pub fn kind(&self) -> RuntimeMountKind {
+        self.kind
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub fn destination(&self) -> &str {
+        &self.destination
+    }
+
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
+
+    pub fn is_volume(&self) -> bool {
+        self.kind.is_volume()
     }
 }
 

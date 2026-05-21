@@ -122,21 +122,27 @@ fn opencode_create_spec_matches_mvp_contract() {
         Some(&r#"{"*":"allow"}"#.to_string())
     );
 
-    assert_eq!(spec.mounts()[0].kind, RuntimeMountKind::Bind);
-    assert_eq!(spec.mounts()[0].source, workspace.canonical_git_root);
-    assert_eq!(spec.mounts()[0].destination, workspace.canonical_git_root);
-    assert!(!spec.mounts()[0].read_only);
+    assert_eq!(spec.mounts()[0].kind(), RuntimeMountKind::Bind);
+    assert_eq!(
+        spec.mounts()[0].source(),
+        workspace.canonical_git_root.as_str()
+    );
+    assert_eq!(
+        spec.mounts()[0].destination(),
+        workspace.canonical_git_root.as_str()
+    );
+    assert!(!spec.mounts()[0].is_read_only());
 
-    assert_eq!(spec.mounts()[1].kind, RuntimeMountKind::Volume);
-    assert_eq!(spec.mounts()[1].source, workspace.container_name);
-    assert_eq!(spec.mounts()[1].destination, "/home/user");
-    assert!(!spec.mounts()[1].read_only);
+    assert_eq!(spec.mounts()[1].kind(), RuntimeMountKind::Volume);
+    assert_eq!(spec.mounts()[1].source(), workspace.container_name.as_str());
+    assert_eq!(spec.mounts()[1].destination(), "/home/user");
+    assert!(!spec.mounts()[1].is_read_only());
 
     let host_mounts = &spec.mounts()[2..6];
     assert_eq!(
         host_mounts
             .iter()
-            .map(|mount| mount.destination.as_str())
+            .map(|mount| mount.destination())
             .collect::<Vec<_>>(),
         vec![
             NIX_STORE_DESTINATION,
@@ -145,12 +151,12 @@ fn opencode_create_spec_matches_mvp_contract() {
             ETC_STATIC_NIX_DESTINATION,
         ]
     );
-    assert!(host_mounts.iter().all(|mount| mount.read_only));
+    assert!(host_mounts.iter().all(|mount| mount.is_read_only()));
     let opencode_mounts = &spec.mounts()[6..];
     assert_eq!(
         opencode_mounts
             .iter()
-            .map(|mount| (mount.source.as_str(), mount.destination.as_str()))
+            .map(|mount| (mount.source(), mount.destination()))
             .collect::<Vec<_>>(),
         vec![
             (
@@ -166,7 +172,7 @@ fn opencode_create_spec_matches_mvp_contract() {
     assert!(
         opencode_mounts
             .iter()
-            .all(|mount| mount.kind == RuntimeMountKind::Bind && !mount.read_only)
+            .all(|mount| mount.kind() == RuntimeMountKind::Bind && !mount.is_read_only())
     );
     assert_eq!(
         required_host_mount_destinations().as_slice(),
@@ -354,12 +360,12 @@ fn codex_create_spec_includes_host_codex_config_mount() {
     let codex_mount = spec
         .mounts()
         .iter()
-        .find(|mount| mount.destination == CODEX_CONFIG_DESTINATION)
+        .find(|mount| mount.destination() == CODEX_CONFIG_DESTINATION)
         .unwrap();
 
-    assert_eq!(codex_mount.kind, RuntimeMountKind::Bind);
-    assert_eq!(codex_mount.source, "/home/example/.codex");
-    assert!(!codex_mount.read_only);
+    assert_eq!(codex_mount.kind(), RuntimeMountKind::Bind);
+    assert_eq!(codex_mount.source(), "/home/example/.codex");
+    assert!(!codex_mount.is_read_only());
 }
 
 #[test]
