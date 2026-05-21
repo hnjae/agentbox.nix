@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
@@ -265,36 +264,6 @@ impl GitRootProbe for HostGitRootProbe {
     fn rev_parse_show_toplevel(&self, git_root: &Utf8Path) -> Option<Utf8PathBuf> {
         self.git.rev_parse_show_toplevel(git_root).ok()
     }
-}
-
-pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<SessionRecord> {
-    let mut group_sizes = BTreeMap::<Utf8PathBuf, usize>::new();
-
-    for session in &sessions {
-        if session.status().is_failed() {
-            continue;
-        }
-
-        if let Some(root) = session.canonical_git_root() {
-            *group_sizes.entry(root.to_path_buf()).or_default() += 1;
-        }
-    }
-
-    for session in &mut sessions {
-        if session.status().is_failed() {
-            continue;
-        }
-
-        if session
-            .canonical_git_root()
-            .and_then(|root| group_sizes.get(root))
-            .is_some_and(|count| *count > 1)
-        {
-            session.mark_duplicate();
-        }
-    }
-
-    sessions
 }
 
 fn git_root_is_orphaned(git_root: &Utf8Path, probe: &dyn GitRootProbe) -> bool {
