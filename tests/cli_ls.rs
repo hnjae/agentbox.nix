@@ -12,7 +12,7 @@ use agentbox::metadata::{
     LABEL_MANAGED, LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
 };
 use agentbox::runtime::AttachEndpoint;
-use agentbox::session::{SessionMetadata, SessionRecord, SessionStatus};
+use agentbox::session::{SessionMetadata, SessionRecord, SessionRecordInput, SessionStatus};
 use clap::Parser;
 
 #[test]
@@ -150,19 +150,19 @@ fn ls_defaults_to_table_output() {
 }
 
 fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
-    SessionRecord::new(
-        format!("{name}-id"),
-        name,
-        AgentboxContainerKind::Managed,
-        metadata(root, name),
-        Some(AttachEndpoint {
+    SessionRecord::new(SessionRecordInput {
+        container_id: format!("{name}-id"),
+        container_name: name.to_string(),
+        container_kind: AgentboxContainerKind::Managed,
+        metadata: metadata(root, name),
+        attach_endpoint: Some(AttachEndpoint {
             scheme: "http".to_string(),
             host_ip: "127.0.0.1".to_string(),
             host_port: 4096,
         }),
-        status != SessionStatus::Failed(None),
+        container_running: status != SessionStatus::Failed(None),
         status,
-    )
+    })
 }
 
 #[test]

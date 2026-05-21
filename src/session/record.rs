@@ -24,24 +24,27 @@ pub struct SessionRecord {
     status: SessionStatus,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRecordInput {
+    pub container_id: String,
+    pub container_name: String,
+    pub container_kind: AgentboxContainerKind,
+    pub metadata: SessionMetadata,
+    pub attach_endpoint: Option<AttachEndpoint>,
+    pub container_running: bool,
+    pub status: SessionStatus,
+}
+
 impl SessionRecord {
-    pub fn new(
-        container_id: impl Into<String>,
-        container_name: impl Into<String>,
-        container_kind: AgentboxContainerKind,
-        metadata: SessionMetadata,
-        attach_endpoint: Option<AttachEndpoint>,
-        container_running: bool,
-        status: SessionStatus,
-    ) -> Self {
+    pub fn new(input: SessionRecordInput) -> Self {
         Self {
-            container_id: container_id.into(),
-            container_name: container_name.into(),
-            container_kind,
-            metadata,
-            attach_endpoint,
-            container_running,
-            status,
+            container_id: input.container_id,
+            container_name: input.container_name,
+            container_kind: input.container_kind,
+            metadata: input.metadata,
+            attach_endpoint: input.attach_endpoint,
+            container_running: input.container_running,
+            status: input.status,
         }
     }
 
@@ -217,15 +220,15 @@ mod tests {
                 "127.0.0.1".to_string(),
             ),
         ]));
-        let session = SessionRecord::new(
-            "container-id",
-            "agentbox-example",
-            AgentboxContainerKind::Managed,
+        let session = SessionRecord::new(SessionRecordInput {
+            container_id: "container-id".to_string(),
+            container_name: "agentbox-example".to_string(),
+            container_kind: AgentboxContainerKind::Managed,
             metadata,
-            None,
-            false,
-            SessionStatus::failed_unknown(),
-        );
+            attach_endpoint: None,
+            container_running: false,
+            status: SessionStatus::failed_unknown(),
+        });
 
         assert_eq!(session.runtime_kind(), Some(RuntimeKind::Opencode));
         assert!(session.metadata.attach_labels().is_err());

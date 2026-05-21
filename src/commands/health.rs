@@ -147,21 +147,21 @@ mod tests {
 
     use crate::metadata::AgentboxContainerKind;
     use crate::runtime::{AttachEndpoint, RuntimeHealth, RuntimeKind};
-    use crate::session::{SessionMetadata, SessionRecord, SessionStatus};
+    use crate::session::{SessionMetadata, SessionRecord, SessionRecordInput, SessionStatus};
 
     use super::*;
 
     #[test]
     fn health_rendering_uses_shared_session_display_fallbacks() {
-        let session = SessionRecord::new(
-            "container-id",
-            "broken-container",
-            AgentboxContainerKind::Managed,
-            SessionMetadata::from_labels(&BTreeMap::new()),
-            None,
-            true,
-            SessionStatus::Running,
-        );
+        let session = SessionRecord::new(SessionRecordInput {
+            container_id: "container-id".to_string(),
+            container_name: "broken-container".to_string(),
+            container_kind: AgentboxContainerKind::Managed,
+            metadata: SessionMetadata::from_labels(&BTreeMap::new()),
+            attach_endpoint: None,
+            container_running: true,
+            status: SessionStatus::Running,
+        });
 
         let rows = health_rows(vec![&session], &UnusedProbe);
         let table = render_table(&rows);

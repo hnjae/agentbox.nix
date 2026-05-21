@@ -86,7 +86,7 @@ mod tests {
         LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME,
     };
     use crate::runtime::AttachEndpoint;
-    use crate::session::{SessionMetadata, SessionStatus};
+    use crate::session::{SessionMetadata, SessionRecordInput, SessionStatus};
 
     use super::*;
 
@@ -209,18 +209,18 @@ mod tests {
             ),
             (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
         ]);
-        SessionRecord::new(
-            format!("{stable_id}-id"),
-            format!("agentbox-{stable_id}"),
+        SessionRecord::new(SessionRecordInput {
+            container_id: format!("{stable_id}-id"),
+            container_name: format!("agentbox-{stable_id}"),
             container_kind,
-            SessionMetadata::from_labels(&labels),
-            Some(AttachEndpoint {
+            metadata: SessionMetadata::from_labels(&labels),
+            attach_endpoint: Some(AttachEndpoint {
                 scheme: "http".to_string(),
                 host_ip: "127.0.0.1".to_string(),
                 host_port: 4096,
             }),
-            true,
+            container_running: true,
             status,
-        )
+        })
     }
 }

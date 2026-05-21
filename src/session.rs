@@ -25,7 +25,7 @@ pub(crate) use conflict::{classify_create_error_or_else, existing_session_error}
 pub(crate) use connectable::prepare_connect_session;
 pub use discovery::SessionDiscoveryQuery;
 pub use endpoint::discover_attach_endpoint_from_inspect;
-pub use record::{SessionGroup, SessionMetadata, SessionRecord};
+pub use record::{SessionGroup, SessionMetadata, SessionRecord, SessionRecordInput};
 pub(crate) use restartable::prepare_restart_session;
 pub(crate) use selection::{run_command_hint, select_single_session};
 pub(crate) use target::{

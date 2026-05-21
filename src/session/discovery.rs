@@ -14,7 +14,7 @@ use crate::{Error, Result};
 
 use super::endpoint::AttachEndpointReport;
 use super::labels::SessionLabelReport;
-use super::record::{SessionMetadata, SessionRecord};
+use super::record::{SessionMetadata, SessionRecord, SessionRecordInput};
 use super::status::{SessionStatusInput, derive_status, mark_duplicate_sessions};
 
 pub struct SessionDiscoveryQuery<'a> {
@@ -295,15 +295,15 @@ impl InspectedAgentboxContainer {
         });
         let attach_endpoint = self.attach_endpoint.into_endpoint();
 
-        SessionRecord::new(
-            self.container_id,
-            self.container_name,
-            self.container_kind,
-            self.metadata,
+        SessionRecord::new(SessionRecordInput {
+            container_id: self.container_id,
+            container_name: self.container_name,
+            container_kind: self.container_kind,
+            metadata: self.metadata,
             attach_endpoint,
-            self.running,
+            container_running: self.running,
             status,
-        )
+        })
     }
 }
 

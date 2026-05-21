@@ -118,7 +118,7 @@ mod tests {
     use crate::metadata::{
         LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME,
     };
-    use crate::session::SessionMetadata;
+    use crate::session::{SessionMetadata, SessionRecordInput};
 
     use super::*;
 
@@ -203,14 +203,14 @@ mod tests {
             .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
             .collect::<BTreeMap<_, _>>();
 
-        SessionRecord::new(
-            "container-id",
-            "agentbox-example",
+        SessionRecord::new(SessionRecordInput {
+            container_id: "container-id".to_string(),
+            container_name: "agentbox-example".to_string(),
             container_kind,
-            SessionMetadata::from_labels(&labels),
-            None,
-            status == SessionStatus::Running,
+            metadata: SessionMetadata::from_labels(&labels),
+            attach_endpoint: None,
+            container_running: status == SessionStatus::Running,
             status,
-        )
+        })
     }
 }

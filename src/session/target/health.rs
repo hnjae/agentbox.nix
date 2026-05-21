@@ -60,7 +60,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::metadata::{AgentboxContainerKind, LABEL_GIT_ROOT_HASH};
-    use crate::session::{SessionMetadata, SessionStatus};
+    use crate::session::{SessionMetadata, SessionRecordInput, SessionStatus};
 
     use super::*;
 
@@ -137,14 +137,14 @@ mod tests {
     fn session(container_name: &str, stable_id: &str, status: SessionStatus) -> SessionRecord {
         let labels = BTreeMap::from([(LABEL_GIT_ROOT_HASH.to_string(), stable_id.to_string())]);
 
-        SessionRecord::new(
-            format!("{container_name}-id"),
-            container_name,
-            AgentboxContainerKind::Managed,
-            SessionMetadata::from_labels(&labels),
-            None,
-            status == SessionStatus::Running,
+        SessionRecord::new(SessionRecordInput {
+            container_id: format!("{container_name}-id"),
+            container_name: container_name.to_string(),
+            container_kind: AgentboxContainerKind::Managed,
+            metadata: SessionMetadata::from_labels(&labels),
+            attach_endpoint: None,
+            container_running: status == SessionStatus::Running,
             status,
-        )
+        })
     }
 }
