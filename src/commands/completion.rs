@@ -10,10 +10,10 @@ use crate::dev_env::DevEnvMode;
 use crate::error::Result;
 use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
-use crate::session::{SessionDiscoveryQuery, SessionRecord, SessionTargetKind};
+use crate::session::SessionRecord;
 
 use super::output::OutputFormat;
-use super::session_targets::completion_line;
+use super::session_targets::SessionTargetSurface;
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct CompletionArgs {
@@ -99,47 +99,26 @@ pub fn generate_manpages(directory: &Path) -> Result<()> {
 
 pub fn live_roots(command: CompletionRootCommand) -> Result<Vec<SessionRecord>> {
     let podman = Podman::new();
-    let target_kind = completion_target_kind(command);
-    let sessions = completion_sessions(&podman, command)?
-        .into_iter()
-        .filter(|session| target_kind.matches(session))
-        .collect();
+    let surface = completion_target_surface(command);
+    let sessions = surface.discover(&podman)?;
 
-    Ok(sessions)
-}
-
-fn completion_sessions(
-    podman: &Podman,
-    command: CompletionRootCommand,
-) -> Result<Vec<SessionRecord>> {
-    match command {
-        CompletionRootCommand::Stop => {
-            SessionDiscoveryQuery::agentbox_containers().discover(podman)
-        }
-        CompletionRootCommand::Connect
-        | CompletionRootCommand::Health
-        | CompletionRootCommand::Restart => {
-            SessionDiscoveryQuery::managed_sessions().discover(podman)
-        }
-    }
+    Ok(surface.target_sessions(sessions))
 }
 
 pub fn live_roots_output(command: CompletionRootCommand) -> Result<String> {
-    let target_kind = completion_target_kind(command);
+    let surface = completion_target_surface(command);
     let sessions = live_roots(command)?;
-    let lines = target_kind
-        .candidates(&sessions)
-        .map(completion_line)
-        .collect::<Vec<_>>();
+    let lines = surface.completion_lines(&sessions);
 
     Ok(lines.join("\n"))
 }
 
-fn completion_target_kind(command: CompletionRootCommand) -> SessionTargetKind {
+fn completion_target_surface(command: CompletionRootCommand) -> SessionTargetSurface {
     match command {
-        CompletionRootCommand::Connect => SessionTargetKind::ConnectRoot,
-        CompletionRootCommand::Restart => SessionTargetKind::RestartStableId,
-        CompletionRootCommand::Health | CompletionRootCommand::Stop => SessionTargetKind::StableId,
+        CompletionRootCommand::Connect => SessionTargetSurface::Connect,
+        CompletionRootCommand::Health => SessionTargetSurface::Health,
+        CompletionRootCommand::Restart => SessionTargetSurface::Restart,
+        CompletionRootCommand::Stop => SessionTargetSurface::Stop,
     }
 }
 

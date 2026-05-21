@@ -8,10 +8,10 @@ use clap::Args;
 use crate::diagnostic;
 use crate::podman::Podman;
 use crate::prompt;
-use crate::session::{SessionDiscoveryQuery, SessionRecord, SessionTargetInput, SessionTargetKind};
+use crate::session::{SessionRecord, SessionTargetInput};
 use crate::{Error, Result};
 
-use super::session_targets::{prompt_choices, stop_prompt_label};
+use super::session_targets::{SessionTargetSurface, stop_prompt_label};
 
 mod cleanup;
 
@@ -58,8 +58,7 @@ fn select_stop_targets() -> Result<Vec<SessionTargetInput>> {
         "agentbox stop requires a target or --all when stdin or stderr is not a TTY";
     prompt::require_interactive_terminal(non_tty_error)?;
     let podman = Podman::new();
-    let candidates =
-        stop_prompt_candidates(&SessionDiscoveryQuery::agentbox_containers().discover(&podman)?);
+    let candidates = stop_prompt_candidates(&SessionTargetSurface::Stop.discover(&podman)?);
 
     if candidates.is_empty() {
         diagnostic::info("agentbox stop: no agentbox containers available to stop");
@@ -140,8 +139,7 @@ fn render_target_stop_failures(failures: &[TargetStopFailure]) -> String {
 pub type StopPromptCandidate = prompt::Choice<String>;
 
 pub fn stop_prompt_candidates(sessions: &[SessionRecord]) -> Vec<StopPromptCandidate> {
-    prompt_choices(
-        SessionTargetKind::StableId,
+    SessionTargetSurface::Stop.prompt_choices(
         sessions,
         |candidate| candidate.value().to_string(),
         stop_prompt_label,

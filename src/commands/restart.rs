@@ -13,7 +13,7 @@ use crate::prompt;
 use crate::runtime::RuntimeKind;
 use crate::session::{
     RestartSessionTargetPlan, SessionDiscoveryQuery, SessionRecord, SessionTargetInput,
-    SessionTargetKind, prepare_restart_session,
+    prepare_restart_session,
 };
 use crate::workspace::{WorkspaceIdentity, resolve_workspace_identity};
 use crate::{Error, Result};
@@ -25,7 +25,7 @@ use super::managed_server::{
     ManagedServerCompletion, ManagedServerCompletionKind, ManagedServerLaunch,
     ManagedServerLaunchPolicy,
 };
-use super::session_targets::{prompt_choices, stop_prompt_label};
+use super::session_targets::{SessionTargetSurface, stop_prompt_label};
 use super::workspace_flow::{LockedGitRoot, with_locked_git_root_verbose};
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -60,8 +60,7 @@ fn select_restart_target() -> Result<SessionTargetInput> {
         "agentbox restart requires a target when stdin or stderr is not a TTY",
     )?;
     let podman = Podman::new();
-    let candidates =
-        restart_prompt_candidates(&SessionDiscoveryQuery::managed_sessions().discover(&podman)?);
+    let candidates = restart_prompt_candidates(&SessionTargetSurface::Restart.discover(&podman)?);
 
     if candidates.is_empty() {
         return Err(Error::msg("no restartable running managed sessions exist"));
@@ -225,8 +224,7 @@ fn restart_after_stop_error(
 pub type RestartPromptCandidate = prompt::Choice<String>;
 
 pub fn restart_prompt_candidates(sessions: &[SessionRecord]) -> Vec<RestartPromptCandidate> {
-    prompt_choices(
-        SessionTargetKind::RestartStableId,
+    SessionTargetSurface::Restart.prompt_choices(
         sessions,
         |candidate| candidate.value().to_string(),
         stop_prompt_label,
