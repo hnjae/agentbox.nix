@@ -58,9 +58,9 @@ pub fn run(args: CleanArgs) -> Result<()> {
 }
 
 fn build_clean_plan(podman: &Podman, scope: CleanScope) -> Result<CleanPlan> {
-    let inventory = CleanInventory::from_podman(podman, scope)?;
+    let inventory = CleanInventory::from_podman(podman, &scope)?;
 
-    Ok(CleanPlan::from_inventory(scope, &inventory))
+    Ok(CleanPlan::from_inventory(&scope, &inventory))
 }
 
 fn render_plan(plan: &CleanPlan) -> String {

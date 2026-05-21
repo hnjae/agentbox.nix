@@ -6,17 +6,17 @@ use crate::metadata::{DefaultRuntimeImageMetadata, default_runtime_image_label_f
 use crate::podman::{Podman, PodmanContainerInspect, PodmanImage};
 use crate::runtime::default_image;
 
-use super::plan::{CleanInventory, CleanScope, DefaultRuntimeImageCandidate};
+use super::plan::{CleanInventory, CleanScope, DefaultRuntimeImageCandidate, ResourceKind};
 
 impl CleanInventory {
-    pub(super) fn from_podman(podman: &Podman, scope: CleanScope) -> Result<Self> {
+    pub(super) fn from_podman(podman: &Podman, scope: &CleanScope) -> Result<Self> {
         let containers = inspect_all_containers(podman)?;
-        let default_runtime_images = if scope.images {
+        let default_runtime_images = if scope.includes(ResourceKind::Image) {
             default_runtime_image_candidates(podman)?
         } else {
             Vec::new()
         };
-        let volumes = if scope.volumes {
+        let volumes = if scope.includes(ResourceKind::Volume) {
             podman.volumes()?
         } else {
             Vec::new()

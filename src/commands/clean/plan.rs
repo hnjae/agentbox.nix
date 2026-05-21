@@ -7,21 +7,6 @@ use crate::podman::{PodmanContainerInspect, PodmanVolume};
 use crate::runtime::RuntimeKind;
 use crate::workspace::is_agentbox_workspace_resource_name;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct CleanScope {
-    pub(super) images: bool,
-    pub(super) volumes: bool,
-}
-
-impl CleanScope {
-    pub(super) fn from_flags(images: bool, volumes: bool) -> Self {
-        Self {
-            images: images || !volumes,
-            volumes: volumes || !images,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct CleanPlan {
     pub(super) candidates: Vec<CleanCandidate>,
@@ -29,11 +14,11 @@ pub(super) struct CleanPlan {
 }
 
 impl CleanPlan {
-    pub(super) fn from_inventory(scope: CleanScope, inventory: &CleanInventory) -> Self {
+    pub(super) fn from_inventory(scope: &CleanScope, inventory: &CleanInventory) -> Self {
         let usage = ResourceUsage::from_containers(&inventory.containers);
         let mut plan = CleanPlan::default();
 
-        if scope.images {
+        if scope.includes(ResourceKind::Image) {
             add_default_runtime_image_candidates(
                 &inventory.default_runtime_images,
                 &usage,
@@ -41,7 +26,7 @@ impl CleanPlan {
             );
         }
 
-        if scope.volumes {
+        if scope.includes(ResourceKind::Volume) {
             add_cache_volume_candidates(&inventory.volumes, &usage, &mut plan);
         }
 
@@ -76,6 +61,29 @@ pub(super) struct CleanResource {
 pub(super) enum ResourceKind {
     Image,
     Volume,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CleanScope {
+    resources: BTreeSet<ResourceKind>,
+}
+
+impl CleanScope {
+    pub(super) fn from_flags(images: bool, volumes: bool) -> Self {
+        let resources = match (images, volumes) {
+            (false, false) | (true, true) => {
+                BTreeSet::from([ResourceKind::Image, ResourceKind::Volume])
+            }
+            (true, false) => BTreeSet::from([ResourceKind::Image]),
+            (false, true) => BTreeSet::from([ResourceKind::Volume]),
+        };
+
+        Self { resources }
+    }
+
+    pub(super) fn includes(&self, kind: ResourceKind) -> bool {
+        self.resources.contains(&kind)
+    }
 }
 
 impl ResourceKind {
@@ -277,6 +285,33 @@ mod tests {
     const UNUSED_VOLUME: &str = "agentbox-unused-abcdef123456";
 
     #[test]
+    fn clean_scope_defaults_to_all_resources_when_no_flags_are_selected() {
+        let scope = CleanScope::from_flags(false, false);
+
+        assert!(scope.includes(ResourceKind::Image));
+        assert!(scope.includes(ResourceKind::Volume));
+    }
+
+    #[test]
+    fn clean_scope_can_select_only_images_or_only_volumes() {
+        let images = CleanScope::from_flags(true, false);
+        let volumes = CleanScope::from_flags(false, true);
+
+        assert!(images.includes(ResourceKind::Image));
+        assert!(!images.includes(ResourceKind::Volume));
+        assert!(!volumes.includes(ResourceKind::Image));
+        assert!(volumes.includes(ResourceKind::Volume));
+    }
+
+    #[test]
+    fn clean_scope_selects_all_resources_when_both_flags_are_selected() {
+        let scope = CleanScope::from_flags(true, true);
+
+        assert!(scope.includes(ResourceKind::Image));
+        assert!(scope.includes(ResourceKind::Volume));
+    }
+
+    #[test]
     fn resource_usage_indexes_first_container_for_images_and_mount_sources() {
         let containers = vec![
             inspect_container("first", "shared-image", &[USED_VOLUME]),
@@ -337,13 +372,7 @@ mod tests {
             volumes: vec![volume(USED_VOLUME), volume(UNUSED_VOLUME)],
         };
 
-        let plan = CleanPlan::from_inventory(
-            CleanScope {
-                images: true,
-                volumes: true,
-            },
-            &inventory,
-        );
+        let plan = CleanPlan::from_inventory(&CleanScope::from_flags(true, true), &inventory);
 
         assert_eq!(
             plan.candidates,
@@ -387,13 +416,7 @@ mod tests {
             ..CleanInventory::default()
         };
 
-        let plan = CleanPlan::from_inventory(
-            CleanScope {
-                images: true,
-                volumes: false,
-            },
-            &inventory,
-        );
+        let plan = CleanPlan::from_inventory(&CleanScope::from_flags(true, false), &inventory);
 
         assert_eq!(
             plan.candidates,
