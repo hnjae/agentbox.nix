@@ -86,7 +86,7 @@ fn endpoint_connection_health(
     let _ = stream.set_read_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
     let _ = stream.set_write_timeout(Some(ENDPOINT_CONNECT_TIMEOUT));
 
-    let Some(response) = http_probe::get_response(endpoint, stream, health_check.path) else {
+    let Ok(response) = http_probe::get_response(endpoint, stream, health_check.path) else {
         return RuntimeHealth::unhealthy("unreachable");
     };
 

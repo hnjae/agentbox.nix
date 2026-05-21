@@ -7,16 +7,27 @@ use super::AttachEndpoint;
 
 const MAX_HTTP_RESPONSE_BYTES: usize = 64 * 1024;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HttpResponse {
     pub(crate) status_code: u16,
     pub(crate) body: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HttpProbeError {
+    RequestWriteFailed,
+    ResponseHeadersUnavailable,
+    InvalidResponseHeaders,
+    ResponseTooLarge,
+    ResponseBodyIncomplete,
+    ResponseReadFailed,
 }
 
 pub(crate) fn get_response(
     endpoint: &AttachEndpoint,
     stream: &mut impl ReadWrite,
     path: &str,
-) -> Option<HttpResponse> {
+) -> Result<HttpResponse, HttpProbeError> {
     write_http_get_request(endpoint, stream, path)?;
 
     let mut response = Vec::new();
@@ -25,16 +36,18 @@ pub(crate) fn get_response(
 
     match content_length {
         Some(content_length) => {
-            let response_len = body_start.checked_add(content_length)?;
+            let response_len = body_start
+                .checked_add(content_length)
+                .ok_or(HttpProbeError::ResponseTooLarge)?;
             if response_len > MAX_HTTP_RESPONSE_BYTES {
-                return None;
+                return Err(HttpProbeError::ResponseTooLarge);
             }
             read_declared_response_body(stream, &mut response, response_len)?;
         }
         None => read_undeclared_response_body(stream, &mut response)?,
     }
 
-    Some(HttpResponse {
+    Ok(HttpResponse {
         status_code,
         body: response[body_start..].to_vec(),
     })
@@ -48,26 +61,34 @@ fn write_http_get_request(
     endpoint: &AttachEndpoint,
     stream: &mut impl Write,
     path: &str,
-) -> Option<()> {
+) -> Result<(), HttpProbeError> {
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
         endpoint.host_ip, endpoint.host_port,
     );
-    stream.write_all(request.as_bytes()).ok()
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|_| HttpProbeError::RequestWriteFailed)
 }
 
-fn read_until_http_body(stream: &mut impl Read, response: &mut Vec<u8>) -> Option<usize> {
+fn read_until_http_body(
+    stream: &mut impl Read,
+    response: &mut Vec<u8>,
+) -> Result<usize, HttpProbeError> {
     loop {
         if let Some(body_start) = http_body_start(response) {
-            return Some(body_start);
+            return Ok(body_start);
         }
         if response.len() >= MAX_HTTP_RESPONSE_BYTES {
-            return None;
+            return Err(HttpProbeError::ResponseTooLarge);
         }
 
         match read_http_chunk(stream, response) {
             HttpRead::Data => {}
-            HttpRead::End | HttpRead::Timeout | HttpRead::Error => return None,
+            HttpRead::End | HttpRead::Timeout => {
+                return Err(HttpProbeError::ResponseHeadersUnavailable);
+            }
+            HttpRead::Error => return Err(HttpProbeError::ResponseReadFailed),
         }
     }
 }
@@ -76,28 +97,34 @@ fn read_declared_response_body(
     stream: &mut impl Read,
     response: &mut Vec<u8>,
     response_len: usize,
-) -> Option<()> {
+) -> Result<(), HttpProbeError> {
     while response.len() < response_len {
         match read_http_chunk(stream, response) {
             HttpRead::Data => {}
-            HttpRead::End | HttpRead::Timeout | HttpRead::Error => return None,
+            HttpRead::End | HttpRead::Timeout => {
+                return Err(HttpProbeError::ResponseBodyIncomplete);
+            }
+            HttpRead::Error => return Err(HttpProbeError::ResponseReadFailed),
         }
     }
 
     response.truncate(response_len);
-    Some(())
+    Ok(())
 }
 
-fn read_undeclared_response_body(stream: &mut impl Read, response: &mut Vec<u8>) -> Option<()> {
+fn read_undeclared_response_body(
+    stream: &mut impl Read,
+    response: &mut Vec<u8>,
+) -> Result<(), HttpProbeError> {
     while response.len() < MAX_HTTP_RESPONSE_BYTES {
         match read_http_chunk(stream, response) {
             HttpRead::Data => {}
             HttpRead::End | HttpRead::Timeout => break,
-            HttpRead::Error => return None,
+            HttpRead::Error => return Err(HttpProbeError::ResponseReadFailed),
         }
     }
 
-    Some(())
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,16 +162,23 @@ fn http_body_start(response: &[u8]) -> Option<usize> {
         .map(|position| position + 4)
 }
 
-fn parse_http_response_headers(headers: &[u8]) -> Option<(u16, Option<usize>)> {
-    let headers = std::str::from_utf8(headers).ok()?;
+fn parse_http_response_headers(headers: &[u8]) -> Result<(u16, Option<usize>), HttpProbeError> {
+    let headers =
+        std::str::from_utf8(headers).map_err(|_| HttpProbeError::InvalidResponseHeaders)?;
     let mut lines = headers.split("\r\n");
-    let status_line = lines.next()?;
+    let status_line = lines.next().ok_or(HttpProbeError::InvalidResponseHeaders)?;
     let mut status_parts = status_line.split_whitespace();
-    let http_version = status_parts.next()?;
+    let http_version = status_parts
+        .next()
+        .ok_or(HttpProbeError::InvalidResponseHeaders)?;
     if !http_version.starts_with("HTTP/1.") {
-        return None;
+        return Err(HttpProbeError::InvalidResponseHeaders);
     }
-    let status_code = status_parts.next()?.parse().ok()?;
+    let status_code = status_parts
+        .next()
+        .ok_or(HttpProbeError::InvalidResponseHeaders)?
+        .parse()
+        .map_err(|_| HttpProbeError::InvalidResponseHeaders)?;
     let mut content_length = None;
 
     for line in lines {
@@ -152,11 +186,16 @@ fn parse_http_response_headers(headers: &[u8]) -> Option<(u16, Option<usize>)> {
             continue;
         };
         if name.eq_ignore_ascii_case("content-length") {
-            content_length = Some(value.trim().parse().ok()?);
+            content_length = Some(
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| HttpProbeError::InvalidResponseHeaders)?,
+            );
         }
     }
 
-    Some((status_code, content_length))
+    Ok((status_code, content_length))
 }
 
 #[cfg(test)]
@@ -200,7 +239,62 @@ mod tests {
         );
         let mut stream = TestStream::with_reads([response.as_bytes()]);
 
-        assert!(get_response(&endpoint(), &mut stream, "/readyz").is_none());
+        assert_eq!(
+            get_response(&endpoint(), &mut stream, "/readyz").unwrap_err(),
+            HttpProbeError::ResponseTooLarge
+        );
+    }
+
+    #[test]
+    fn get_response_rejects_missing_header_terminator() {
+        let mut stream = TestStream::with_reads([b"HTTP/1.1 200 OK".as_slice()]);
+
+        assert_eq!(
+            get_response(&endpoint(), &mut stream, "/readyz").unwrap_err(),
+            HttpProbeError::ResponseHeadersUnavailable
+        );
+    }
+
+    #[test]
+    fn get_response_rejects_invalid_headers() {
+        let mut stream = TestStream::with_reads([b"not-http\r\n\r\n".as_slice()]);
+
+        assert_eq!(
+            get_response(&endpoint(), &mut stream, "/readyz").unwrap_err(),
+            HttpProbeError::InvalidResponseHeaders
+        );
+    }
+
+    #[test]
+    fn get_response_rejects_incomplete_declared_body() {
+        let mut stream = TestStream::with_reads([
+            b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nshort".as_slice(),
+        ]);
+
+        assert_eq!(
+            get_response(&endpoint(), &mut stream, "/readyz").unwrap_err(),
+            HttpProbeError::ResponseBodyIncomplete
+        );
+    }
+
+    #[test]
+    fn get_response_rejects_request_write_failure() {
+        let mut stream = TestStream::failing_writes();
+
+        assert_eq!(
+            get_response(&endpoint(), &mut stream, "/readyz").unwrap_err(),
+            HttpProbeError::RequestWriteFailed
+        );
+    }
+
+    #[test]
+    fn get_response_rejects_response_read_failure() {
+        let mut stream = TestStream::failing_reads();
+
+        assert_eq!(
+            get_response(&endpoint(), &mut stream, "/readyz").unwrap_err(),
+            HttpProbeError::ResponseReadFailed
+        );
     }
 
     #[test]
@@ -227,6 +321,8 @@ mod tests {
     struct TestStream {
         reads: VecDeque<Vec<u8>>,
         writes: Vec<u8>,
+        fail_reads: bool,
+        fail_writes: bool,
     }
 
     impl TestStream {
@@ -234,12 +330,32 @@ mod tests {
             Self {
                 reads: reads.iter().map(|read| read.to_vec()).collect(),
                 writes: Vec::new(),
+                fail_reads: false,
+                fail_writes: false,
+            }
+        }
+
+        fn failing_reads() -> Self {
+            Self {
+                fail_reads: true,
+                ..Self::with_reads([])
+            }
+        }
+
+        fn failing_writes() -> Self {
+            Self {
+                fail_writes: true,
+                ..Self::with_reads([])
             }
         }
     }
 
     impl Read for TestStream {
         fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if self.fail_reads {
+                return Err(io::Error::other("read failed"));
+            }
+
             let Some(mut next) = self.reads.pop_front() else {
                 return Ok(0);
             };
@@ -257,6 +373,10 @@ mod tests {
 
     impl Write for TestStream {
         fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            if self.fail_writes {
+                return Err(io::Error::other("write failed"));
+            }
+
             self.writes.extend_from_slice(buffer);
             Ok(buffer.len())
         }
