@@ -18,6 +18,7 @@ pub use fake_bins::{
 };
 pub use git_repo::{
     TempWorkspace, init_git_repo, temp_git_repo, temp_workspace, tempdir_outside_git,
+    write_envrc_at,
 };
 pub use podman_fixtures::{
     cached_managed_inspect_fixture, default_runtime_images_fixture, inspect_models_by_id,

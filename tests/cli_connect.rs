@@ -134,7 +134,7 @@ fn connect_does_not_wrap_host_client_with_direnv_when_envrc_applies() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
-    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    fixture.write_envrc();
     let harness = Harness::new();
     harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
         "running-id",

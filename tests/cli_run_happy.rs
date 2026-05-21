@@ -576,7 +576,7 @@ fn exec_warns_and_skips_invalid_ssh_auth_sock() {
 #[test]
 fn run_wraps_server_command_with_direnv_when_envrc_applies() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    fixture.write_envrc();
     let harness = Harness::new();
 
     let log = run_opencode_success(&fixture, &harness, &[]);
@@ -589,7 +589,7 @@ fn run_wraps_server_command_with_direnv_when_envrc_applies() {
 #[test]
 fn exec_wraps_codex_exec_command_with_direnv_when_envrc_applies() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    fixture.write_envrc();
     let harness = Harness::new();
 
     let log = exec_codex_success(&fixture, &harness, &[], &["fix-tests"]);
@@ -607,7 +607,7 @@ fn exec_wraps_codex_exec_command_with_direnv_when_envrc_applies() {
 #[test]
 fn exec_wraps_codex_exec_command_with_devenv_when_selected() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
+    fixture.write_repo_devenv();
     let harness = Harness::new();
 
     let log = exec_codex_success(&fixture, &harness, &[], &["fix-tests"]);
@@ -622,7 +622,7 @@ fn exec_wraps_codex_exec_command_with_devenv_when_selected() {
 #[test]
 fn exec_wraps_codex_exec_command_with_nix_develop_when_selected() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    fixture.write_target_flake();
     let harness = Harness::new();
     harness.mark_dev_shell(&fixture.target, "default");
 
@@ -639,7 +639,7 @@ fn exec_wraps_codex_exec_command_with_nix_develop_when_selected() {
 #[test]
 fn run_wraps_server_command_with_devenv_when_selected() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
+    fixture.write_repo_devenv();
     let harness = Harness::new();
 
     let log = run_opencode_success(&fixture, &harness, &[]);
@@ -651,7 +651,7 @@ fn run_wraps_server_command_with_devenv_when_selected() {
 #[test]
 fn run_wraps_server_command_with_nix_develop_when_selected() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    fixture.write_target_flake();
     let harness = Harness::new();
     harness.mark_dev_shell(&fixture.target, "default");
 
@@ -806,7 +806,7 @@ fn start_wraps_server_command_with_direnv_when_envrc_applies() {
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
     let image = RuntimeKind::Opencode.default_image();
-    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    fixture.write_envrc();
     let harness = Harness::new();
     harness.mark_default_image_absent();
     let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
@@ -836,9 +836,9 @@ fn start_wraps_server_command_with_direnv_when_envrc_applies() {
 #[test]
 fn start_prefers_envrc_over_devenv_and_flake() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
-    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
-    fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
+    fixture.write_envrc();
+    fixture.write_repo_devenv();
+    fixture.write_repo_flake();
     let harness = Harness::new();
     harness.mark_dev_shell(fixture.repo.path(), "nested");
 
@@ -854,7 +854,7 @@ fn start_prefers_envrc_over_devenv_and_flake() {
 #[test]
 fn start_uses_parent_devenv_without_changing_container_workdir() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
+    fixture.write_repo_devenv();
     let harness = Harness::new();
 
     let log = start_opencode_success(&fixture, &harness, &[]);
@@ -868,7 +868,7 @@ fn start_uses_parent_devenv_without_changing_container_workdir() {
 #[test]
 fn start_uses_target_flake_default_dev_shell() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    fixture.write_target_flake();
     let harness = Harness::new();
     harness.mark_dev_shell(&fixture.target, "default");
 
@@ -888,7 +888,7 @@ fn start_uses_target_flake_default_dev_shell() {
 #[test]
 fn start_uses_parent_flake_basename_dev_shell_before_default() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
+    fixture.write_repo_flake();
     let harness = Harness::new();
     harness.mark_dev_shell(fixture.repo.path(), "nested");
 
@@ -908,7 +908,7 @@ fn start_uses_parent_flake_basename_dev_shell_before_default() {
 #[test]
 fn start_falls_back_to_parent_flake_default_dev_shell() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
+    fixture.write_repo_flake();
     let harness = Harness::new();
     harness.mark_dev_shell(fixture.repo.path(), "default");
 
@@ -928,9 +928,9 @@ fn start_falls_back_to_parent_flake_default_dev_shell() {
 #[test]
 fn start_dev_env_none_disables_all_automatic_wrappers() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
-    fs::write(fixture.repo.path().join("devenv.nix"), "{}\n").unwrap();
-    fs::write(fixture.repo.path().join("flake.nix"), "{}\n").unwrap();
+    fixture.write_envrc();
+    fixture.write_repo_devenv();
+    fixture.write_repo_flake();
     let harness = Harness::new();
     harness.mark_dev_shell(fixture.repo.path(), "nested");
 
@@ -947,7 +947,7 @@ fn start_dev_env_none_disables_all_automatic_wrappers() {
 #[test]
 fn start_uses_no_wrapper_when_flake_has_no_candidate_dev_shell() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    fixture.write_target_flake();
     let harness = Harness::new();
 
     let log = start_opencode_success(&fixture, &harness, &[]);
@@ -964,7 +964,7 @@ fn start_uses_no_wrapper_when_flake_has_no_candidate_dev_shell() {
 #[test]
 fn start_fails_clearly_when_flake_evaluation_fails() {
     let fixture = support::temp_workspace("nested");
-    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    fixture.write_target_flake();
     let harness = Harness::new();
     harness.fail_nix_eval(&fixture.target, "flake exploded\n");
 

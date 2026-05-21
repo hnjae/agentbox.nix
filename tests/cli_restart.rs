@@ -164,7 +164,7 @@ fn restart_re_evaluates_dev_environment_from_stored_launch_directory() {
     let request_target = repo.path().join("request");
     fs::create_dir(&launch_target).unwrap();
     fs::create_dir(&request_target).unwrap();
-    fs::write(launch_target.join(".envrc"), "use nix\n").unwrap();
+    support::write_envrc_at(&launch_target);
     let launch_workspace = resolve_workspace_identity(&launch_target).unwrap();
     let request_workspace = resolve_workspace_identity(&request_target).unwrap();
     let image = RuntimeKind::Opencode.default_image();
@@ -207,7 +207,7 @@ fn restart_dev_env_none_disables_wrapper_re_evaluation() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
-    fs::write(fixture.repo.path().join(".envrc"), "use nix\n").unwrap();
+    fixture.write_envrc();
     let image = RuntimeKind::Opencode.default_image();
     let harness = Harness::new();
     let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
@@ -305,7 +305,7 @@ fn restart_dev_env_failure_does_not_stop_existing_session() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
-    fs::write(fixture.target.join("flake.nix"), "{}\n").unwrap();
+    fixture.write_target_flake();
     let harness = Harness::new();
     harness.fail_nix_eval(&fixture.target, "flake exploded\n");
     harness.write_ps(&ps_fixture(vec![workspace_ps_entry(

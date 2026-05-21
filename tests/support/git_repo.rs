@@ -29,6 +29,34 @@ impl TempWorkspace {
             workspace,
         }
     }
+
+    pub fn write_envrc(&self) {
+        write_envrc_at(self.repo.path());
+    }
+
+    pub fn write_repo_devenv(&self) {
+        write_devenv_at(self.repo.path());
+    }
+
+    pub fn write_repo_flake(&self) {
+        write_flake_at(self.repo.path());
+    }
+
+    pub fn write_target_flake(&self) {
+        write_flake_at(&self.target);
+    }
+}
+
+pub fn write_envrc_at(directory: impl AsRef<Path>) {
+    fs::write(directory.as_ref().join(".envrc"), "use nix\n").unwrap();
+}
+
+fn write_devenv_at(directory: impl AsRef<Path>) {
+    fs::write(directory.as_ref().join("devenv.nix"), "{}\n").unwrap();
+}
+
+fn write_flake_at(directory: impl AsRef<Path>) {
+    fs::write(directory.as_ref().join("flake.nix"), "{}\n").unwrap();
 }
 
 pub fn temp_workspace(relative_target: impl AsRef<Path>) -> TempWorkspace {
