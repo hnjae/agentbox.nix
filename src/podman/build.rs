@@ -1,10 +1,17 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::BTreeMap;
+
 use camino::Utf8Path;
 
-use super::PodmanBuildOptions;
 use super::args::PodmanArgs;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PodmanBuildOptions {
+    pub build_args: BTreeMap<String, String>,
+    pub labels: BTreeMap<String, String>,
+}
 
 pub(super) fn build_image_args(
     image: &str,
