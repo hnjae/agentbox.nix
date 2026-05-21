@@ -6,7 +6,9 @@ use clap::{Args, Subcommand};
 use crate::Result;
 use crate::runtime::RuntimeKind;
 
+mod image_environment;
 mod image_lifecycle;
+mod image_plan;
 mod image_state;
 
 pub(super) use image_lifecycle::{

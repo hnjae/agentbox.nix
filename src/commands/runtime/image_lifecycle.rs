@@ -1,20 +1,16 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::collections::BTreeMap;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use camino::Utf8Path;
 
 use crate::diagnostic;
-use crate::metadata::{DefaultRuntimeImageLabelInput, default_runtime_image_labels};
-use crate::podman::{Podman, PodmanBuildOptions};
-use crate::process::ProcessRunner;
+use crate::podman::Podman;
 use crate::runtime::RuntimeKind;
-use crate::runtime::default_image::default_image_context_hash;
 use crate::{Error, Result};
 
-use super::image_state::{RuntimeImageState, read_runtime_image_state, write_runtime_image_state};
+use super::image_environment::{ProductionRuntimeImageEnvironment, RuntimeImageEnvironment};
+use super::image_plan::{RuntimeImageUpdatePlan, plan_runtime_image_update};
+use super::image_state::RuntimeImageState;
 
 pub(super) fn update_default_runtime_image(runtime: RuntimeKind, verbose: bool) -> Result<()> {
     let podman = Podman::new().with_verbose(verbose);
@@ -64,45 +60,6 @@ pub(crate) fn remove_default_runtime_image_state_if_image(
 enum RuntimeImageUpdateOutcome {
     AlreadyUpToDate { image: String, version: String },
     Rebuilt { image: String, version: String },
-}
-
-trait RuntimeImageEnvironment {
-    fn image_exists(&mut self, image: &str) -> Result<bool>;
-    fn read_state(&mut self, runtime: RuntimeKind) -> Result<Option<RuntimeImageState>>;
-    fn write_state(&mut self, runtime: RuntimeKind, state: &RuntimeImageState) -> Result<()>;
-    fn resolve_latest_version(&mut self, package: &str) -> Result<String>;
-    fn build_image(&mut self, runtime: RuntimeKind, version: &str) -> Result<()>;
-    fn now_unix_seconds(&mut self) -> Result<u64>;
-}
-
-struct ProductionRuntimeImageEnvironment<'a> {
-    podman: &'a Podman,
-}
-
-impl RuntimeImageEnvironment for ProductionRuntimeImageEnvironment<'_> {
-    fn image_exists(&mut self, image: &str) -> Result<bool> {
-        self.podman.image_exists(image)
-    }
-
-    fn read_state(&mut self, runtime: RuntimeKind) -> Result<Option<RuntimeImageState>> {
-        read_runtime_image_state(runtime)
-    }
-
-    fn write_state(&mut self, runtime: RuntimeKind, state: &RuntimeImageState) -> Result<()> {
-        write_runtime_image_state(runtime, state)
-    }
-
-    fn resolve_latest_version(&mut self, package: &str) -> Result<String> {
-        resolve_latest_runtime_version(package)
-    }
-
-    fn build_image(&mut self, runtime: RuntimeKind, version: &str) -> Result<()> {
-        build_runtime_image(self.podman, runtime, version)
-    }
-
-    fn now_unix_seconds(&mut self) -> Result<u64> {
-        now_unix_seconds()
-    }
 }
 
 fn update_default_runtime_image_with(
@@ -161,43 +118,6 @@ fn ensure_default_runtime_image_with(
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum RuntimeImageUpdatePlan {
-    RefreshState {
-        state: RuntimeImageState,
-        latest_version: String,
-    },
-    Rebuild {
-        version: String,
-    },
-}
-
-fn plan_runtime_image_update(
-    runtime: RuntimeKind,
-    latest_version: String,
-    image_exists: bool,
-    prior_state: Option<RuntimeImageState>,
-) -> RuntimeImageUpdatePlan {
-    let image = runtime.default_image();
-    let context_hash = default_image_context_hash();
-
-    if let Some(state) = prior_state.filter(|state| {
-        image_exists
-            && state.installed_version == latest_version
-            && state.image == image
-            && state.image_context_hash == context_hash
-    }) {
-        RuntimeImageUpdatePlan::RefreshState {
-            state,
-            latest_version,
-        }
-    } else {
-        RuntimeImageUpdatePlan::Rebuild {
-            version: latest_version,
-        }
-    }
-}
-
 fn build_default_runtime_image(
     environment: &mut impl RuntimeImageEnvironment,
     runtime: RuntimeKind,
@@ -221,47 +141,6 @@ fn build_runtime_image_and_record_state(
     )
 }
 
-fn build_runtime_image(podman: &Podman, runtime: RuntimeKind, version: &str) -> Result<()> {
-    let package = runtime.package_spec();
-    let context = runtime.materialize_default_image_context()?;
-    let image = runtime.default_image();
-    let resolved_at = now_unix_seconds()?.to_string();
-    let options = PodmanBuildOptions {
-        build_args: BTreeMap::from([
-            ("AGENTBOX_RUNTIME".to_string(), runtime.as_str().to_string()),
-            (package.build_arg.to_string(), version.to_string()),
-        ]),
-        labels: default_runtime_image_labels(DefaultRuntimeImageLabelInput {
-            runtime,
-            image: &image,
-            image_context_hash: default_image_context_hash(),
-            version,
-            resolved_at: &resolved_at,
-        }),
-    };
-
-    podman.build_image(
-        &image,
-        context.containerfile().as_ref(),
-        context.root(),
-        &options,
-    )
-}
-
-fn resolve_latest_runtime_version(package: &str) -> Result<String> {
-    let output = ProcessRunner::new().capture("npm", |command| {
-        command.args(["view", package, "version", "--silent"]);
-    })?;
-    let version = output.stdout.trim();
-    if version.is_empty() {
-        return Err(Error::msg(format!(
-            "`npm view {package} version --silent` returned an empty version"
-        )));
-    }
-
-    Ok(version.to_string())
-}
-
 fn installed_version_if_known(
     environment: &mut impl RuntimeImageEnvironment,
     runtime: RuntimeKind,
@@ -273,64 +152,11 @@ fn installed_version_if_known(
         .map(|state| state.installed_version))
 }
 
-fn now_unix_seconds() -> Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| Error::msg(format!("system clock is before Unix epoch: {error}")))?
-        .as_secs())
-}
-
 #[cfg(test)]
 mod tests {
     use camino::Utf8Path;
 
     use super::*;
-
-    #[test]
-    fn update_plan_refreshes_state_when_image_state_and_version_are_current() {
-        let runtime = RuntimeKind::Codex;
-        let state = RuntimeImageState::new(runtime, "1.2.3".to_string(), 10, 9);
-
-        let plan = plan_runtime_image_update(runtime, "1.2.3".to_string(), true, Some(state));
-
-        assert!(matches!(
-            plan,
-            RuntimeImageUpdatePlan::RefreshState {
-                latest_version,
-                ..
-            } if latest_version == "1.2.3"
-        ));
-    }
-
-    #[test]
-    fn update_plan_rebuilds_when_image_is_missing_even_if_state_is_current() {
-        let runtime = RuntimeKind::Codex;
-        let state = RuntimeImageState::new(runtime, "1.2.3".to_string(), 10, 9);
-
-        let plan = plan_runtime_image_update(runtime, "1.2.3".to_string(), false, Some(state));
-
-        assert_eq!(
-            plan,
-            RuntimeImageUpdatePlan::Rebuild {
-                version: "1.2.3".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn update_plan_rebuilds_when_state_version_is_stale() {
-        let runtime = RuntimeKind::Opencode;
-        let state = RuntimeImageState::new(runtime, "1.2.3".to_string(), 10, 9);
-
-        let plan = plan_runtime_image_update(runtime, "1.2.4".to_string(), true, Some(state));
-
-        assert_eq!(
-            plan,
-            RuntimeImageUpdatePlan::Rebuild {
-                version: "1.2.4".to_string(),
-            }
-        );
-    }
 
     #[test]
     fn update_runtime_image_refreshes_state_without_rebuild() {
