@@ -4,41 +4,37 @@
 use std::process::{Command, ExitStatus, Stdio};
 
 use camino::Utf8Path;
-use serde::de::DeserializeOwned;
 
-use crate::diagnostic;
 use crate::metadata::managed_label_filter;
-use crate::process::{ProcessCommand, ProcessOutput, ProcessRunner, format_status};
+use crate::process::{ProcessOutput, ProcessRunner, format_status};
 use crate::runtime::RuntimeRunSpec;
 use crate::{Error, Result};
 
 use super::build::{self, PodmanBuildOptions};
-use super::model::parse_json;
+use super::executor::PodmanExecutor;
 use super::run;
 use super::{PodmanContainerInspect, PodmanImage, PodmanPsContainer, PodmanVolume};
 
-const PODMAN_PROGRAM: &str = "podman";
-
 #[derive(Debug, Clone, Default)]
 pub struct Podman {
-    runner: ProcessRunner,
-    verbose: bool,
+    executor: PodmanExecutor,
 }
 
 impl Podman {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            executor: PodmanExecutor::new(),
+        }
     }
 
     pub fn with_runner(runner: ProcessRunner) -> Self {
         Self {
-            runner,
-            verbose: false,
+            executor: PodmanExecutor::with_runner(runner),
         }
     }
 
     pub fn with_verbose(mut self, verbose: bool) -> Self {
-        self.verbose = verbose;
+        self.executor = self.executor.with_verbose(verbose);
         self
     }
 
@@ -118,16 +114,15 @@ impl Podman {
     }
 
     fn exists_status(&self, configure: impl FnOnce(&mut Command)) -> Result<bool> {
-        let command = self.podman_command(configure)?;
-        let description = command.description();
-        let status = self.status(command)?;
+        let status = self.executor.status(configure)?;
 
-        match status.code() {
+        match status.status.code() {
             Some(0) => Ok(true),
             Some(1) => Ok(false),
             _ => Err(Error::msg(format!(
-                "`{description}` exited with {}",
-                format_status(status),
+                "`{}` exited with {}",
+                status.description,
+                format_status(status.status),
             ))),
         }
     }
@@ -188,84 +183,38 @@ impl Podman {
         use_tty: bool,
     ) -> Result<ExitStatus> {
         let host_gid = run::current_primary_gid();
-        let command = self.podman_command(|command| {
-            command.args(run::run_foreground_args(
-                container_name,
-                spec,
-                host_gid,
-                use_tty,
-            ));
-            command.stdin(Stdio::inherit());
-            command.stdout(Stdio::inherit());
-            command.stderr(Stdio::inherit());
-        })?;
-        self.status(command)
-    }
-
-    fn podman_command(&self, configure: impl FnOnce(&mut Command)) -> Result<ProcessCommand> {
-        self.runner.configured_command(PODMAN_PROGRAM, configure)
+        self.executor
+            .status(|command| {
+                command.args(run::run_foreground_args(
+                    container_name,
+                    spec,
+                    host_gid,
+                    use_tty,
+                ));
+                command.stdin(Stdio::inherit());
+                command.stdout(Stdio::inherit());
+                command.stderr(Stdio::inherit());
+            })
+            .map(|status| status.status)
     }
 
     fn run_podman_quiet(&self, configure: impl FnOnce(&mut Command)) -> Result<ProcessOutput> {
-        let command = self.podman_command(configure)?;
-        self.run_quiet(command)
+        self.executor.run_quiet(configure)
     }
 
-    fn run_podman_json<T: DeserializeOwned>(
+    fn run_podman_json<T: serde::de::DeserializeOwned>(
         &self,
         configure: impl FnOnce(&mut Command),
     ) -> Result<T> {
-        let command = self.podman_command(configure)?;
-        let context = format!("`{}`", command.description());
-        let output = self.run_quiet(command)?;
-        parse_json(&context, &output.stdout)
+        self.executor.run_json(configure)
     }
 
     fn run_podman_forwarding_output_when_verbose(
         &self,
         configure: impl FnOnce(&mut Command),
     ) -> Result<ProcessOutput> {
-        let command = self.podman_command(configure)?;
-        self.run_forwarding_output_when_verbose(command)
+        self.executor.run_forwarding_output_when_verbose(configure)
     }
-
-    fn run_quiet(&self, command: ProcessCommand) -> Result<ProcessOutput> {
-        self.trace(&command);
-        command.capture()
-    }
-
-    fn run_forwarding_output_when_verbose(&self, command: ProcessCommand) -> Result<ProcessOutput> {
-        let output = self.run_quiet(command)?;
-        if self.verbose {
-            emit_output(&output);
-        }
-
-        Ok(output)
-    }
-
-    fn status(&self, command: ProcessCommand) -> Result<std::process::ExitStatus> {
-        self.trace(&command);
-        command.status()
-    }
-
-    fn trace(&self, command: &ProcessCommand) {
-        if self.verbose {
-            diagnostic::debug(format!("running {}", command.description()));
-        }
-    }
-}
-
-fn emit_output(output: &ProcessOutput) {
-    emit_stream(&output.stdout);
-    emit_stream(&output.stderr);
-}
-
-fn emit_stream(text: &str) {
-    if text.is_empty() {
-        return;
-    }
-
-    diagnostic::debug(text);
 }
 
 #[cfg(test)]
@@ -281,7 +230,7 @@ mod tests {
     #[test]
     fn json_parse_errors_describe_the_configured_command() {
         let sandbox = tempfile::tempdir().unwrap();
-        let fake_podman = sandbox.path().join(PODMAN_PROGRAM);
+        let fake_podman = sandbox.path().join("podman");
         fs::write(&fake_podman, "#!/bin/sh\nprintf 'not json\\n'\n").unwrap();
         fs::set_permissions(&fake_podman, fs::Permissions::from_mode(0o700)).unwrap();
 

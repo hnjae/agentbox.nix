@@ -4,6 +4,7 @@
 mod args;
 mod build;
 mod client;
+mod executor;
 mod model;
 mod run;
 
