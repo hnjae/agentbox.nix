@@ -123,9 +123,10 @@ pub(super) fn build_runtime_invocation(
 
 #[cfg(test)]
 mod tests {
-    use camino::{Utf8Path, Utf8PathBuf};
+    use camino::Utf8Path;
 
     use super::*;
+    use crate::workspace::test_support::WorkspaceIdentityFixture;
 
     #[test]
     fn custom_launch_invocation_receives_resolved_dev_environment() {
@@ -155,14 +156,6 @@ mod tests {
     }
 
     fn workspace() -> WorkspaceIdentity {
-        WorkspaceIdentity {
-            requested_target: Utf8PathBuf::from("/workspace/demo"),
-            absolute_target: Utf8PathBuf::from("/workspace/demo"),
-            canonical_target: Utf8PathBuf::from("/workspace/demo"),
-            canonical_git_root: Utf8PathBuf::from("/workspace/demo"),
-            digest64: "0123456789abcdef".to_string(),
-            hash12: "0123456789ab".to_string(),
-            container_name: "agentbox-demo".to_string(),
-        }
+        WorkspaceIdentityFixture::demo().build()
     }
 }

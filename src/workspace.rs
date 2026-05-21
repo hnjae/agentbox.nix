@@ -25,6 +25,9 @@ pub struct WorkspaceIdentity {
     pub container_name: String,
 }
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub fn resolve_workspace_identity(directory: impl AsRef<Path>) -> Result<WorkspaceIdentity> {
     resolve_workspace_identity_with_git(directory, &Git::new())
 }

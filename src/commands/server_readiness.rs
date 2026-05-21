@@ -231,8 +231,6 @@ fn discover_attach_endpoint_from_runtime_inspect(
 mod tests {
     use std::collections::{BTreeMap, VecDeque};
 
-    use camino::Utf8PathBuf;
-
     use super::*;
     use crate::metadata::{ManagedSessionLabelInput, managed_session_labels};
     use crate::podman::{
@@ -240,6 +238,7 @@ mod tests {
         PodmanPortBinding,
     };
     use crate::runtime::RuntimeHealth;
+    use crate::workspace::test_support::WorkspaceIdentityFixture;
 
     #[test]
     fn readiness_waiter_retries_until_inspect_endpoint_is_ready() {
@@ -376,16 +375,7 @@ mod tests {
     }
 
     fn workspace() -> WorkspaceIdentity {
-        WorkspaceIdentity {
-            requested_target: Utf8PathBuf::from("/workspace/demo"),
-            absolute_target: Utf8PathBuf::from("/workspace/demo"),
-            canonical_target: Utf8PathBuf::from("/workspace/demo"),
-            canonical_git_root: Utf8PathBuf::from("/workspace/demo"),
-            digest64: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-                .to_string(),
-            hash12: "0123456789ab".to_string(),
-            container_name: "agentbox-demo".to_string(),
-        }
+        WorkspaceIdentityFixture::demo().build()
     }
 
     fn endpoint() -> AttachEndpoint {
