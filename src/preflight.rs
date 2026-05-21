@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 mod check;
+mod mounts;
 mod path;
 mod snapshot;
 
 pub use check::{
     PreflightReport, check_host_prerequisites_for_runtime, check_host_prerequisites_with_snapshot,
-    required_host_mount_destinations,
 };
+pub use mounts::required_host_mount_destinations;
 pub use snapshot::{
     HostDirectoryPreflightSnapshot, HostPreflightSnapshot, NixConfigPreflightSnapshot,
     NixCustomConfPreflightSnapshot, NixPreflightSnapshot, PreflightSnapshot,

@@ -3,12 +3,12 @@
 
 use camino::Utf8Path;
 
-use crate::runtime::{RuntimeHostStateMount, RuntimeHostStateSource, RuntimeKind, RuntimeMount};
+use crate::runtime::{RuntimeKind, RuntimeMount};
 use crate::{Error, Result};
 
 use super::{
-    ETC_NIX_DESTINATION, ETC_STATIC_NIX_DESTINATION, HostDirectoryPreflightSnapshot,
-    NIX_CLIENT_DESTINATION, NIX_DAEMON_SOCKET_PATH, NIX_STORE_DESTINATION, PreflightSnapshot,
+    NIX_DAEMON_SOCKET_PATH, PreflightSnapshot,
+    mounts::{host_nix_mounts, runtime_mounts},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,7 +39,7 @@ impl PreflightCheck<'_> {
         self.validate_nix_daemon()?;
         let nix_client_source = self.nix_client_source()?;
         self.validate_nix_config()?;
-        let runtime_mounts = self.runtime_mounts()?;
+        let runtime_mounts = runtime_mounts(self.snapshot, self.runtime)?;
 
         Ok(PreflightReport {
             host_nix_mounts: host_nix_mounts(
@@ -107,154 +107,4 @@ impl PreflightCheck<'_> {
 
         Ok(())
     }
-
-    fn runtime_mounts(&self) -> Result<Vec<RuntimeMount>> {
-        self.runtime
-            .host_state_mounts()
-            .iter()
-            .map(|spec| {
-                let state = self.host_state_snapshot(spec)?;
-                HostStateMountRequirement {
-                    runtime: self.runtime,
-                    spec,
-                    state,
-                }
-                .validate()
-            })
-            .collect()
-    }
-
-    fn host_state_snapshot(
-        &self,
-        spec: &RuntimeHostStateMount,
-    ) -> Result<&HostDirectoryPreflightSnapshot> {
-        self.snapshot
-            .host
-            .runtime_state
-            .get(spec.destination)
-            .ok_or_else(|| {
-                Error::msg(format!(
-                    "missing preflight snapshot for runtime host-state mount `{}`",
-                    spec.destination
-                ))
-            })
-    }
-}
-
-struct HostStateMountRequirement<'a> {
-    runtime: RuntimeKind,
-    spec: &'a RuntimeHostStateMount,
-    state: &'a HostDirectoryPreflightSnapshot,
-}
-
-impl<'a> HostStateMountRequirement<'a> {
-    fn validate(self) -> Result<RuntimeMount> {
-        let Some(source) = self.state.source.as_ref() else {
-            return Err(self.missing_source_error());
-        };
-
-        if !self.state.exists {
-            let source_expression = self.spec.source_expression();
-            return Err(Error::msg(format!(
-                "Missing host {} {} directory: {source}. Run `{}` on the host first so {} exists, then retry `agentbox run --runtime {}`.",
-                self.spec.product_name,
-                self.spec.description,
-                self.runtime,
-                source_expression,
-                self.runtime,
-            )));
-        }
-
-        if !self.state.is_directory {
-            return Err(Error::msg(format!(
-                "Host {} {} path is not a directory: {source}",
-                self.spec.product_name, self.spec.description,
-            )));
-        }
-
-        if !self.state.readable || !self.state.writable || !self.state.searchable {
-            return Err(Error::msg(format!(
-                "Host {} {} directory is not readable and writable: {source}",
-                self.spec.product_name, self.spec.description,
-            )));
-        }
-
-        Ok(RuntimeMount::bind(
-            source.to_string(),
-            self.spec.destination,
-        ))
-    }
-
-    fn missing_source_error(&self) -> Error {
-        let source_expression = self.spec.source_expression();
-        match self.spec.source {
-            RuntimeHostStateSource::HomeOnly { .. } => Error::msg(format!(
-                "`HOME` is not set; cannot locate host {} {} directory {} for `run --runtime {}`",
-                self.spec.product_name, self.spec.description, source_expression, self.runtime,
-            )),
-            RuntimeHostStateSource::XdgOrHome { .. } => Error::msg(format!(
-                "Cannot locate host {} {} directory {} for `run --runtime {}`; set `HOME` or the matching XDG environment variable, then retry.",
-                self.spec.product_name, self.spec.description, source_expression, self.runtime,
-            )),
-        }
-    }
-}
-
-const HOST_NIX_MOUNTS: &[HostNixMountSpec] = &[
-    HostNixMountSpec::SamePath(NIX_STORE_DESTINATION),
-    HostNixMountSpec::NixClient(NIX_CLIENT_DESTINATION),
-    HostNixMountSpec::SamePath(ETC_NIX_DESTINATION),
-    HostNixMountSpec::StaticNix(ETC_STATIC_NIX_DESTINATION),
-];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HostNixMountSpec {
-    SamePath(&'static str),
-    NixClient(&'static str),
-    StaticNix(&'static str),
-}
-
-impl HostNixMountSpec {
-    fn mount(self, nix_client_source: &Utf8Path) -> RuntimeMount {
-        match self {
-            Self::SamePath(path) | Self::StaticNix(path) => {
-                RuntimeMount::read_only_bind(path, path)
-            }
-            Self::NixClient(destination) => {
-                RuntimeMount::read_only_bind(nix_client_source.to_string(), destination)
-            }
-        }
-    }
-
-    fn is_included(self, include_static_nix_mount: bool) -> bool {
-        !matches!(self, Self::StaticNix(_)) || include_static_nix_mount
-    }
-
-    fn destination(self) -> &'static str {
-        match self {
-            Self::SamePath(destination)
-            | Self::NixClient(destination)
-            | Self::StaticNix(destination) => destination,
-        }
-    }
-}
-
-fn host_nix_mounts(
-    nix_client_source: &Utf8Path,
-    include_static_nix_mount: bool,
-) -> Vec<RuntimeMount> {
-    HOST_NIX_MOUNTS
-        .iter()
-        .copied()
-        .filter(|mount| mount.is_included(include_static_nix_mount))
-        .map(|mount| mount.mount(nix_client_source))
-        .collect()
-}
-
-pub fn required_host_mount_destinations() -> Vec<&'static str> {
-    HOST_NIX_MOUNTS
-        .iter()
-        .copied()
-        .map(HostNixMountSpec::destination)
-        .collect()
 }
