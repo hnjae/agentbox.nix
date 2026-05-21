@@ -96,11 +96,11 @@ impl ResourceKind {
 }
 
 impl CleanResource {
-    fn image(name: impl Into<String>) -> Self {
+    pub(super) fn image(name: impl Into<String>) -> Self {
         Self::new(ResourceKind::Image, name)
     }
 
-    fn volume(name: impl Into<String>) -> Self {
+    pub(super) fn volume(name: impl Into<String>) -> Self {
         Self::new(ResourceKind::Volume, name)
     }
 
@@ -121,11 +121,11 @@ impl CleanResource {
 }
 
 impl CleanCandidate {
-    fn default_runtime_image(runtime: RuntimeKind, resource: CleanResource) -> Self {
+    pub(super) fn default_runtime_image(runtime: RuntimeKind, resource: CleanResource) -> Self {
         Self::DefaultRuntimeImage { runtime, resource }
     }
 
-    fn cache_volume(resource: CleanResource) -> Self {
+    pub(super) fn cache_volume(resource: CleanResource) -> Self {
         Self::CacheVolume { resource }
     }
 
