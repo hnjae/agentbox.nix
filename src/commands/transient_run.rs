@@ -10,7 +10,9 @@ use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::container_cleanup::{cleanup_transient_container, combine_error_with_cleanup_result};
-use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
+use super::detached_server::{
+    DetachedServerContext, DetachedServerLifecycle, launch_detached_server,
+};
 use super::exit_status::CommandExitFailure;
 use super::launch_policy::{CommandInterrupt, ContainerLogContext, error_with_container_logs};
 use super::runtime_command::{host_client_status_error, run_host_runtime_client_status};
@@ -42,11 +44,8 @@ impl<'a> TransientRunLaunch<'a> {
     pub(super) fn execute(self) -> Result<()> {
         let transient = TransientRun::new(self.podman, self.workspace);
         let ready_server = launch_detached_server(
-            self.podman,
-            self.workspace,
-            self.runtime,
-            self.run_spec,
-            TransientServerLifecycle { transient },
+            DetachedServerContext::new(self.podman, self.workspace, self.runtime, self.run_spec),
+            TransientServerLifecycle,
         )?;
         let endpoint = ready_server.endpoint();
 
@@ -72,14 +71,6 @@ struct TransientRun<'a> {
 impl<'a> TransientRun<'a> {
     fn new(podman: &'a Podman, workspace: &'a WorkspaceIdentity) -> Self {
         Self { podman, workspace }
-    }
-
-    fn podman(self) -> &'a Podman {
-        self.podman
-    }
-
-    fn workspace(self) -> &'a WorkspaceIdentity {
-        self.workspace
     }
 
     fn check_interrupted(self, interrupt: &CommandInterrupt) -> Result<()> {
@@ -135,11 +126,9 @@ impl<'a> TransientRun<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct TransientServerLifecycle<'a> {
-    transient: TransientRun<'a>,
-}
+struct TransientServerLifecycle;
 
-impl DetachedServerLifecycle for TransientServerLifecycle<'_> {
+impl DetachedServerLifecycle for TransientServerLifecycle {
     fn command_name(&self) -> &'static str {
         "run"
     }
@@ -152,26 +141,30 @@ impl DetachedServerLifecycle for TransientServerLifecycle<'_> {
         ServerEndpointContext::TransientRunContainer
     }
 
-    fn check_interrupted(&self, interrupt: &CommandInterrupt) -> Result<()> {
-        self.transient.check_interrupted(interrupt)
+    fn check_interrupted(
+        &self,
+        context: DetachedServerContext<'_>,
+        interrupt: &CommandInterrupt,
+    ) -> Result<()> {
+        TransientRun::new(context.podman(), context.workspace()).check_interrupted(interrupt)
     }
 
-    fn run_detached_error(&self, error: Error) -> Error {
+    fn run_detached_error(&self, context: DetachedServerContext<'_>, error: Error) -> Error {
         Error::msg(format!(
             "failed to start transient run container `{}` for `{}`: {error}",
-            self.transient.workspace().container_name,
-            self.transient.workspace().canonical_git_root,
+            context.workspace().container_name,
+            context.workspace().canonical_git_root,
         ))
     }
 
-    fn readiness_error(&self, error: Error) -> Error {
-        let workspace = self.transient.workspace();
+    fn readiness_error(&self, context: DetachedServerContext<'_>, error: Error) -> Error {
+        let transient = TransientRun::new(context.podman(), context.workspace());
         let error = error_with_container_logs(
-            self.transient.podman(),
-            workspace,
+            context.podman(),
+            context.workspace(),
             ContainerLogContext::TransientRun,
             error,
         );
-        self.transient.with_cleanup_result(error)
+        transient.with_cleanup_result(error)
     }
 }

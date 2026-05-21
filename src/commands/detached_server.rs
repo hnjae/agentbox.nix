@@ -19,11 +19,63 @@ pub(super) trait DetachedServerLifecycle {
 
     fn readiness_context(&self) -> ServerEndpointContext;
 
-    fn check_interrupted(&self, interrupt: &CommandInterrupt) -> Result<()>;
+    fn check_interrupted(
+        &self,
+        context: DetachedServerContext<'_>,
+        interrupt: &CommandInterrupt,
+    ) -> Result<()>;
 
-    fn run_detached_error(&self, error: crate::Error) -> crate::Error;
+    fn run_detached_error(
+        &self,
+        context: DetachedServerContext<'_>,
+        error: crate::Error,
+    ) -> crate::Error;
 
-    fn readiness_error(&self, error: crate::Error) -> crate::Error;
+    fn readiness_error(
+        &self,
+        context: DetachedServerContext<'_>,
+        error: crate::Error,
+    ) -> crate::Error;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct DetachedServerContext<'a> {
+    podman: &'a Podman,
+    workspace: &'a WorkspaceIdentity,
+    runtime: RuntimeKind,
+    run_spec: &'a RuntimeRunSpec,
+}
+
+impl<'a> DetachedServerContext<'a> {
+    pub(super) fn new(
+        podman: &'a Podman,
+        workspace: &'a WorkspaceIdentity,
+        runtime: RuntimeKind,
+        run_spec: &'a RuntimeRunSpec,
+    ) -> Self {
+        Self {
+            podman,
+            workspace,
+            runtime,
+            run_spec,
+        }
+    }
+
+    pub(super) fn podman(self) -> &'a Podman {
+        self.podman
+    }
+
+    pub(super) fn workspace(self) -> &'a WorkspaceIdentity {
+        self.workspace
+    }
+
+    pub(super) fn runtime(self) -> RuntimeKind {
+        self.runtime
+    }
+
+    pub(super) fn run_spec(self) -> &'a RuntimeRunSpec {
+        self.run_spec
+    }
 }
 
 pub(super) struct ReadyDetachedServer {
@@ -46,10 +98,7 @@ impl ReadyDetachedServer {
 }
 
 pub(super) fn launch_detached_server<L>(
-    podman: &Podman,
-    workspace: &WorkspaceIdentity,
-    runtime: RuntimeKind,
-    run_spec: &RuntimeRunSpec,
+    context: DetachedServerContext<'_>,
     lifecycle: L,
 ) -> Result<ReadyDetachedServer>
 where
@@ -60,35 +109,41 @@ where
     diagnostic::info(format!(
         "starting {} `{}` for `{}`",
         lifecycle.launch_description(),
-        workspace.container_name,
-        runtime
+        context.workspace().container_name,
+        context.runtime()
     ));
-    if let Err(error) = podman.run_detached(&workspace.container_name, run_spec) {
-        lifecycle.check_interrupted(&interrupt)?;
-        return Err(lifecycle.run_detached_error(error));
+    if let Err(error) = context
+        .podman()
+        .run_detached(&context.workspace().container_name, context.run_spec())
+    {
+        lifecycle.check_interrupted(context, &interrupt)?;
+        return Err(lifecycle.run_detached_error(context, error));
     }
-    lifecycle.check_interrupted(&interrupt)?;
+    lifecycle.check_interrupted(context, &interrupt)?;
 
-    diagnostic::info(format!("waiting for `{runtime}` runtime server"));
+    diagnostic::info(format!(
+        "waiting for `{}` runtime server",
+        context.runtime()
+    ));
     let endpoint = match wait_for_server_endpoint(
-        podman,
-        workspace,
-        runtime,
+        context.podman(),
+        context.workspace(),
+        context.runtime(),
         lifecycle.readiness_context(),
         || interrupt.interrupted(),
     ) {
         Ok(ServerEndpointWait::Ready(endpoint)) => endpoint,
         Ok(ServerEndpointWait::Interrupted) => {
-            lifecycle.check_interrupted(&interrupt)?;
+            lifecycle.check_interrupted(context, &interrupt)?;
             return Err(crate::Error::msg(
                 "runtime server readiness wait was interrupted",
             ));
         }
         Err(error) => {
-            return Err(lifecycle.readiness_error(error));
+            return Err(lifecycle.readiness_error(context, error));
         }
     };
-    lifecycle.check_interrupted(&interrupt)?;
+    lifecycle.check_interrupted(context, &interrupt)?;
 
     Ok(ReadyDetachedServer {
         endpoint,

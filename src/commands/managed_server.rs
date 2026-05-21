@@ -9,7 +9,9 @@ use crate::session::classify_create_error_or_else;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
+use super::detached_server::{
+    DetachedServerContext, DetachedServerLifecycle, launch_detached_server,
+};
 use super::launch_policy::{CommandInterrupt, ContainerLogContext, error_with_container_logs};
 use super::runtime_command::run_host_runtime_client;
 use super::server_readiness::ServerEndpointContext;
@@ -39,16 +41,8 @@ where
     P: ManagedServerLaunchPolicy,
 {
     launch_detached_server(
-        podman,
-        workspace,
-        runtime,
-        run_spec,
-        ManagedServerLifecycle {
-            podman,
-            workspace,
-            run_spec,
-            policy,
-        },
+        DetachedServerContext::new(podman, workspace, runtime, run_spec),
+        ManagedServerLifecycle { policy },
     )
     .map(|ready| ready.into_endpoint())
 }
@@ -210,14 +204,11 @@ impl ManagedServerCompletionKind {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ManagedServerLifecycle<'a, P> {
-    podman: &'a Podman,
-    workspace: &'a WorkspaceIdentity,
-    run_spec: &'a RuntimeRunSpec,
+struct ManagedServerLifecycle<P> {
     policy: P,
 }
 
-impl<P> DetachedServerLifecycle for ManagedServerLifecycle<'_, P>
+impl<P> DetachedServerLifecycle for ManagedServerLifecycle<P>
 where
     P: ManagedServerLaunchPolicy,
 {
@@ -233,25 +224,29 @@ where
         ServerEndpointContext::ManagedSession
     }
 
-    fn check_interrupted(&self, interrupt: &CommandInterrupt) -> Result<()> {
+    fn check_interrupted(
+        &self,
+        _context: DetachedServerContext<'_>,
+        interrupt: &CommandInterrupt,
+    ) -> Result<()> {
         self.policy.check_interrupted(interrupt)
     }
 
-    fn run_detached_error(&self, error: Error) -> Error {
+    fn run_detached_error(&self, context: DetachedServerContext<'_>, error: Error) -> Error {
         let error = classify_managed_server_create_error(
-            self.podman,
-            self.workspace,
-            self.run_spec,
+            context.podman(),
+            context.workspace(),
+            context.run_spec(),
             self.policy.create_action(),
             error,
         );
         self.policy.wrap_error(error)
     }
 
-    fn readiness_error(&self, error: Error) -> Error {
+    fn readiness_error(&self, context: DetachedServerContext<'_>, error: Error) -> Error {
         let error = error_with_container_logs(
-            self.podman,
-            self.workspace,
+            context.podman(),
+            context.workspace(),
             ContainerLogContext::ManagedSession,
             error,
         );
