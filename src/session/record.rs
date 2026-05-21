@@ -123,11 +123,6 @@ impl SessionRecord {
         self.status.is_running()
     }
 
-    #[cfg(test)]
-    pub(crate) fn metadata_mut(&mut self) -> &mut SessionMetadata {
-        &mut self.metadata
-    }
-
     pub(crate) fn mark_duplicate(&mut self) {
         self.status = SessionStatus::Duplicate;
     }

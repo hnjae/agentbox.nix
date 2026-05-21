@@ -79,14 +79,9 @@ impl<'a> SessionTargetCandidate<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::metadata::{
-        AgentboxContainerKind, LABEL_ATTACH_SCHEME, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH,
-        LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME,
-    };
-    use crate::runtime::AttachEndpoint;
-    use crate::session::{SessionMetadata, SessionRecordInput, SessionStatus};
+    use crate::metadata::{LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME};
+    use crate::session::SessionStatus;
+    use crate::session::test_support::SessionRecordFixture;
 
     use super::*;
 
@@ -146,81 +141,40 @@ mod tests {
     }
 
     fn managed_running_session(stable_id: &str) -> SessionRecord {
-        session(
-            AgentboxContainerKind::Managed,
-            stable_id,
-            SessionStatus::Running,
-        )
+        SessionRecordFixture::managed(stable_id).build()
     }
 
     fn transient_session(stable_id: &str) -> SessionRecord {
-        session(
-            AgentboxContainerKind::Run,
-            stable_id,
-            SessionStatus::Running,
-        )
+        SessionRecordFixture::transient_run(stable_id).build()
     }
 
     fn failed_session(stable_id: &str) -> SessionRecord {
-        session(
-            AgentboxContainerKind::Managed,
-            stable_id,
-            SessionStatus::failed_unknown(),
-        )
+        SessionRecordFixture::managed(stable_id)
+            .status(SessionStatus::failed_unknown())
+            .build()
     }
 
     fn managed_without_endpoint(stable_id: &str) -> SessionRecord {
-        managed_running_session(stable_id).with_attach_endpoint(None)
+        SessionRecordFixture::managed(stable_id)
+            .without_attach_endpoint()
+            .build()
     }
 
     fn managed_without_runtime(stable_id: &str) -> SessionRecord {
-        let mut session = managed_running_session(stable_id);
-        session.metadata_mut().labels.remove(LABEL_RUNTIME);
-        session
+        SessionRecordFixture::managed(stable_id)
+            .without_label(LABEL_RUNTIME)
+            .build()
     }
 
     fn managed_without_launch_directory(stable_id: &str) -> SessionRecord {
-        let mut session = managed_running_session(stable_id);
-        session.metadata_mut().labels.remove(LABEL_LAUNCH_DIRECTORY);
-        session
+        SessionRecordFixture::managed(stable_id)
+            .without_label(LABEL_LAUNCH_DIRECTORY)
+            .build()
     }
 
     fn session_without_stable_id() -> SessionRecord {
-        let mut session = managed_running_session("dddddd444444");
-        session.metadata_mut().labels.remove(LABEL_GIT_ROOT_HASH);
-        session
-    }
-
-    fn session(
-        container_kind: AgentboxContainerKind,
-        stable_id: &str,
-        status: SessionStatus,
-    ) -> SessionRecord {
-        let labels = BTreeMap::from([
-            (
-                LABEL_GIT_ROOT.to_string(),
-                format!("/workspace/{stable_id}"),
-            ),
-            (LABEL_GIT_ROOT_HASH.to_string(), stable_id.to_string()),
-            (LABEL_RUNTIME.to_string(), "opencode".to_string()),
-            (
-                LABEL_LAUNCH_DIRECTORY.to_string(),
-                format!("/workspace/{stable_id}"),
-            ),
-            (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
-        ]);
-        SessionRecord::new(SessionRecordInput {
-            container_id: format!("{stable_id}-id"),
-            container_name: format!("agentbox-{stable_id}"),
-            container_kind,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: Some(AttachEndpoint {
-                scheme: "http".to_string(),
-                host_ip: "127.0.0.1".to_string(),
-                host_port: 4096,
-            }),
-            container_running: true,
-            status,
-        })
+        SessionRecordFixture::managed("dddddd444444")
+            .without_label(LABEL_GIT_ROOT_HASH)
+            .build()
     }
 }

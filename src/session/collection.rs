@@ -75,10 +75,9 @@ fn compare_sessions_by_identity(left: &SessionRecord, right: &SessionRecord) -> 
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::metadata::{AgentboxContainerKind, LABEL_GIT_ROOT};
-    use crate::session::{SessionMetadata, SessionRecordInput, SessionStatus};
+    use crate::metadata::LABEL_GIT_ROOT_HASH;
+    use crate::session::SessionStatus;
+    use crate::session::test_support::SessionRecordFixture;
 
     use super::*;
 
@@ -139,18 +138,14 @@ mod tests {
     }
 
     fn session(root: Option<&str>, container_name: &str) -> SessionRecord {
-        let labels = root.map_or_else(BTreeMap::new, |root| {
-            BTreeMap::from([(LABEL_GIT_ROOT.to_string(), root.to_string())])
-        });
-
-        SessionRecord::new(SessionRecordInput {
-            container_id: format!("{container_name}-id"),
-            container_name: container_name.to_string(),
-            container_kind: AgentboxContainerKind::Managed,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: None,
-            container_running: false,
-            status: SessionStatus::failed_unknown(),
-        })
+        let fixture = SessionRecordFixture::managed(container_name)
+            .named(container_name)
+            .without_git_root()
+            .without_label(LABEL_GIT_ROOT_HASH)
+            .status(SessionStatus::failed_unknown());
+        match root {
+            Some(root) => fixture.root(root).build(),
+            None => fixture.build(),
+        }
     }
 }

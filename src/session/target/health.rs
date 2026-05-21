@@ -57,10 +57,8 @@ fn select_stable_id_health_session<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::metadata::{AgentboxContainerKind, LABEL_GIT_ROOT_HASH};
-    use crate::session::{SessionMetadata, SessionRecordInput, SessionStatus};
+    use crate::session::SessionStatus;
+    use crate::session::test_support::SessionRecordFixture;
 
     use super::*;
 
@@ -135,16 +133,9 @@ mod tests {
     }
 
     fn session(container_name: &str, stable_id: &str, status: SessionStatus) -> SessionRecord {
-        let labels = BTreeMap::from([(LABEL_GIT_ROOT_HASH.to_string(), stable_id.to_string())]);
-
-        SessionRecord::new(SessionRecordInput {
-            container_id: format!("{container_name}-id"),
-            container_name: container_name.to_string(),
-            container_kind: AgentboxContainerKind::Managed,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: None,
-            container_running: status == SessionStatus::Running,
-            status,
-        })
+        SessionRecordFixture::managed(stable_id)
+            .named(container_name)
+            .status(status)
+            .build()
     }
 }

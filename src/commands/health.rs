@@ -146,27 +146,23 @@ impl<'row, 'session> From<&'row HealthRow<'session>> for HealthJsonRow<'session,
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use serde_json::Value;
 
-    use crate::metadata::AgentboxContainerKind;
+    use crate::metadata::{LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_RUNTIME};
     use crate::runtime::{AttachEndpoint, RuntimeHealth, RuntimeKind};
-    use crate::session::{SessionMetadata, SessionRecord, SessionRecordInput, SessionStatus};
+    use crate::session::test_support::SessionRecordFixture;
 
     use super::*;
 
     #[test]
     fn health_rendering_uses_shared_session_display_fallbacks() {
-        let session = SessionRecord::new(SessionRecordInput {
-            container_id: "container-id".to_string(),
-            container_name: "broken-container".to_string(),
-            container_kind: AgentboxContainerKind::Managed,
-            metadata: SessionMetadata::from_labels(&BTreeMap::new()),
-            attach_endpoint: None,
-            container_running: true,
-            status: SessionStatus::Running,
-        });
+        let session = SessionRecordFixture::managed("abcdef123456")
+            .named("broken-container")
+            .without_label(LABEL_GIT_ROOT)
+            .without_label(LABEL_GIT_ROOT_HASH)
+            .without_label(LABEL_RUNTIME)
+            .without_attach_endpoint()
+            .build();
 
         let rows = health_rows(vec![&session], &UnusedProbe);
         let table = render_table(&rows);

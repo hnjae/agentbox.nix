@@ -141,10 +141,7 @@ fn require_single_restart_target_match(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::metadata::{AgentboxContainerKind, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH};
-    use crate::session::{SessionMetadata, SessionRecordInput, SessionStatus};
+    use crate::session::test_support::SessionRecordFixture;
 
     use super::*;
 
@@ -216,19 +213,10 @@ mod tests {
     }
 
     fn session(canonical_git_root: Option<&str>, stable_id: &str) -> SessionRecord {
-        let mut labels = BTreeMap::from([(LABEL_GIT_ROOT_HASH.to_string(), stable_id.to_string())]);
-        if let Some(canonical_git_root) = canonical_git_root {
-            labels.insert(LABEL_GIT_ROOT.to_string(), canonical_git_root.to_string());
+        let fixture = SessionRecordFixture::managed(stable_id);
+        match canonical_git_root {
+            Some(root) => fixture.root(root).build(),
+            None => fixture.without_git_root().build(),
         }
-
-        SessionRecord::new(SessionRecordInput {
-            container_id: format!("{stable_id}-id"),
-            container_name: format!("agentbox-{stable_id}"),
-            container_kind: AgentboxContainerKind::Managed,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: None,
-            container_running: true,
-            status: SessionStatus::Running,
-        })
     }
 }

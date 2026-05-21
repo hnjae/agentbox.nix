@@ -113,27 +113,18 @@ fn session_launch_directory(session: &SessionRecord) -> Result<&Utf8Path> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::metadata::{
-        LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME,
-    };
-    use crate::session::{SessionMetadata, SessionRecordInput};
+    use crate::metadata::{LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME};
+    use crate::session::test_support::SessionRecordFixture;
 
     use super::*;
 
     #[test]
     fn running_managed_session_returns_restart_metadata() {
-        let session = session(
-            AgentboxContainerKind::Managed,
-            SessionStatus::Running,
-            &[
-                (LABEL_GIT_ROOT, "/workspace/project"),
-                (LABEL_GIT_ROOT_HASH, "abcdef123456"),
-                (LABEL_RUNTIME, "opencode"),
-                (LABEL_LAUNCH_DIRECTORY, "/workspace/project/nested"),
-            ],
-        );
+        let session = SessionRecordFixture::managed("abcdef123456")
+            .named("agentbox-example")
+            .root("/workspace/project")
+            .label(LABEL_LAUNCH_DIRECTORY, "/workspace/project/nested")
+            .build();
 
         let restartable = prepare_restart_session("/workspace/project", &session).unwrap();
 
@@ -147,11 +138,10 @@ mod tests {
 
     #[test]
     fn transient_run_container_is_not_restartable() {
-        let session = session(
-            AgentboxContainerKind::Run,
-            SessionStatus::Running,
-            &[(LABEL_GIT_ROOT_HASH, "abcdef123456")],
-        );
+        let session = SessionRecordFixture::transient_run("abcdef123456")
+            .named("agentbox-example")
+            .without_git_root()
+            .build();
 
         let error = prepare_restart_session("abcdef", &session).unwrap_err();
 
@@ -161,15 +151,11 @@ mod tests {
 
     #[test]
     fn running_session_requires_runtime_label() {
-        let session = session(
-            AgentboxContainerKind::Managed,
-            SessionStatus::Running,
-            &[
-                (LABEL_GIT_ROOT, "/workspace/project"),
-                (LABEL_GIT_ROOT_HASH, "abcdef123456"),
-                (LABEL_LAUNCH_DIRECTORY, "/workspace/project"),
-            ],
-        );
+        let session = SessionRecordFixture::managed("abcdef123456")
+            .named("agentbox-example")
+            .root("/workspace/project")
+            .without_label(LABEL_RUNTIME)
+            .build();
 
         let error = prepare_restart_session("/workspace/project", &session).unwrap_err();
 
@@ -182,35 +168,14 @@ mod tests {
 
     #[test]
     fn failed_session_without_git_root_reports_unrecoverable_root() {
-        let session = session(
-            AgentboxContainerKind::Managed,
-            SessionStatus::failed_unknown(),
-            &[(LABEL_GIT_ROOT_HASH, "abcdef123456")],
-        );
+        let session = SessionRecordFixture::managed("abcdef123456")
+            .named("agentbox-example")
+            .without_git_root()
+            .status(SessionStatus::failed_unknown())
+            .build();
 
         let error = prepare_restart_session("abcdef", &session).unwrap_err();
 
         assert!(error.to_string().contains("no recoverable git-root label"));
-    }
-
-    fn session(
-        container_kind: AgentboxContainerKind,
-        status: SessionStatus,
-        labels: &[(&str, &str)],
-    ) -> SessionRecord {
-        let labels = labels
-            .iter()
-            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
-            .collect::<BTreeMap<_, _>>();
-
-        SessionRecord::new(SessionRecordInput {
-            container_id: "container-id".to_string(),
-            container_name: "agentbox-example".to_string(),
-            container_kind,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: None,
-            container_running: status == SessionStatus::Running,
-            status,
-        })
     }
 }

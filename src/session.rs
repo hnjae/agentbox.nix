@@ -14,6 +14,8 @@ mod selection;
 mod status;
 mod target;
 mod target_candidate;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use collection::group_sessions_by_git_root;
 pub(crate) use collection::{
