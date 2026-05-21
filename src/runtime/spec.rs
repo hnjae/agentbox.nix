@@ -109,24 +109,8 @@ pub struct RuntimeCreateSpec {
 }
 
 impl RuntimeCreateSpec {
-    pub fn new(
-        image: impl Into<String>,
-        labels: BTreeMap<String, String>,
-        mounts: Vec<RuntimeMount>,
-        command: impl Into<Vec<String>>,
-        default_env: BTreeMap<String, String>,
-        network_enabled: bool,
-        published_ports: Vec<String>,
-    ) -> Self {
-        Self {
-            image: image.into(),
-            labels,
-            mounts,
-            command: command.into(),
-            default_env,
-            network_enabled,
-            published_ports,
-        }
+    pub fn builder(image: impl Into<String>) -> RuntimeCreateSpecBuilder {
+        RuntimeCreateSpecBuilder::new(image)
     }
 
     pub fn image(&self) -> &str {
@@ -171,6 +155,73 @@ impl RuntimeCreateSpec {
 
     fn extend_default_env(&mut self, env: BTreeMap<String, String>) {
         self.default_env.extend(env);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeCreateSpecBuilder {
+    image: String,
+    labels: BTreeMap<String, String>,
+    mounts: Vec<RuntimeMount>,
+    command: Vec<String>,
+    default_env: BTreeMap<String, String>,
+    network_enabled: bool,
+    published_ports: Vec<String>,
+}
+
+impl RuntimeCreateSpecBuilder {
+    fn new(image: impl Into<String>) -> Self {
+        Self {
+            image: image.into(),
+            labels: BTreeMap::new(),
+            mounts: Vec::new(),
+            command: Vec::new(),
+            default_env: BTreeMap::new(),
+            network_enabled: true,
+            published_ports: Vec::new(),
+        }
+    }
+
+    pub fn labels(mut self, labels: BTreeMap<String, String>) -> Self {
+        self.labels = labels;
+        self
+    }
+
+    pub fn mounts(mut self, mounts: Vec<RuntimeMount>) -> Self {
+        self.mounts = mounts;
+        self
+    }
+
+    pub fn command(mut self, command: impl Into<Vec<String>>) -> Self {
+        self.command = command.into();
+        self
+    }
+
+    pub fn default_env(mut self, default_env: BTreeMap<String, String>) -> Self {
+        self.default_env = default_env;
+        self
+    }
+
+    pub fn network_enabled(mut self, network_enabled: bool) -> Self {
+        self.network_enabled = network_enabled;
+        self
+    }
+
+    pub fn published_ports(mut self, published_ports: Vec<String>) -> Self {
+        self.published_ports = published_ports;
+        self
+    }
+
+    pub fn build(self) -> RuntimeCreateSpec {
+        RuntimeCreateSpec {
+            image: self.image,
+            labels: self.labels,
+            mounts: self.mounts,
+            command: self.command,
+            default_env: self.default_env,
+            network_enabled: self.network_enabled,
+            published_ports: self.published_ports,
+        }
     }
 }
 
@@ -315,15 +366,17 @@ impl RuntimeKind {
             Vec::new()
         };
 
-        RuntimeCreateSpec::new(
-            image,
-            labels,
-            runtime_mounts_for_workspace(workspace, host_nix_mounts, runtime_mounts),
-            command,
-            self.default_env(),
-            true,
-            published_ports,
-        )
+        RuntimeCreateSpec::builder(image)
+            .labels(labels)
+            .mounts(runtime_mounts_for_workspace(
+                workspace,
+                host_nix_mounts,
+                runtime_mounts,
+            ))
+            .command(command)
+            .default_env(self.default_env())
+            .published_ports(published_ports)
+            .build()
     }
 
     fn default_env(self) -> BTreeMap<String, String> {

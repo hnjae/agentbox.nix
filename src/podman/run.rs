@@ -99,28 +99,30 @@ mod tests {
     #[test]
     fn run_detached_args_are_stable_and_complete() {
         let spec = RuntimeRunSpec::new(
-            RuntimeCreateSpec::new(
-                "localhost/agentbox-opencode:ctx-0123456789abcdef",
-                BTreeMap::from([
+            RuntimeCreateSpec::builder("localhost/agentbox-opencode:ctx-0123456789abcdef")
+                .labels(BTreeMap::from([
                     ("io.agentbox.managed".to_string(), "true".to_string()),
                     ("io.agentbox.runtime".to_string(), "opencode".to_string()),
-                ]),
-                vec![
+                ]))
+                .mounts(vec![
                     RuntimeMount::read_only_bind("/workspace", "/workspace"),
                     RuntimeMount::volume("agentbox-cache", "/home/user"),
-                ],
-                strings([
+                ])
+                .command(strings([
                     "opencode",
                     "serve",
                     "--hostname",
                     "0.0.0.0",
                     "--port",
                     "4096",
-                ]),
-                BTreeMap::from([("NIX_CONFIG".to_string(), "sandbox = false".to_string())]),
-                false,
-                vec!["127.0.0.1::4096".to_string()],
-            ),
+                ]))
+                .default_env(BTreeMap::from([(
+                    "NIX_CONFIG".to_string(),
+                    "sandbox = false".to_string(),
+                )]))
+                .network_enabled(false)
+                .published_ports(vec!["127.0.0.1::4096".to_string()])
+                .build(),
             "/workspace",
         );
 
@@ -167,21 +169,17 @@ mod tests {
     #[test]
     fn run_foreground_args_are_unmanaged_and_interactive() {
         let spec = RuntimeRunSpec::new(
-            RuntimeCreateSpec::new(
-                "localhost/agentbox-opencode:ctx-0123456789abcdef",
-                BTreeMap::new(),
-                vec![
+            RuntimeCreateSpec::builder("localhost/agentbox-opencode:ctx-0123456789abcdef")
+                .mounts(vec![
                     RuntimeMount::read_only_bind("/workspace", "/workspace"),
                     RuntimeMount::volume("agentbox-cache", "/home/user"),
-                ],
-                strings(["opencode"]),
-                BTreeMap::from([(
+                ])
+                .command(strings(["opencode"]))
+                .default_env(BTreeMap::from([(
                     "OPENCODE_CONFIG_CONTENT".to_string(),
                     r#"{"autoupdate":false}"#.to_string(),
-                )]),
-                true,
-                Vec::new(),
-            ),
+                )]))
+                .build(),
             "/workspace",
         );
 

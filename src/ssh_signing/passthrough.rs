@@ -438,15 +438,9 @@ mod tests {
     #[test]
     fn passthrough_applies_mount_and_env_to_run_spec() {
         let mut spec = RuntimeRunSpec::new(
-            RuntimeCreateSpec::new(
-                "image",
-                BTreeMap::new(),
-                Vec::new(),
-                vec!["runtime".to_string()],
-                BTreeMap::new(),
-                true,
-                Vec::new(),
-            ),
+            RuntimeCreateSpec::builder("image")
+                .command(vec!["runtime".to_string()])
+                .build(),
             "/repo",
         );
         let passthrough = SshCommitSigningPassthrough {
