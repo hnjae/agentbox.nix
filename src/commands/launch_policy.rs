@@ -28,10 +28,6 @@ fn runtime_prompt_options() -> Vec<RuntimeKind> {
     runtimes
 }
 
-pub(super) fn exit_code(code: i32) -> Option<u8> {
-    u8::try_from(code).ok()
-}
-
 #[derive(Debug, Clone, Copy)]
 pub(super) enum ContainerLogContext {
     ManagedSession,

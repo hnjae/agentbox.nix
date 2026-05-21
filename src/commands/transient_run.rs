@@ -9,13 +9,10 @@ use crate::runtime::{AttachEndpoint, RuntimeKind, RuntimeRunSpec};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::container_cleanup::{
-    cleanup_transient_container, combine_error_with_cleanup_result, combined_error_message,
-};
+use super::container_cleanup::{cleanup_transient_container, combine_error_with_cleanup_result};
 use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
-use super::launch_policy::{
-    CommandInterrupt, ContainerLogContext, error_with_container_logs, exit_code,
-};
+use super::exit_status::CommandExitFailure;
+use super::launch_policy::{CommandInterrupt, ContainerLogContext, error_with_container_logs};
 use super::runtime_command::{host_client_status_error, run_host_runtime_client_status};
 use super::server_readiness::ServerEndpointContext;
 
@@ -110,25 +107,19 @@ impl<'a> TransientRun<'a> {
     ) -> Result<()> {
         let cleanup = self.cleanup();
         match status {
-            Ok(status) if status.success() => cleanup,
             Ok(status) => {
-                let code = status.code().and_then(exit_code);
-                let error = host_client_status_error(
-                    runtime,
-                    endpoint,
-                    self.workspace.canonical_target.as_ref(),
-                    status,
-                );
-                match code {
-                    Some(code) => match cleanup {
-                        Ok(()) => Err(Error::ExitCode(code)),
-                        Err(cleanup_error) => Err(Error::ExitCodeWithMessage {
-                            code,
-                            message: combined_error_message(&error, &cleanup_error),
-                        }),
-                    },
-                    None => Err(combine_error_with_cleanup_result(error, cleanup)),
-                }
+                let Some(failure) = CommandExitFailure::from_status(status, |status| {
+                    host_client_status_error(
+                        runtime,
+                        endpoint,
+                        self.workspace.canonical_target.as_ref(),
+                        status,
+                    )
+                }) else {
+                    return cleanup;
+                };
+
+                Err(failure.into_error_with_cleanup_result(cleanup))
             }
             Err(error) => Err(combine_error_with_cleanup_result(error, cleanup)),
         }

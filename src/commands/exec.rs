@@ -11,7 +11,7 @@ use crate::{Error, Result};
 use clap::Args;
 
 use super::container_launch::{foreground_launch_request, prepare_runtime_launch};
-use super::launch_policy::exit_code;
+use super::exit_status::CommandExitFailure;
 use super::runtime_command::codex_exec_runtime_command;
 use super::workspace_flow::with_locked_workspace;
 
@@ -51,14 +51,11 @@ pub fn run(args: ExecArgs, verbose: bool) -> Result<()> {
         ));
         let status =
             podman.run_foreground(&workspace.container_name, &preparation.run_spec, use_tty())?;
-        if status.success() {
-            Ok(())
-        } else if let Some(code) = status.code().and_then(exit_code) {
-            Err(Error::ExitCode(code))
-        } else {
-            Err(Error::msg(
-                "foreground Codex exec container exited due to signal",
-            ))
+        match CommandExitFailure::from_status(status, |_| {
+            Error::msg("foreground Codex exec container exited due to signal")
+        }) {
+            None => Ok(()),
+            Some(failure) => Err(failure.into_direct_error()),
         }
     })?;
     Ok(())
