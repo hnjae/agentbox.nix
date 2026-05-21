@@ -63,9 +63,9 @@ fn run_launches_opencode_transient_server_and_host_client() {
     );
     endpoint.wait();
 
-    let log = harness.read_log();
+    let commands = harness.command_log();
     assert_eq!(
-        operation_names(&log),
+        commands.operation_names(),
         [
             "ps",
             "image",
@@ -77,54 +77,61 @@ fn run_launches_opencode_transient_server_and_host_client() {
             "container-exists"
         ]
     );
-    let run = podman_run_command(&log);
+    let build = commands.first("build");
+    let run = commands.first("run");
 
-    assert!(run.contains("lock=held"));
-    assert!(log[2].contains(&format!("-t {image} -f")));
-    assert!(log[2].contains("--build-arg AGENTBOX_RUNTIME=opencode"));
-    assert!(log[2].contains(&format!(
+    run.assert_lock_held();
+    build.assert_args_contain(&format!("-t {image} -f"));
+    build.assert_args_contain("--build-arg AGENTBOX_RUNTIME=opencode");
+    build.assert_args_contain(&format!(
         "--label io.agentbox.image_context_hash={context_hash}"
-    )));
-    assert!(run.contains("--rm"));
-    assert!(run.contains("--detach"));
-    assert!(!run.contains("--interactive"));
-    assert!(!run.contains("--tty"));
-    assert!(run.contains("--publish 127.0.0.1::4096"));
-    assert!(!run.contains("--label io.agentbox.managed=true"));
-    assert!(run.contains("--label io.agentbox.container_kind=transient-run"));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_contain("--rm");
+    run.assert_args_contain("--detach");
+    run.assert_args_do_not_contain("--interactive");
+    run.assert_args_do_not_contain("--tty");
+    run.assert_args_contain("--publish 127.0.0.1::4096");
+    run.assert_args_do_not_contain("--label io.agentbox.managed=true");
+    run.assert_args_contain("--label io.agentbox.container_kind=transient-run");
+    run.assert_args_contain(&format!(
         "--label io.agentbox.git_root={}",
         workspace.canonical_git_root
-    )));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_contain(&format!(
         "--label io.agentbox.git_root_hash={}",
         workspace.hash12
-    )));
-    assert!(run.contains("--label io.agentbox.runtime=opencode"));
-    assert!(run.contains(&format!("--label io.agentbox.image={image}")));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_contain("--label io.agentbox.runtime=opencode");
+    run.assert_args_contain(&format!("--label io.agentbox.image={image}"));
+    run.assert_args_contain(&format!(
         "--label io.agentbox.launch_directory={}",
         workspace.canonical_target
-    )));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_contain(&format!(
         "--label io.agentbox.logical_name={}",
         workspace.container_name
-    )));
-    assert!(run.contains("--label io.agentbox.attach_scheme=http"));
-    assert!(run.contains("--label io.agentbox.container_port=4096"));
-    assert!(run.contains("--label io.agentbox.container_listen_ip=0.0.0.0"));
-    assert!(run.contains(&format!("--name {}", workspace.container_name)));
-    assert!(run.contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_contain("--label io.agentbox.attach_scheme=http");
+    run.assert_args_contain("--label io.agentbox.container_port=4096");
+    run.assert_args_contain("--label io.agentbox.container_listen_ip=0.0.0.0");
+    run.assert_args_contain(&format!("--name {}", workspace.container_name));
+    run.assert_args_contain(&format!("--workdir {}", workspace.canonical_target));
+    run.assert_args_contain(&format!(
         "type=volume,src={},dst=/home/user,U",
         workspace.container_name
-    )));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_contain(&format!(
         " {image} opencode serve --hostname 0.0.0.0 --port 4096"
-    )));
-    assert!(log[5].contains(&format!("attach {expected_endpoint}")));
-    assert!(log[5].contains(&format!("cwd={}", workspace.canonical_target)));
-    assert!(log[6].contains(&format!("--ignore {}", workspace.container_name)));
+    ));
+    commands
+        .entry(5)
+        .assert_raw_contains(&format!("attach {expected_endpoint}"));
+    commands
+        .entry(5)
+        .assert_raw_contains(&format!("cwd={}", workspace.canonical_target));
+    commands
+        .entry(6)
+        .assert_args_contain(&format!("--ignore {}", workspace.container_name));
 }
 
 #[test]
@@ -715,69 +722,72 @@ fn start_creates_serves_waits_and_suggests_connect_for_a_new_session() {
         );
     endpoint.wait();
 
-    let log = harness.read_log();
+    let commands = harness.command_log();
     assert_eq!(
-        operation_names(&log),
+        commands.operation_names(),
         ["ps", "image", "build", "volume", "run", "inspect"]
     );
 
-    assert!(log[0].contains("lock=held"));
-    assert!(log[1].contains("lock=held"));
-    assert!(log[2].contains("lock=held"));
-    assert!(log[3].contains("lock=held"));
-    assert!(log[4].contains("lock=held"));
-    assert!(log[5].contains("lock=held"));
+    for entry in commands.entries() {
+        entry.assert_lock_held();
+    }
 
-    assert!(log[2].contains(&format!("-t {image} -f")));
-    assert!(log[2].contains("--build-arg AGENTBOX_RUNTIME=opencode"));
-    assert!(log[2].contains("--build-arg OPENCODE_NPM_VERSION=0.99.0"));
-    assert!(log[2].contains("--label io.agentbox.default_runtime_image=true"));
-    assert!(log[2].contains("--label io.agentbox.runtime=opencode"));
-    assert!(log[2].contains(&format!(
+    let build = commands.first("build");
+    build.assert_args_contain(&format!("-t {image} -f"));
+    build.assert_args_contain("--build-arg AGENTBOX_RUNTIME=opencode");
+    build.assert_args_contain("--build-arg OPENCODE_NPM_VERSION=0.99.0");
+    build.assert_args_contain("--label io.agentbox.default_runtime_image=true");
+    build.assert_args_contain("--label io.agentbox.runtime=opencode");
+    build.assert_args_contain(&format!(
         "--label io.agentbox.image_context_hash={context_hash}"
-    )));
-    assert!(log[2].contains("--label io.agentbox.opencode.package=opencode-ai"));
-    assert!(log[2].contains("--label io.agentbox.opencode.version=0.99.0"));
+    ));
+    build.assert_args_contain("--label io.agentbox.opencode.package=opencode-ai");
+    build.assert_args_contain("--label io.agentbox.opencode.version=0.99.0");
 
-    assert!(log[3].contains(&format!("args=exists {}", workspace.container_name)));
-    assert!(log[4].contains("--rm"));
-    assert!(!log[4].contains("--rmi"));
-    assert!(log[4].contains("--detach"));
-    assert_runtime_user_args(&log[4]);
-    assert!(!log[4].contains("--interactive"));
-    assert!(!log[4].contains("--tty"));
-    assert!(log[4].contains(&format!("--label io.agentbox.image={image}")));
-    assert!(log[4].contains("--label io.agentbox.container_kind=managed-session"));
-    assert!(log[4].contains("--label io.agentbox.opencode.version=0.99.0"));
-    assert!(log[4].contains("--label io.agentbox.attach_scheme=http"));
-    assert!(log[4].contains("--label io.agentbox.container_port=4096"));
-    assert!(log[4].contains(&format!(
+    commands
+        .entry(3)
+        .assert_args_contain(&format!("exists {}", workspace.container_name));
+    let run = commands.first("run");
+    run.assert_args_contain("--rm");
+    run.assert_args_do_not_contain("--rmi");
+    run.assert_args_contain("--detach");
+    assert_runtime_user_args(run.raw());
+    run.assert_args_do_not_contain("--interactive");
+    run.assert_args_do_not_contain("--tty");
+    run.assert_args_contain(&format!("--label io.agentbox.image={image}"));
+    run.assert_args_contain("--label io.agentbox.container_kind=managed-session");
+    run.assert_args_contain("--label io.agentbox.opencode.version=0.99.0");
+    run.assert_args_contain("--label io.agentbox.attach_scheme=http");
+    run.assert_args_contain("--label io.agentbox.container_port=4096");
+    run.assert_args_contain(&format!(
         "--label io.agentbox.git_root={}",
         workspace.canonical_git_root
-    )));
-    assert!(log[4].contains(&format!("--name {}", workspace.container_name)));
-    assert!(log[4].contains(&format!("--workdir {}", workspace.canonical_target)));
-    assert!(log[4].contains(&image));
-    assert!(log[4].contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
-    assert!(log[4].contains("--publish 127.0.0.1::4096"));
-    assert!(log[4].contains("--env OPENCODE_CONFIG_CONTENT={\"autoupdate\":false}"));
-    assert!(log[4].contains("--env OPENCODE_PERMISSION={\"*\":\"allow\"}"));
-    assert!(log[4].contains(&format!(
+    ));
+    run.assert_args_contain(&format!("--name {}", workspace.container_name));
+    run.assert_args_contain(&format!("--workdir {}", workspace.canonical_target));
+    run.assert_args_contain(&image);
+    run.assert_args_contain(" opencode serve --hostname 0.0.0.0 --port 4096");
+    run.assert_args_contain("--publish 127.0.0.1::4096");
+    run.assert_args_contain("--env OPENCODE_CONFIG_CONTENT={\"autoupdate\":false}");
+    run.assert_args_contain("--env OPENCODE_PERMISSION={\"*\":\"allow\"}");
+    run.assert_args_contain(&format!(
         "type=bind,src={},dst=/home/user/.config/opencode",
         harness.home_path().join(".config/opencode").display()
-    )));
-    assert!(log[4].contains(&format!(
+    ));
+    run.assert_args_contain(&format!(
         "type=bind,src={},dst=/home/user/.local/share/opencode",
         harness.home_path().join(".local/share/opencode").display()
-    )));
-    assert!(log[4].contains("type=volume"));
-    assert!(log[4].contains("dst=/home/user,U"));
-    assert!(!log[4].contains("direnv exec ."));
-    assert!(!log[4].contains("sleep infinity"));
-    assert!(!log.iter().any(|line| line.starts_with("stop ")));
+    ));
+    run.assert_args_contain("type=volume");
+    run.assert_args_contain("dst=/home/user,U");
+    run.assert_args_do_not_contain("direnv exec .");
+    run.assert_args_do_not_contain("sleep infinity");
+    assert!(!commands.contains_operation("stop"));
     assert!(
-        !log.iter()
-            .any(|line| line.starts_with("volume ") && line.contains("args=rm "))
+        !commands
+            .entries()
+            .iter()
+            .any(|entry| entry.operation() == "volume" && entry.args().contains("rm "))
     );
 
     let state_path = harness
@@ -1013,37 +1023,39 @@ fn start_launches_codex_server_in_yolo_mode() {
         );
     endpoint.wait();
 
-    let log = harness.read_log();
+    let commands = harness.command_log();
     assert_eq!(
-        operation_names(&log),
+        commands.operation_names(),
         ["ps", "image", "build", "volume", "run", "inspect"]
     );
 
-    let run = log.iter().find(|line| line.starts_with("run ")).unwrap();
-    assert!(log[2].contains(&format!("-t {image} -f")));
-    assert!(log[2].contains("--build-arg AGENTBOX_RUNTIME=codex"));
-    assert!(log[2].contains("--build-arg CODEX_NPM_VERSION=0.99.0"));
-    assert!(log[2].contains("--label io.agentbox.default_runtime_image=true"));
-    assert!(log[2].contains("--label io.agentbox.runtime=codex"));
-    assert!(log[2].contains(&format!(
+    let build = commands.first("build");
+    build.assert_args_contain(&format!("-t {image} -f"));
+    build.assert_args_contain("--build-arg AGENTBOX_RUNTIME=codex");
+    build.assert_args_contain("--build-arg CODEX_NPM_VERSION=0.99.0");
+    build.assert_args_contain("--label io.agentbox.default_runtime_image=true");
+    build.assert_args_contain("--label io.agentbox.runtime=codex");
+    build.assert_args_contain(&format!(
         "--label io.agentbox.image_context_hash={context_hash}"
-    )));
-    assert!(log[2].contains("--label io.agentbox.codex.package=@openai/codex"));
-    assert!(log[2].contains("--label io.agentbox.codex.version=0.99.0"));
-    assert!(run.contains("--label io.agentbox.runtime=codex"));
-    assert!(run.contains("--label io.agentbox.container_kind=managed-session"));
-    assert_runtime_user_args(run);
-    assert!(run.contains("--label io.agentbox.codex.version=0.99.0"));
-    assert!(run.contains(&format!("--label io.agentbox.image={image}")));
-    assert!(run.contains("--label io.agentbox.attach_scheme=ws"));
-    assert!(run.contains("--label io.agentbox.container_port=1455"));
-    assert!(run.contains(&format!(
+    ));
+    build.assert_args_contain("--label io.agentbox.codex.package=@openai/codex");
+    build.assert_args_contain("--label io.agentbox.codex.version=0.99.0");
+
+    let run = commands.first("run");
+    run.assert_args_contain("--label io.agentbox.runtime=codex");
+    run.assert_args_contain("--label io.agentbox.container_kind=managed-session");
+    assert_runtime_user_args(run.raw());
+    run.assert_args_contain("--label io.agentbox.codex.version=0.99.0");
+    run.assert_args_contain(&format!("--label io.agentbox.image={image}"));
+    run.assert_args_contain("--label io.agentbox.attach_scheme=ws");
+    run.assert_args_contain("--label io.agentbox.container_port=1455");
+    run.assert_args_contain(&format!(
         "type=bind,src={},dst=/home/user/.codex",
         harness.home_path().join(".codex").display()
-    )));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_contain(&format!(
         " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
-    )));
+    ));
     let state_path = harness
         .state_home_path()
         .join("agentbox/runtime/codex.json");

@@ -83,13 +83,6 @@ pub fn read_log_lines(path: &Path) -> Vec<String> {
     }
 }
 
-pub fn operation_names(lines: &[String]) -> Vec<&str> {
-    lines
-        .iter()
-        .map(|line| line.split_whitespace().next().unwrap())
-        .collect()
-}
-
 pub fn fake_git_script() -> &'static str {
     include_str!("../fixtures/bin/git.sh")
 }

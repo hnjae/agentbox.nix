@@ -14,7 +14,7 @@ use assert_cmd::cargo::cargo_bin;
 use tempfile::TempDir;
 
 use super::{
-    default_runtime_images_fixture, fake_git_script, path_with_prepend, read_log_lines,
+    CommandLog, default_runtime_images_fixture, fake_git_script, path_with_prepend, read_log_lines,
     write_executable,
 };
 
@@ -221,6 +221,10 @@ impl CliHarness {
 
     pub fn read_log(&self) -> Vec<String> {
         read_log_lines(&self.log_path)
+    }
+
+    pub fn command_log(&self) -> CommandLog {
+        CommandLog::from_lines(self.read_log())
     }
 
     pub fn state_home_path(&self) -> &Path {

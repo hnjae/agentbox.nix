@@ -73,9 +73,9 @@ fn restart_recreates_running_session_with_stored_runtime_and_launch_directory() 
         );
     endpoint.wait();
 
-    let log = harness.read_log();
+    let commands = harness.command_log();
     assert_eq!(
-        operation_names(&log),
+        commands.operation_names(),
         [
             "ps",
             "inspect",
@@ -87,24 +87,24 @@ fn restart_recreates_running_session_with_stored_runtime_and_launch_directory() 
             "inspect"
         ]
     );
-    assert!(log[0].contains("lock=held"));
-    assert!(log[4].contains("lock=held"));
-    let run = podman_run_command(&log);
-    assert!(run.contains("--label io.agentbox.runtime=codex"));
-    assert!(run.contains("--label io.agentbox.container_kind=managed-session"));
-    assert!(run.contains(&format!("--workdir {}", launch_workspace.canonical_target)));
-    assert!(run.contains(&format!(
+    commands.entry(0).assert_lock_held();
+    commands.entry(4).assert_lock_held();
+    let run = commands.first("run");
+    run.assert_args_contain("--label io.agentbox.runtime=codex");
+    run.assert_args_contain("--label io.agentbox.container_kind=managed-session");
+    run.assert_args_contain(&format!("--workdir {}", launch_workspace.canonical_target));
+    run.assert_args_contain(&format!(
         "--label io.agentbox.launch_directory={}",
         launch_workspace.canonical_target
-    )));
-    assert!(!run.contains(&request_workspace.canonical_target.to_string()));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_do_not_contain(request_workspace.canonical_target.as_ref());
+    run.assert_args_contain(&format!(
         " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
-    )));
-    assert!(run.contains(&format!(
+    ));
+    run.assert_args_contain(&format!(
         "type=volume,src={},dst=/home/user,U",
         launch_workspace.container_name
-    )));
+    ));
 }
 
 #[test]
@@ -138,9 +138,9 @@ fn restart_stable_id_target_is_revalidated_under_the_git_root_lock() {
     command.assert().success();
     endpoint.wait();
 
-    let log = harness.read_log();
+    let commands = harness.command_log();
     assert_eq!(
-        operation_names(&log),
+        commands.operation_names(),
         [
             "ps",
             "inspect",
@@ -153,8 +153,8 @@ fn restart_stable_id_target_is_revalidated_under_the_git_root_lock() {
             "inspect"
         ]
     );
-    assert!(log[2].contains("lock=held"));
-    assert!(log[5].contains("lock=held"));
+    commands.entry(2).assert_lock_held();
+    commands.entry(5).assert_lock_held();
 }
 
 #[test]
@@ -195,11 +195,11 @@ fn restart_re_evaluates_dev_environment_from_stored_launch_directory() {
     command.assert().success();
     endpoint.wait();
 
-    let log = harness.read_log();
-    let run = podman_run_command(&log);
-    assert!(run.contains(&format!("--workdir {}", launch_workspace.canonical_target)));
-    assert!(run.contains("direnv exec . opencode serve --hostname 0.0.0.0 --port 4096"));
-    assert!(!run.contains(&request_workspace.canonical_target.to_string()));
+    let commands = harness.command_log();
+    let run = commands.first("run");
+    run.assert_args_contain(&format!("--workdir {}", launch_workspace.canonical_target));
+    run.assert_args_contain("direnv exec . opencode serve --hostname 0.0.0.0 --port 4096");
+    run.assert_args_do_not_contain(request_workspace.canonical_target.as_ref());
 }
 
 #[test]
@@ -235,10 +235,10 @@ fn restart_dev_env_none_disables_wrapper_re_evaluation() {
     command.assert().success();
     endpoint.wait();
 
-    let log = harness.read_log();
-    let run = podman_run_command(&log);
-    assert!(run.contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
-    assert!(!run.contains("direnv exec ."));
+    let commands = harness.command_log();
+    let run = commands.first("run");
+    run.assert_args_contain(" opencode serve --hostname 0.0.0.0 --port 4096");
+    run.assert_args_do_not_contain("direnv exec .");
 }
 
 #[test]
@@ -277,9 +277,9 @@ fn restart_with_connect_runs_host_client_from_stored_launch_directory() {
         .stderr(predicate::str::contains("restarted and ready"));
     endpoint.wait();
 
-    let log = harness.read_log();
+    let commands = harness.command_log();
     assert_eq!(
-        operation_names(&log),
+        commands.operation_names(),
         [
             "ps",
             "inspect",
@@ -291,9 +291,13 @@ fn restart_with_connect_runs_host_client_from_stored_launch_directory() {
             "opencode"
         ]
     );
-    assert!(log[7].contains("lock=held"));
-    assert!(log[7].contains(&format!("attach {expected_endpoint}")));
-    assert!(log[7].contains(&format!("cwd={}", workspace.canonical_target)));
+    commands.entry(7).assert_lock_held();
+    commands
+        .entry(7)
+        .assert_raw_contains(&format!("attach {expected_endpoint}"));
+    commands
+        .entry(7)
+        .assert_raw_contains(&format!("cwd={}", workspace.canonical_target));
 }
 
 #[test]
@@ -487,11 +491,4 @@ fn restart_replacement_readiness_failure_reports_old_session_may_be_gone() {
             "logs"
         ]
     );
-}
-
-fn podman_run_command(log: &[String]) -> &str {
-    log.iter()
-        .find(|line| line.starts_with("run "))
-        .map(String::as_str)
-        .unwrap()
 }

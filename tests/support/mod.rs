@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 mod cli_harness;
+mod command_log;
 mod fake_bins;
 mod git_repo;
 mod podman_fixtures;
@@ -11,9 +12,9 @@ mod preflight_fixtures;
 mod ready_endpoint;
 
 pub use cli_harness::CliHarness;
+pub use command_log::{CommandLog, CommandLogEntry, operation_names};
 pub use fake_bins::{
-    FakeBinDir, fake_git_script, operation_names, path_with_prepend, read_log_lines,
-    write_executable,
+    FakeBinDir, fake_git_script, path_with_prepend, read_log_lines, write_executable,
 };
 pub use git_repo::{
     TempWorkspace, init_git_repo, temp_git_repo, temp_workspace, tempdir_outside_git,
