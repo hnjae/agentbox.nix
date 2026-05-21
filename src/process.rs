@@ -21,6 +21,42 @@ pub(crate) struct ProcessStatusOutput {
     pub(crate) stderr: String,
 }
 
+impl ProcessStatusOutput {
+    pub(crate) fn output_detail(&self) -> String {
+        output_detail(&self.stdout, &self.stderr)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ProcessCaptureError {
+    Setup(Error),
+    Spawn {
+        context: CommandContext,
+        source: std::io::Error,
+    },
+    Utf8(std::string::FromUtf8Error),
+}
+
+impl ProcessCaptureError {
+    pub(crate) fn is_not_found(&self) -> bool {
+        matches!(
+            self,
+            Self::Spawn {
+                source,
+                ..
+            } if source.kind() == ErrorKind::NotFound
+        )
+    }
+
+    pub(crate) fn into_error(self) -> Error {
+        match self {
+            Self::Setup(error) => error,
+            Self::Spawn { context, source } => context.spawn_error(source),
+            Self::Utf8(error) => error.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProcessRunner {
     path_prepend: Vec<PathBuf>,
@@ -71,9 +107,18 @@ impl ProcessRunner {
         program: &str,
         configure: impl FnOnce(&mut Command),
     ) -> Result<ProcessStatusOutput> {
-        let mut command = self.command(program)?;
+        self.try_capture_status(program, configure)
+            .map_err(ProcessCaptureError::into_error)
+    }
+
+    pub(crate) fn try_capture_status(
+        &self,
+        program: &str,
+        configure: impl FnOnce(&mut Command),
+    ) -> std::result::Result<ProcessStatusOutput, ProcessCaptureError> {
+        let mut command = self.command(program).map_err(ProcessCaptureError::Setup)?;
         configure(&mut command);
-        run_command_capture_status(&mut command)
+        try_run_command_capture_status(&mut command)
     }
 }
 
@@ -94,13 +139,19 @@ pub fn run_command(command: &mut Command) -> Result<ProcessOutput> {
 }
 
 fn run_command_capture_status(command: &mut Command) -> Result<ProcessStatusOutput> {
+    try_run_command_capture_status(command).map_err(ProcessCaptureError::into_error)
+}
+
+fn try_run_command_capture_status(
+    command: &mut Command,
+) -> std::result::Result<ProcessStatusOutput, ProcessCaptureError> {
     let context = CommandContext::from_command(command);
     let output = command
         .output()
-        .map_err(|error| context.spawn_error(error))?;
+        .map_err(|source| ProcessCaptureError::Spawn { context, source })?;
 
-    let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
+    let stdout = String::from_utf8(output.stdout).map_err(ProcessCaptureError::Utf8)?;
+    let stderr = String::from_utf8(output.stderr).map_err(ProcessCaptureError::Utf8)?;
 
     Ok(ProcessStatusOutput {
         status: output.status,
@@ -115,7 +166,7 @@ pub fn run_command_status(command: &mut Command) -> Result<ExitStatus> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CommandContext {
+pub(crate) struct CommandContext {
     description: String,
     program: String,
 }
