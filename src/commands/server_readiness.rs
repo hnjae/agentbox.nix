@@ -51,7 +51,27 @@ where
         context: ServerEndpointContext,
         interrupted: impl Fn() -> bool,
     ) -> Result<ServerEndpointWait> {
-        let deadline = Instant::now() + self.timeout;
+        let mut clock = SystemReadinessClock;
+        self.wait_with(
+            workspace,
+            runtime,
+            context,
+            interrupted,
+            |container_name| podman.inspect_one(container_name),
+            &mut clock,
+        )
+    }
+
+    fn wait_with(
+        &self,
+        workspace: &WorkspaceIdentity,
+        runtime: RuntimeKind,
+        context: ServerEndpointContext,
+        interrupted: impl Fn() -> bool,
+        mut inspect_container: impl FnMut(&str) -> Result<PodmanContainerInspect>,
+        clock: &mut impl ReadinessClock,
+    ) -> Result<ServerEndpointWait> {
+        let deadline = clock.now() + self.timeout;
         let mut last_error = None::<String>;
 
         loop {
@@ -59,7 +79,7 @@ where
                 return Ok(ServerEndpointWait::Interrupted);
             }
 
-            if Instant::now() >= deadline {
+            if clock.now() >= deadline {
                 let last_error = last_error
                     .as_deref()
                     .unwrap_or("no inspect data was available");
@@ -71,7 +91,7 @@ where
                 )));
             }
 
-            match podman.inspect_one(&workspace.container_name) {
+            match inspect_container(&workspace.container_name) {
                 Ok(inspect) => {
                     match inspect_server_endpoint(
                         workspace,
@@ -91,11 +111,30 @@ where
                 }
             }
 
-            std::thread::sleep(self.poll_interval);
+            clock.sleep(self.poll_interval);
         }
     }
 }
 
+trait ReadinessClock {
+    fn now(&mut self) -> Instant;
+
+    fn sleep(&mut self, duration: Duration);
+}
+
+struct SystemReadinessClock;
+
+impl ReadinessClock for SystemReadinessClock {
+    fn now(&mut self) -> Instant {
+        Instant::now()
+    }
+
+    fn sleep(&mut self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
+}
+
+#[derive(Debug)]
 pub(super) enum ServerEndpointWait {
     Ready(AttachEndpoint),
     Interrupted,
@@ -190,4 +229,242 @@ fn discover_attach_endpoint_from_runtime_inspect(
         host_ip: published_port.host_ip,
         host_port: published_port.host_port,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, VecDeque};
+
+    use camino::Utf8PathBuf;
+
+    use super::*;
+    use crate::metadata::{ManagedSessionLabelInput, managed_session_labels};
+    use crate::podman::{
+        PodmanContainerConfig, PodmanContainerState, PodmanHostConfig, PodmanNetworkEndpoint,
+        PodmanNetworkSettings, PodmanPortBinding,
+    };
+    use crate::runtime::RuntimeHealth;
+
+    #[test]
+    fn readiness_waiter_retries_until_inspect_endpoint_is_ready() {
+        let workspace = workspace();
+        let endpoint = endpoint();
+        let waiter = test_waiter(RuntimeHealth::Healthy);
+        let mut clock = FakeClock::new();
+        let mut inspects = VecDeque::from([
+            running_inspect(&workspace, None),
+            running_inspect(&workspace, Some(endpoint.host_port)),
+        ]);
+
+        let result = waiter
+            .wait_with(
+                &workspace,
+                RuntimeKind::Opencode,
+                ServerEndpointContext::ManagedSession,
+                || false,
+                |container_name| {
+                    assert_eq!(container_name, workspace.container_name);
+                    Ok(inspects.pop_front().expect("expected inspect fixture"))
+                },
+                &mut clock,
+            )
+            .unwrap();
+
+        match result {
+            ServerEndpointWait::Ready(actual) => assert_eq!(actual, endpoint),
+            ServerEndpointWait::Interrupted => panic!("readiness should not be interrupted"),
+        }
+        assert!(inspects.is_empty());
+        assert_eq!(clock.sleeps, vec![Duration::from_millis(10)]);
+    }
+
+    #[test]
+    fn readiness_waiter_times_out_with_last_inspect_error() {
+        let workspace = workspace();
+        let waiter = test_waiter(RuntimeHealth::Healthy);
+        let mut clock = FakeClock::new();
+        let mut inspect_calls = 0;
+
+        let error = waiter
+            .wait_with(
+                &workspace,
+                RuntimeKind::Opencode,
+                ServerEndpointContext::ManagedSession,
+                || false,
+                |_| {
+                    inspect_calls += 1;
+                    Err(Error::msg("inspect unavailable"))
+                },
+                &mut clock,
+            )
+            .unwrap_err();
+
+        assert_eq!(inspect_calls, 3);
+        assert_eq!(
+            error.to_string(),
+            "runtime server for managed session `agentbox-demo` in `/workspace/demo` did not become reachable: inspect unavailable"
+        );
+        assert_eq!(
+            clock.sleeps,
+            vec![
+                Duration::from_millis(10),
+                Duration::from_millis(10),
+                Duration::from_millis(10),
+            ]
+        );
+    }
+
+    #[test]
+    fn readiness_waiter_stops_before_inspect_when_interrupted() {
+        let workspace = workspace();
+        let waiter = test_waiter(RuntimeHealth::Healthy);
+        let mut clock = FakeClock::new();
+
+        let result = waiter
+            .wait_with(
+                &workspace,
+                RuntimeKind::Opencode,
+                ServerEndpointContext::ManagedSession,
+                || true,
+                |_| panic!("interrupted wait must not inspect"),
+                &mut clock,
+            )
+            .unwrap();
+
+        assert!(matches!(result, ServerEndpointWait::Interrupted));
+        assert!(clock.sleeps.is_empty());
+    }
+
+    fn test_waiter(health: RuntimeHealth) -> ServerEndpointWaiter<StaticProbe> {
+        ServerEndpointWaiter {
+            probe: StaticProbe { health },
+            timeout: Duration::from_millis(25),
+            poll_interval: Duration::from_millis(10),
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct StaticProbe {
+        health: RuntimeHealth,
+    }
+
+    impl RuntimeHealthProbe for StaticProbe {
+        fn check(&self, _runtime: RuntimeKind, _endpoint: &AttachEndpoint) -> RuntimeHealth {
+            self.health.clone()
+        }
+    }
+
+    struct FakeClock {
+        now: Instant,
+        sleeps: Vec<Duration>,
+    }
+
+    impl FakeClock {
+        fn new() -> Self {
+            Self {
+                now: Instant::now(),
+                sleeps: Vec::new(),
+            }
+        }
+    }
+
+    impl ReadinessClock for FakeClock {
+        fn now(&mut self) -> Instant {
+            self.now
+        }
+
+        fn sleep(&mut self, duration: Duration) {
+            self.sleeps.push(duration);
+            self.now += duration;
+        }
+    }
+
+    fn workspace() -> WorkspaceIdentity {
+        WorkspaceIdentity {
+            requested_target: Utf8PathBuf::from("/workspace/demo"),
+            absolute_target: Utf8PathBuf::from("/workspace/demo"),
+            canonical_target: Utf8PathBuf::from("/workspace/demo"),
+            canonical_git_root: Utf8PathBuf::from("/workspace/demo"),
+            digest64: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            hash12: "0123456789ab".to_string(),
+            container_name: "agentbox-demo".to_string(),
+        }
+    }
+
+    fn endpoint() -> AttachEndpoint {
+        AttachEndpoint {
+            scheme: "http".to_string(),
+            host_ip: "127.0.0.1".to_string(),
+            host_port: 49152,
+        }
+    }
+
+    fn running_inspect(
+        workspace: &WorkspaceIdentity,
+        host_port: Option<u16>,
+    ) -> PodmanContainerInspect {
+        let runtime = RuntimeKind::Opencode;
+        let image = runtime.default_image();
+        let labels = managed_session_labels(ManagedSessionLabelInput {
+            canonical_git_root: workspace.canonical_git_root.as_str(),
+            git_root_hash: workspace.hash12.as_str(),
+            runtime,
+            image: &image,
+            launch_directory: workspace.canonical_target.as_str(),
+            logical_name: workspace.container_name.as_str(),
+        });
+
+        PodmanContainerInspect {
+            id: "container-id".to_string(),
+            created: "2026-05-21T00:00:00Z".to_string(),
+            path: "/usr/bin/opencode".to_string(),
+            args: Vec::new(),
+            state: PodmanContainerState {
+                status: "running".to_string(),
+                running: true,
+                exit_code: 0,
+                pid: 4321,
+                started_at: None,
+                finished_at: None,
+                health: None,
+            },
+            image_name: image,
+            config: PodmanContainerConfig {
+                user: None,
+                env: Vec::new(),
+                cmd: Vec::new(),
+                working_dir: None,
+                labels,
+                entrypoint: None,
+                stop_signal: None,
+            },
+            host_config: PodmanHostConfig {
+                auto_remove: false,
+                network_mode: Some("bridge".to_string()),
+                privileged: false,
+            },
+            mounts: Vec::new(),
+            network_settings: network_settings(host_port),
+        }
+    }
+
+    fn network_settings(host_port: Option<u16>) -> PodmanNetworkSettings {
+        let ports = host_port
+            .map(|host_port| {
+                BTreeMap::from([(
+                    "4096/tcp".to_string(),
+                    Some(vec![PodmanPortBinding {
+                        host_ip: Some("127.0.0.1".to_string()),
+                        host_port: Some(host_port.to_string()),
+                    }]),
+                )])
+            })
+            .unwrap_or_default();
+
+        PodmanNetworkSettings {
+            networks: BTreeMap::<String, PodmanNetworkEndpoint>::new(),
+            ports,
+        }
+    }
 }
