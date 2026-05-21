@@ -56,61 +56,127 @@ impl RuntimeImageState {
     }
 }
 
-pub(super) fn read_runtime_image_state(runtime: RuntimeKind) -> Result<Option<RuntimeImageState>> {
-    let path = runtime_image_state_path(runtime)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let contents = fs::read_to_string(&path)?;
-    serde_json::from_str(&contents).map(Some).map_err(|error| {
-        Error::msg(format!(
-            "failed to parse {runtime} runtime image state `{}`: {error}",
-            path.display()
-        ))
-    })
+#[derive(Debug, Clone)]
+pub(super) struct RuntimeImageStateStore {
+    root: AgentboxStateRoot,
 }
 
-pub(super) fn write_runtime_image_state(
-    runtime: RuntimeKind,
-    state: &RuntimeImageState,
-) -> Result<()> {
-    let path = runtime_image_state_path(runtime)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let contents = serde_json::to_string_pretty(state).map_err(|error| {
-        Error::msg(format!(
-            "failed to serialize {runtime} runtime image state: {error}"
-        ))
-    })?;
-    fs::write(path, format!("{contents}\n"))?;
-    Ok(())
-}
-
-pub(super) fn remove_runtime_image_state(runtime: RuntimeKind) -> Result<()> {
-    let path = runtime_image_state_path(runtime)?;
-    match fs::remove_file(&path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
-    }
-}
-
-pub(super) fn remove_runtime_image_state_if_image(runtime: RuntimeKind, image: &str) -> Result<()> {
-    let Some(state) = read_runtime_image_state(runtime)? else {
-        return Ok(());
-    };
-
-    if state.image == image {
-        remove_runtime_image_state(runtime)?;
+impl RuntimeImageStateStore {
+    pub(super) fn from_xdg() -> Result<Self> {
+        Ok(Self::new(AgentboxStateRoot::from_xdg()?))
     }
 
-    Ok(())
+    pub(super) fn new(root: AgentboxStateRoot) -> Self {
+        Self { root }
+    }
+
+    pub(super) fn read(&self, runtime: RuntimeKind) -> Result<Option<RuntimeImageState>> {
+        let path = self.path(runtime);
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let contents = fs::read_to_string(&path)?;
+        serde_json::from_str(&contents).map(Some).map_err(|error| {
+            Error::msg(format!(
+                "failed to parse {runtime} runtime image state `{}`: {error}",
+                path.display()
+            ))
+        })
+    }
+
+    pub(super) fn write(&self, runtime: RuntimeKind, state: &RuntimeImageState) -> Result<()> {
+        let path = self.path(runtime);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let contents = serde_json::to_string_pretty(state).map_err(|error| {
+            Error::msg(format!(
+                "failed to serialize {runtime} runtime image state: {error}"
+            ))
+        })?;
+        fs::write(path, format!("{contents}\n"))?;
+        Ok(())
+    }
+
+    pub(super) fn remove(&self, runtime: RuntimeKind) -> Result<()> {
+        let path = self.path(runtime);
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub(super) fn remove_if_image(&self, runtime: RuntimeKind, image: &str) -> Result<()> {
+        let Some(state) = self.read(runtime)? else {
+            return Ok(());
+        };
+
+        if state.image == image {
+            self.remove(runtime)?;
+        }
+
+        Ok(())
+    }
+
+    fn path(&self, runtime: RuntimeKind) -> PathBuf {
+        self.root
+            .join("runtime")
+            .join(format!("{}.json", runtime.as_str()))
+    }
 }
 
-fn runtime_image_state_path(runtime: RuntimeKind) -> Result<PathBuf> {
-    Ok(AgentboxStateRoot::from_xdg()?
-        .join("runtime")
-        .join(format!("{}.json", runtime.as_str())))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_store_round_trips_runtime_state_under_supplied_root() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let store = RuntimeImageStateStore::new(AgentboxStateRoot::from_state_home(sandbox.path()));
+        let runtime = RuntimeKind::Codex;
+        let state = RuntimeImageState::new(runtime, "1.2.3".to_string(), 10, 11);
+
+        assert_eq!(store.read(runtime).unwrap(), None);
+
+        store.write(runtime, &state).unwrap();
+
+        assert_eq!(store.read(runtime).unwrap(), Some(state));
+        assert!(
+            sandbox
+                .path()
+                .join("agentbox")
+                .join("runtime")
+                .join("codex.json")
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn state_store_removes_only_matching_image_state() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let store = RuntimeImageStateStore::new(AgentboxStateRoot::from_state_home(sandbox.path()));
+        let runtime = RuntimeKind::Opencode;
+        let state = RuntimeImageState::new(runtime, "2.0.0".to_string(), 20, 21);
+
+        store.write(runtime, &state).unwrap();
+        store
+            .remove_if_image(runtime, "localhost/agentbox-other:latest")
+            .unwrap();
+
+        assert_eq!(store.read(runtime).unwrap(), Some(state.clone()));
+
+        store.remove_if_image(runtime, &state.image).unwrap();
+
+        assert_eq!(store.read(runtime).unwrap(), None);
+    }
+
+    #[test]
+    fn state_store_remove_ignores_missing_state_file() {
+        let sandbox = tempfile::tempdir().unwrap();
+        let store = RuntimeImageStateStore::new(AgentboxStateRoot::from_state_home(sandbox.path()));
+
+        store.remove(RuntimeKind::Codex).unwrap();
+    }
 }

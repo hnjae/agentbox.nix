@@ -11,7 +11,7 @@ use crate::runtime::RuntimeKind;
 use crate::runtime::default_image::default_image_context_hash;
 use crate::{Error, Result};
 
-use super::image_state::{RuntimeImageState, read_runtime_image_state, write_runtime_image_state};
+use super::image_state::{RuntimeImageState, RuntimeImageStateStore};
 
 pub(super) trait RuntimeImageEnvironment {
     fn image_exists(&mut self, image: &str) -> Result<bool>;
@@ -24,6 +24,16 @@ pub(super) trait RuntimeImageEnvironment {
 
 pub(super) struct ProductionRuntimeImageEnvironment<'a> {
     pub(super) podman: &'a Podman,
+    state_store: RuntimeImageStateStore,
+}
+
+impl<'a> ProductionRuntimeImageEnvironment<'a> {
+    pub(super) fn new(podman: &'a Podman) -> Result<Self> {
+        Ok(Self {
+            podman,
+            state_store: RuntimeImageStateStore::from_xdg()?,
+        })
+    }
 }
 
 impl RuntimeImageEnvironment for ProductionRuntimeImageEnvironment<'_> {
@@ -32,11 +42,11 @@ impl RuntimeImageEnvironment for ProductionRuntimeImageEnvironment<'_> {
     }
 
     fn read_state(&mut self, runtime: RuntimeKind) -> Result<Option<RuntimeImageState>> {
-        read_runtime_image_state(runtime)
+        self.state_store.read(runtime)
     }
 
     fn write_state(&mut self, runtime: RuntimeKind, state: &RuntimeImageState) -> Result<()> {
-        write_runtime_image_state(runtime, state)
+        self.state_store.write(runtime, state)
     }
 
     fn resolve_latest_version(&mut self, package: &str) -> Result<String> {

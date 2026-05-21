@@ -10,11 +10,11 @@ use crate::{Error, Result};
 
 use super::image_environment::{ProductionRuntimeImageEnvironment, RuntimeImageEnvironment};
 use super::image_plan::{RuntimeImageUpdatePlan, plan_runtime_image_update};
-use super::image_state::RuntimeImageState;
+use super::image_state::{RuntimeImageState, RuntimeImageStateStore};
 
 pub(super) fn update_default_runtime_image(runtime: RuntimeKind, verbose: bool) -> Result<()> {
     let podman = Podman::new().with_verbose(verbose);
-    let mut environment = ProductionRuntimeImageEnvironment { podman: &podman };
+    let mut environment = ProductionRuntimeImageEnvironment::new(&podman)?;
 
     match update_default_runtime_image_with(runtime, &mut environment)? {
         RuntimeImageUpdateOutcome::AlreadyUpToDate { image, version } => {
@@ -39,7 +39,7 @@ pub(crate) fn ensure_default_runtime_image(
     phase: impl FnMut(String),
 ) -> Result<Option<String>> {
     let default_image = runtime.default_image();
-    let mut environment = ProductionRuntimeImageEnvironment { podman };
+    let mut environment = ProductionRuntimeImageEnvironment::new(podman)?;
     ensure_default_runtime_image_with(
         &mut environment,
         runtime,
@@ -53,7 +53,7 @@ pub(crate) fn remove_default_runtime_image_state_if_image(
     runtime: RuntimeKind,
     image: &str,
 ) -> Result<()> {
-    super::image_state::remove_runtime_image_state_if_image(runtime, image)
+    RuntimeImageStateStore::from_xdg()?.remove_if_image(runtime, image)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
