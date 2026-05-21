@@ -26,47 +26,71 @@ impl<'a> SessionDisplay<'a> {
         }
     }
 
-    pub(super) fn id(&self) -> Option<&'a str> {
+    fn id(&self) -> Option<&'a str> {
         self.id
     }
 
-    pub(super) fn id_or_unknown(&self) -> &'a str {
+    fn id_or_unknown(&self) -> &'a str {
         self.id.unwrap_or("unknown")
     }
 
-    pub(super) fn canonical_git_root_str(&self) -> Option<&'a str> {
+    fn canonical_git_root_str(&self) -> Option<&'a str> {
         self.canonical_git_root.map(camino::Utf8Path::as_str)
     }
 
-    pub(super) fn canonical_git_root_or_unknown(&self) -> &'a str {
+    fn canonical_git_root_or_unknown(&self) -> &'a str {
         self.canonical_git_root_str().unwrap_or("unknown")
     }
 
-    pub(super) fn runtime(&self) -> Option<&'a str> {
+    fn runtime(&self) -> Option<&'a str> {
         self.runtime
     }
 
-    pub(super) fn runtime_or_unknown(&self) -> &'a str {
+    fn runtime_or_unknown(&self) -> &'a str {
         self.runtime.unwrap_or("unknown")
     }
 
-    pub(super) fn endpoint_string(&self) -> Option<String> {
+    fn endpoint_string(&self) -> Option<String> {
         self.endpoint.map(ToString::to_string)
     }
 
-    pub(super) fn endpoint_or_unknown(&self) -> String {
+    fn endpoint_or_unknown(&self) -> String {
         self.endpoint_string()
             .unwrap_or_else(|| "unknown".to_string())
     }
 
-    pub(super) fn container_name(&self) -> &'a str {
+    fn container_name(&self) -> &'a str {
         self.container_name
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SessionTableFields<'a> {
+    pub(super) id: &'a str,
+    pub(super) canonical_git_root: &'a str,
+    pub(super) runtime: &'a str,
+    pub(super) endpoint: String,
+}
+
+impl<'a> SessionTableFields<'a> {
+    pub(super) fn from_session(session: &'a SessionRecord) -> Self {
+        Self::from_display(&SessionDisplay::from_session(session))
+    }
+
+    pub(super) fn from_display(display: &SessionDisplay<'a>) -> Self {
+        Self {
+            id: display.id_or_unknown(),
+            canonical_git_root: display.canonical_git_root_or_unknown(),
+            runtime: display.runtime_or_unknown(),
+            endpoint: display.endpoint_or_unknown(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SessionJsonFields<'a> {
-    pub(super) leading: SessionJsonLeadingFields<'a>,
+    pub(super) id: SessionJsonIdField<'a>,
+    pub(super) metadata: SessionJsonMetadataFields<'a>,
     pub(super) trailing: SessionJsonTrailingFields<'a>,
 }
 
@@ -77,8 +101,8 @@ impl<'a> SessionJsonFields<'a> {
 
     pub(super) fn from_display(display: &SessionDisplay<'a>) -> Self {
         Self {
-            leading: SessionJsonLeadingFields {
-                id: display.id(),
+            id: SessionJsonIdField { id: display.id() },
+            metadata: SessionJsonMetadataFields {
                 canonical_git_root: display.canonical_git_root_str(),
                 runtime: display.runtime(),
             },
@@ -91,8 +115,12 @@ impl<'a> SessionJsonFields<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(super) struct SessionJsonLeadingFields<'a> {
+pub(super) struct SessionJsonIdField<'a> {
     pub(super) id: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(super) struct SessionJsonMetadataFields<'a> {
     pub(super) canonical_git_root: Option<&'a str>,
     pub(super) runtime: Option<&'a str>,
 }

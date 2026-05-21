@@ -14,7 +14,8 @@ use crate::session::{
 
 use super::output::{self, OutputFormat};
 use super::session_output::{
-    SessionDisplay, SessionJsonFields, SessionJsonLeadingFields, SessionJsonTrailingFields,
+    SessionDisplay, SessionJsonFields, SessionJsonIdField, SessionJsonMetadataFields,
+    SessionJsonTrailingFields, SessionTableFields,
 };
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -60,13 +61,14 @@ fn render_table(rows: &[HealthRow<'_>]) -> String {
     ]);
 
     for row in rows {
+        let fields = SessionTableFields::from_display(&row.display);
         table.add_row([
-            Cell::new(row.display.id_or_unknown()),
-            Cell::new(row.display.canonical_git_root_or_unknown()),
-            Cell::new(row.display.runtime_or_unknown()),
+            Cell::new(fields.id),
+            Cell::new(fields.canonical_git_root),
+            Cell::new(fields.runtime),
             Cell::new(row.health.status_str()),
             Cell::new(row.health.reason()),
-            Cell::new(row.display.endpoint_or_unknown()),
+            Cell::new(fields.endpoint),
         ]);
     }
 
@@ -119,7 +121,9 @@ fn health_row<'a>(session: &'a SessionRecord, probe: &impl RuntimeHealthProbe) -
 #[derive(Debug, Serialize)]
 struct HealthJsonRow<'identity, 'row> {
     #[serde(flatten)]
-    leading: SessionJsonLeadingFields<'identity>,
+    id: SessionJsonIdField<'identity>,
+    #[serde(flatten)]
+    metadata: SessionJsonMetadataFields<'identity>,
     health: &'static str,
     reason: &'row str,
     #[serde(flatten)]
@@ -131,7 +135,8 @@ impl<'row, 'session> From<&'row HealthRow<'session>> for HealthJsonRow<'session,
         let fields = SessionJsonFields::from_display(&row.display);
 
         Self {
-            leading: fields.leading,
+            id: fields.id,
+            metadata: fields.metadata,
             health: row.health.status_str(),
             reason: row.health.reason(),
             trailing: fields.trailing,

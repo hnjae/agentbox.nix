@@ -10,7 +10,10 @@ use crate::podman::Podman;
 use crate::session::{SessionDiscoveryQuery, SessionRecord, sorted_session_refs_by_identity};
 
 use super::output::{self, OutputFormat};
-use super::session_output::{SessionDisplay, SessionJsonFields};
+use super::session_output::{
+    SessionJsonFields, SessionJsonIdField, SessionJsonMetadataFields, SessionJsonTrailingFields,
+    SessionTableFields,
+};
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct LsArgs {
@@ -49,14 +52,14 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
     ]);
 
     for session in sorted_session_refs_by_identity(sessions) {
-        let display = SessionDisplay::from_session(session);
+        let fields = SessionTableFields::from_session(session);
         table.add_row([
-            Cell::new(display.id_or_unknown()),
+            Cell::new(fields.id),
             Cell::new(session.container_kind().output_type()),
-            Cell::new(display.canonical_git_root_or_unknown()),
-            Cell::new(display.runtime_or_unknown()),
+            Cell::new(fields.canonical_git_root),
+            Cell::new(fields.runtime),
             Cell::new(session.status().as_str()),
-            Cell::new(display.endpoint_or_unknown()),
+            Cell::new(fields.endpoint),
         ]);
     }
 
@@ -74,14 +77,15 @@ pub fn render_json(sessions: &[SessionRecord]) -> Result<String> {
 
 #[derive(Debug, Serialize)]
 struct LsJsonRow<'a> {
-    id: Option<&'a str>,
+    #[serde(flatten)]
+    id: SessionJsonIdField<'a>,
     #[serde(rename = "type")]
     container_type: &'static str,
-    canonical_git_root: Option<&'a str>,
-    runtime: Option<&'a str>,
+    #[serde(flatten)]
+    metadata: SessionJsonMetadataFields<'a>,
     status: &'static str,
-    endpoint: Option<String>,
-    container_name: &'a str,
+    #[serde(flatten)]
+    trailing: SessionJsonTrailingFields<'a>,
 }
 
 impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
@@ -89,13 +93,11 @@ impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
         let fields = SessionJsonFields::from_session(session);
 
         Self {
-            id: fields.leading.id,
+            id: fields.id,
             container_type: session.container_kind().output_type(),
-            canonical_git_root: fields.leading.canonical_git_root,
-            runtime: fields.leading.runtime,
+            metadata: fields.metadata,
             status: session.status().as_str(),
-            endpoint: fields.trailing.endpoint,
-            container_name: fields.trailing.container_name,
+            trailing: fields.trailing,
         }
     }
 }
