@@ -1,8 +1,11 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use crate::diagnostic;
 use crate::podman::Podman;
 use crate::session::SessionRecord;
+use crate::workspace::WorkspaceIdentity;
+use crate::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ManagedContainerCleanup {
@@ -113,6 +116,38 @@ pub(super) fn cleanup_managed_containers<'a>(
         .into_iter()
         .filter_map(|session| cleanup_managed_container(podman, session))
         .collect()
+}
+
+pub(super) fn cleanup_transient_container(
+    podman: &Podman,
+    workspace: &WorkspaceIdentity,
+) -> Result<()> {
+    diagnostic::info(format!(
+        "stopping transient container `{}`",
+        workspace.container_name
+    ));
+    let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &workspace.container_name);
+
+    if let Some(failure) = cleanup.remaining_failure(&workspace.container_name) {
+        Err(Error::msg(format!(
+            "failed to clean up transient run container `{}`: {}",
+            workspace.container_name,
+            failure.render_stop_message(),
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+pub(super) fn combine_error_with_cleanup_result(error: Error, cleanup: Result<()>) -> Error {
+    match cleanup {
+        Ok(()) => error,
+        Err(cleanup_error) => Error::msg(combined_error_message(&error, &cleanup_error)),
+    }
+}
+
+pub(super) fn combined_error_message(error: &Error, cleanup_error: &Error) -> String {
+    format!("{error}; additionally, {cleanup_error}")
 }
 
 fn cleanup_managed_container(
@@ -247,6 +282,38 @@ mod tests {
         assert_eq!(
             failure.render_stop_message(),
             "container `agentbox-demo` (stop failed: podman stop failed, container still exists after stop)"
+        );
+    }
+
+    #[test]
+    fn combines_primary_error_with_cleanup_error_stably() {
+        let error = Error::msg("host client failed");
+        let cleanup_error = Error::msg("cleanup failed");
+
+        assert_eq!(
+            combined_error_message(&error, &cleanup_error),
+            "host client failed; additionally, cleanup failed"
+        );
+    }
+
+    #[test]
+    fn preserves_primary_error_when_cleanup_succeeds() {
+        let error = Error::msg("readiness failed");
+
+        assert_eq!(
+            combine_error_with_cleanup_result(error, Ok(())).to_string(),
+            "readiness failed"
+        );
+    }
+
+    #[test]
+    fn appends_cleanup_failure_when_cleanup_fails() {
+        let error = Error::msg("readiness failed");
+        let cleanup = Err(Error::msg("stop failed"));
+
+        assert_eq!(
+            combine_error_with_cleanup_result(error, cleanup).to_string(),
+            "readiness failed; additionally, stop failed"
         );
     }
 }

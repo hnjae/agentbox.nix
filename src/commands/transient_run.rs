@@ -9,7 +9,9 @@ use crate::runtime::{AttachEndpoint, RuntimeKind, RuntimeRunSpec};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
-use super::container_cleanup::ManagedContainerCleanup;
+use super::container_cleanup::{
+    cleanup_transient_container, combine_error_with_cleanup_result, combined_error_message,
+};
 use super::detached_server::{DetachedServerLifecycle, launch_detached_server};
 use super::launch_policy::{
     CommandInterrupt, ContainerLogContext, error_with_container_logs, exit_code,
@@ -137,21 +139,7 @@ impl<'a> TransientRun<'a> {
     }
 
     fn cleanup(self) -> Result<()> {
-        diagnostic::info(format!(
-            "stopping transient container `{}`",
-            self.workspace.container_name
-        ));
-        let cleanup =
-            ManagedContainerCleanup::stop_and_verify(self.podman, &self.workspace.container_name);
-        if let Some(failure) = cleanup.remaining_failure(&self.workspace.container_name) {
-            Err(Error::msg(format!(
-                "failed to clean up transient run container `{}`: {}",
-                self.workspace.container_name,
-                failure.render_stop_message(),
-            )))
-        } else {
-            Ok(())
-        }
+        cleanup_transient_container(self.podman, self.workspace)
     }
 }
 
@@ -194,53 +182,5 @@ impl DetachedServerLifecycle for TransientServerLifecycle<'_> {
             error,
         );
         self.transient.with_cleanup_result(error)
-    }
-}
-
-fn combine_error_with_cleanup_result(error: Error, cleanup: Result<()>) -> Error {
-    match cleanup {
-        Ok(()) => error,
-        Err(cleanup_error) => Error::msg(combined_error_message(&error, &cleanup_error)),
-    }
-}
-
-fn combined_error_message(error: &Error, cleanup_error: &Error) -> String {
-    format!("{error}; additionally, {cleanup_error}")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn combines_primary_error_with_cleanup_error_stably() {
-        let error = Error::msg("host client failed");
-        let cleanup_error = Error::msg("cleanup failed");
-
-        assert_eq!(
-            combined_error_message(&error, &cleanup_error),
-            "host client failed; additionally, cleanup failed"
-        );
-    }
-
-    #[test]
-    fn preserves_primary_error_when_cleanup_succeeds() {
-        let error = Error::msg("readiness failed");
-
-        assert_eq!(
-            combine_error_with_cleanup_result(error, Ok(())).to_string(),
-            "readiness failed"
-        );
-    }
-
-    #[test]
-    fn appends_cleanup_failure_when_cleanup_fails() {
-        let error = Error::msg("readiness failed");
-        let cleanup = Err(Error::msg("stop failed"));
-
-        assert_eq!(
-            combine_error_with_cleanup_result(error, cleanup).to_string(),
-            "readiness failed; additionally, stop failed"
-        );
     }
 }
