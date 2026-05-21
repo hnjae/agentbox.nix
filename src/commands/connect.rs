@@ -7,7 +7,6 @@ use camino::Utf8Path;
 use clap::Args;
 
 use crate::diagnostic;
-use crate::podman::Podman;
 use crate::prompt;
 use crate::session::SessionRecord;
 use crate::session::{prepare_connect_session, run_command_hint, select_single_session};
@@ -15,8 +14,13 @@ use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
 use super::runtime_command::run_host_runtime_client;
-use super::session_targets::{SessionTargetSurface, connect_prompt_label};
+use super::session_targets::{
+    SessionTargetSurface, connect_prompt_label, select_one_session_target,
+};
 use super::workspace_flow::with_locked_workspace;
+
+const CONNECT_NON_TTY_ERROR: &str =
+    "agentbox connect requires a target when stdin or stderr is not a TTY";
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct ConnectArgs {
@@ -37,22 +41,14 @@ fn selected_connect_directory(directory: Option<PathBuf>) -> Result<PathBuf> {
 }
 
 fn select_connect_directory() -> Result<PathBuf> {
-    prompt::require_interactive_terminal(
-        "agentbox connect requires a target when stdin or stderr is not a TTY",
-    )?;
-    let podman = Podman::new();
-    let candidates = connect_prompt_candidates(&SessionTargetSurface::Connect.discover(&podman)?);
-
-    if candidates.is_empty() {
-        return Err(Error::msg("no connectable managed sessions exist"));
-    }
-
-    let selected = prompt::select_one(
+    select_one_session_target(
+        SessionTargetSurface::Connect,
         "Select session",
-        candidates,
-        "agentbox connect requires a target when stdin or stderr is not a TTY",
-    )?;
-    Ok(selected.into_value())
+        CONNECT_NON_TTY_ERROR,
+        "no connectable managed sessions exist",
+        |candidate| PathBuf::from(candidate.value()),
+        connect_prompt_label,
+    )
 }
 
 fn connect_directory(directory: &Path) -> Result<()> {

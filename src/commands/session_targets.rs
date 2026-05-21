@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::Result;
 use crate::podman::Podman;
 use crate::prompt;
 use crate::session::{
     SessionDiscoveryQuery, SessionRecord, SessionTargetCandidate, SessionTargetKind,
 };
+use crate::{Error, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SessionTargetSurface {
@@ -60,6 +60,68 @@ impl SessionTargetSurface {
             Self::Health | Self::Stop => SessionTargetKind::StableId,
         }
     }
+}
+
+pub(super) fn select_one_session_target<T>(
+    surface: SessionTargetSurface,
+    message: &'static str,
+    non_tty_error: &'static str,
+    no_candidates_error: &'static str,
+    value: impl Fn(SessionTargetCandidate<'_>) -> T,
+    label: impl Fn(SessionTargetCandidate<'_>) -> String,
+) -> Result<T> {
+    prompt::require_interactive_terminal(non_tty_error)?;
+    let choices = discover_prompt_choices(surface, value, label)?;
+
+    if choices.is_empty() {
+        return Err(Error::msg(no_candidates_error));
+    }
+
+    prompt::select_one(message, choices, non_tty_error).map(prompt::Choice::into_value)
+}
+
+pub(super) fn select_many_session_targets<T>(
+    surface: SessionTargetSurface,
+    message: &'static str,
+    non_tty_error: &'static str,
+    value: impl Fn(SessionTargetCandidate<'_>) -> T,
+    label: impl Fn(SessionTargetCandidate<'_>) -> String,
+) -> Result<SessionTargetMultiSelection<T>> {
+    prompt::require_interactive_terminal(non_tty_error)?;
+    let choices = discover_prompt_choices(surface, value, label)?;
+
+    if choices.is_empty() {
+        return Ok(SessionTargetMultiSelection::NoCandidates);
+    }
+
+    let selected = prompt::select_many(message, choices, non_tty_error)?;
+    if selected.is_empty() {
+        return Ok(SessionTargetMultiSelection::EmptySelection);
+    }
+
+    Ok(SessionTargetMultiSelection::Selected(
+        selected
+            .into_iter()
+            .map(prompt::Choice::into_value)
+            .collect(),
+    ))
+}
+
+pub(super) enum SessionTargetMultiSelection<T> {
+    NoCandidates,
+    EmptySelection,
+    Selected(Vec<T>),
+}
+
+fn discover_prompt_choices<T>(
+    surface: SessionTargetSurface,
+    value: impl Fn(SessionTargetCandidate<'_>) -> T,
+    label: impl Fn(SessionTargetCandidate<'_>) -> String,
+) -> Result<Vec<prompt::Choice<T>>> {
+    let podman = Podman::new();
+    let sessions = surface.discover(&podman)?;
+
+    Ok(surface.prompt_choices(&sessions, value, label))
 }
 
 pub(super) fn prompt_choices<T>(

@@ -6,16 +6,21 @@ use std::path::PathBuf;
 use clap::Args;
 
 use crate::diagnostic;
-use crate::podman::Podman;
 use crate::prompt;
 use crate::session::{SessionRecord, SessionTargetInput};
 use crate::{Error, Result};
 
-use super::session_targets::{SessionTargetSurface, stop_prompt_label};
+use super::session_targets::{
+    SessionTargetMultiSelection, SessionTargetSurface, select_many_session_targets,
+    stop_prompt_label,
+};
 
 mod cleanup;
 
 use cleanup::{stop_all_running, stop_target};
+
+const STOP_NON_TTY_ERROR: &str =
+    "agentbox stop requires a target or --all when stdin or stderr is not a TTY";
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct StopArgs {
@@ -54,34 +59,33 @@ pub fn run(args: StopArgs) -> Result<()> {
 }
 
 fn select_stop_targets() -> Result<Vec<SessionTargetInput>> {
-    let non_tty_error =
-        "agentbox stop requires a target or --all when stdin or stderr is not a TTY";
-    prompt::require_interactive_terminal(non_tty_error)?;
-    let podman = Podman::new();
-    let candidates = stop_prompt_candidates(&SessionTargetSurface::Stop.discover(&podman)?);
+    let selected = select_many_session_targets(
+        SessionTargetSurface::Stop,
+        "Select sessions to stop",
+        STOP_NON_TTY_ERROR,
+        |candidate| candidate.value().to_string(),
+        stop_prompt_label,
+    )?;
 
-    if candidates.is_empty() {
-        diagnostic::info("agentbox stop: no agentbox containers available to stop");
-        return Ok(Vec::new());
+    match selected {
+        SessionTargetMultiSelection::NoCandidates => {
+            diagnostic::info("agentbox stop: no agentbox containers available to stop");
+            Ok(Vec::new())
+        }
+        SessionTargetMultiSelection::EmptySelection => {
+            diagnostic::warning("agentbox stop: no sessions selected");
+            Ok(Vec::new())
+        }
+        SessionTargetMultiSelection::Selected(mut targets) => {
+            targets.sort();
+            targets.dedup();
+
+            Ok(targets
+                .into_iter()
+                .map(SessionTargetInput::StableId)
+                .collect())
+        }
     }
-
-    let selected = prompt::select_many("Select sessions to stop", candidates, non_tty_error)?;
-    if selected.is_empty() {
-        diagnostic::warning("agentbox stop: no sessions selected");
-        return Ok(Vec::new());
-    }
-
-    let mut targets = selected
-        .into_iter()
-        .map(prompt::Choice::into_value)
-        .collect::<Vec<_>>();
-    targets.sort();
-    targets.dedup();
-
-    Ok(targets
-        .into_iter()
-        .map(SessionTargetInput::StableId)
-        .collect())
 }
 
 fn stop_targets(targets: &[SessionTargetInput], force: bool) -> Result<()> {

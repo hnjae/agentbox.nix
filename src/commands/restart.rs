@@ -25,8 +25,11 @@ use super::managed_server::{
     ManagedServerCompletion, ManagedServerCompletionKind, ManagedServerLaunch,
     ManagedServerLaunchPolicy,
 };
-use super::session_targets::{SessionTargetSurface, stop_prompt_label};
+use super::session_targets::{SessionTargetSurface, select_one_session_target, stop_prompt_label};
 use super::workspace_flow::{LockedGitRoot, with_locked_git_root_verbose};
+
+const RESTART_NON_TTY_ERROR: &str =
+    "agentbox restart requires a target when stdin or stderr is not a TTY";
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RestartArgs {
@@ -56,23 +59,15 @@ fn selected_restart_target(target: Option<PathBuf>) -> Result<SessionTargetInput
 }
 
 fn select_restart_target() -> Result<SessionTargetInput> {
-    prompt::require_interactive_terminal(
-        "agentbox restart requires a target when stdin or stderr is not a TTY",
-    )?;
-    let podman = Podman::new();
-    let candidates = restart_prompt_candidates(&SessionTargetSurface::Restart.discover(&podman)?);
-
-    if candidates.is_empty() {
-        return Err(Error::msg("no restartable running managed sessions exist"));
-    }
-
-    let selected = prompt::select_one(
+    select_one_session_target(
+        SessionTargetSurface::Restart,
         "Select session to restart",
-        candidates,
-        "agentbox restart requires a target when stdin or stderr is not a TTY",
-    )?;
-
-    Ok(SessionTargetInput::StableId(selected.into_value()))
+        RESTART_NON_TTY_ERROR,
+        "no restartable running managed sessions exist",
+        |candidate| candidate.value().to_string(),
+        stop_prompt_label,
+    )
+    .map(SessionTargetInput::StableId)
 }
 
 fn restart_target(
