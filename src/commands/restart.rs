@@ -140,7 +140,7 @@ fn restart_launch_workspace(
     let workspace = resolve_workspace_identity(launch_directory).map_err(|error| {
         Error::msg(format!(
             "stored launch directory `{launch_directory}` for managed session `{}` cannot be used for restart: {error}",
-            session.container_name
+            session.container_name()
         ))
     })?;
 
@@ -150,7 +150,7 @@ fn restart_launch_workspace(
         Err(Error::msg(format!(
             "stored launch directory `{}` for managed session `{}` now resolves to git root `{}` instead of `{}`; stop and start the session from the desired directory",
             launch_directory,
-            session.container_name,
+            session.container_name(),
             workspace.canonical_git_root,
             locked.git_root(),
         )))
@@ -160,14 +160,14 @@ fn restart_launch_workspace(
 fn stop_existing_session(podman: &Podman, session: &SessionRecord) -> Result<()> {
     diagnostic::info(format!(
         "stopping managed session `{}` for restart",
-        session.container_name
+        session.container_name()
     ));
-    let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &session.container_name);
+    let cleanup = ManagedContainerCleanup::stop_and_verify(podman, session.container_name());
 
-    if let Some(failure) = cleanup.remaining_failure(&session.container_name) {
+    if let Some(failure) = cleanup.remaining_failure(session.container_name()) {
         Err(Error::msg(format!(
             "failed to stop managed session `{}` for restart; replacement was not started: {}",
-            session.container_name,
+            session.container_name(),
             failure.render_stop_message(),
         )))
     } else {

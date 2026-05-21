@@ -19,30 +19,30 @@ pub(crate) fn existing_session_error(
     workspace: &WorkspaceIdentity,
     session: &SessionRecord,
 ) -> Error {
-    if session.status == SessionStatus::Duplicate {
+    if session.status() == SessionStatus::Duplicate {
         return duplicate_sessions_error(workspace);
     }
 
-    match session.status {
+    match session.status() {
         SessionStatus::Running => running_existing_resource_error(workspace, session),
         SessionStatus::Orphaned => Error::orphaned_managed_session(
             workspace.canonical_git_root.as_ref(),
-            &session.container_name,
+            session.container_name(),
         ),
         SessionStatus::Failed(_) => {
             failed_session_requires_action_error(workspace.canonical_git_root.as_ref(), session)
                 .unwrap_or_else(|| {
                     podman
-                        .inspect_one(&session.container_name)
+                        .inspect_one(session.container_name())
                         .map(|inspect| {
                             classify_named_container_conflict(
                                 workspace,
-                                &session.container_name,
+                                session.container_name(),
                                 &inspect,
                             )
                         })
                         .unwrap_or_else(|_| {
-                            generic_failed_session_error(workspace, &session.container_name)
+                            generic_failed_session_error(workspace, session.container_name())
                         })
                 })
         }
@@ -218,16 +218,17 @@ fn running_existing_resource_error(
     match session.container_kind() {
         AgentboxContainerKind::Managed => Error::msg(format!(
             "managed session `{}` is already running for `{}`; use `agentbox connect {}` to connect to it or `agentbox stop {}` to stop it first",
-            session.container_name,
+            session.container_name(),
             workspace.canonical_git_root,
             workspace.requested_target,
             workspace.requested_target,
         )),
         AgentboxContainerKind::Run => {
-            let target = session.stable_id().unwrap_or(&session.container_name);
+            let target = session.stable_id().unwrap_or(session.container_name());
             Error::msg(format!(
                 "transient run container `{}` is already running for `{}`; use `agentbox stop {target}` to stop it first",
-                session.container_name, workspace.canonical_git_root,
+                session.container_name(),
+                workspace.canonical_git_root,
             ))
         }
     }

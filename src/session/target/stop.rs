@@ -236,14 +236,14 @@ mod tests {
             labels.insert(LABEL_GIT_ROOT.to_string(), canonical_git_root.to_string());
         }
 
-        SessionRecord {
-            container_id: format!("{name}-id"),
-            container_name: name.to_string(),
-            container_kind: AgentboxContainerKind::Managed,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: None,
-            container_running: true,
-            status: SessionStatus::Running,
-        }
+        SessionRecord::new(
+            format!("{name}-id"),
+            name,
+            AgentboxContainerKind::Managed,
+            SessionMetadata::from_labels(&labels),
+            None,
+            true,
+            SessionStatus::Running,
+        )
     }
 }

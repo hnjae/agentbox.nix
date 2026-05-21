@@ -15,16 +15,52 @@ use super::status::SessionStatus;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionRecord {
-    pub container_id: String,
-    pub container_name: String,
-    pub container_kind: AgentboxContainerKind,
-    pub metadata: SessionMetadata,
-    pub attach_endpoint: Option<AttachEndpoint>,
-    pub container_running: bool,
-    pub status: SessionStatus,
+    container_id: String,
+    container_name: String,
+    container_kind: AgentboxContainerKind,
+    metadata: SessionMetadata,
+    attach_endpoint: Option<AttachEndpoint>,
+    container_running: bool,
+    status: SessionStatus,
 }
 
 impl SessionRecord {
+    pub fn new(
+        container_id: impl Into<String>,
+        container_name: impl Into<String>,
+        container_kind: AgentboxContainerKind,
+        metadata: SessionMetadata,
+        attach_endpoint: Option<AttachEndpoint>,
+        container_running: bool,
+        status: SessionStatus,
+    ) -> Self {
+        Self {
+            container_id: container_id.into(),
+            container_name: container_name.into(),
+            container_kind,
+            metadata,
+            attach_endpoint,
+            container_running,
+            status,
+        }
+    }
+
+    pub fn container_id(&self) -> &str {
+        &self.container_id
+    }
+
+    pub fn container_name(&self) -> &str {
+        &self.container_name
+    }
+
+    pub fn attach_endpoint(&self) -> Option<&AttachEndpoint> {
+        self.attach_endpoint.as_ref()
+    }
+
+    pub fn status(&self) -> SessionStatus {
+        self.status
+    }
+
     pub fn canonical_git_root(&self) -> Option<&Utf8Path> {
         self.metadata.canonical_git_root()
     }
@@ -65,8 +101,32 @@ impl SessionRecord {
         self.container_running
     }
 
+    pub fn with_container_kind(mut self, container_kind: AgentboxContainerKind) -> Self {
+        self.container_kind = container_kind;
+        self
+    }
+
+    pub fn with_metadata(mut self, metadata: SessionMetadata) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    pub fn with_attach_endpoint(mut self, attach_endpoint: Option<AttachEndpoint>) -> Self {
+        self.attach_endpoint = attach_endpoint;
+        self
+    }
+
     pub(crate) fn is_running(&self) -> bool {
         self.status.is_running()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metadata_mut(&mut self) -> &mut SessionMetadata {
+        &mut self.metadata
+    }
+
+    pub(crate) fn mark_duplicate(&mut self) {
+        self.status = SessionStatus::Duplicate;
     }
 
     pub(crate) fn has_stable_id(&self) -> bool {
@@ -157,15 +217,15 @@ mod tests {
                 "127.0.0.1".to_string(),
             ),
         ]));
-        let session = SessionRecord {
-            container_id: "container-id".to_string(),
-            container_name: "agentbox-example".to_string(),
-            container_kind: AgentboxContainerKind::Managed,
+        let session = SessionRecord::new(
+            "container-id",
+            "agentbox-example",
+            AgentboxContainerKind::Managed,
             metadata,
-            attach_endpoint: None,
-            container_running: false,
-            status: SessionStatus::failed_unknown(),
-        };
+            None,
+            false,
+            SessionStatus::failed_unknown(),
+        );
 
         assert_eq!(session.runtime_kind(), Some(RuntimeKind::Opencode));
         assert!(session.metadata.attach_labels().is_err());

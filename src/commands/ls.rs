@@ -55,7 +55,7 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
             Cell::new(session.container_kind().output_type()),
             Cell::new(display.canonical_git_root_or_unknown()),
             Cell::new(display.runtime_or_unknown()),
-            Cell::new(session.status.as_str()),
+            Cell::new(session.status().as_str()),
             Cell::new(display.endpoint_or_unknown()),
         ]);
     }
@@ -93,7 +93,7 @@ impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
             container_type: session.container_kind().output_type(),
             canonical_git_root: fields.leading.canonical_git_root,
             runtime: fields.leading.runtime,
-            status: session.status.as_str(),
+            status: session.status().as_str(),
             endpoint: fields.trailing.endpoint,
             container_name: fields.trailing.container_name,
         }

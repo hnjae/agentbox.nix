@@ -31,7 +31,7 @@ impl SessionTargetKind {
             value,
             canonical_git_root: session.canonical_git_root(),
             runtime: session.runtime(),
-            status: session.status,
+            status: session.status(),
         })
     }
 
@@ -170,26 +170,24 @@ mod tests {
     }
 
     fn managed_without_endpoint(stable_id: &str) -> SessionRecord {
-        let mut session = managed_running_session(stable_id);
-        session.attach_endpoint = None;
-        session
+        managed_running_session(stable_id).with_attach_endpoint(None)
     }
 
     fn managed_without_runtime(stable_id: &str) -> SessionRecord {
         let mut session = managed_running_session(stable_id);
-        session.metadata.labels.remove(LABEL_RUNTIME);
+        session.metadata_mut().labels.remove(LABEL_RUNTIME);
         session
     }
 
     fn managed_without_launch_directory(stable_id: &str) -> SessionRecord {
         let mut session = managed_running_session(stable_id);
-        session.metadata.labels.remove(LABEL_LAUNCH_DIRECTORY);
+        session.metadata_mut().labels.remove(LABEL_LAUNCH_DIRECTORY);
         session
     }
 
     fn session_without_stable_id() -> SessionRecord {
         let mut session = managed_running_session("dddddd444444");
-        session.metadata.labels.remove(LABEL_GIT_ROOT_HASH);
+        session.metadata_mut().labels.remove(LABEL_GIT_ROOT_HASH);
         session
     }
 
@@ -211,18 +209,18 @@ mod tests {
             ),
             (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
         ]);
-        SessionRecord {
-            container_id: format!("{stable_id}-id"),
-            container_name: format!("agentbox-{stable_id}"),
+        SessionRecord::new(
+            format!("{stable_id}-id"),
+            format!("agentbox-{stable_id}"),
             container_kind,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: Some(AttachEndpoint {
+            SessionMetadata::from_labels(&labels),
+            Some(AttachEndpoint {
                 scheme: "http".to_string(),
                 host_ip: "127.0.0.1".to_string(),
                 host_port: 4096,
             }),
-            container_running: true,
+            true,
             status,
-        }
+        )
     }
 }

@@ -295,15 +295,15 @@ impl InspectedAgentboxContainer {
         });
         let attach_endpoint = self.attach_endpoint.into_endpoint();
 
-        SessionRecord {
-            container_id: self.container_id,
-            container_name: self.container_name,
-            container_kind: self.container_kind,
-            metadata: self.metadata,
+        SessionRecord::new(
+            self.container_id,
+            self.container_name,
+            self.container_kind,
+            self.metadata,
             attach_endpoint,
-            container_running: self.running,
+            self.running,
             status,
-        }
+        )
     }
 }
 

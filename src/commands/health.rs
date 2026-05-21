@@ -108,7 +108,7 @@ fn selected_health_sessions<'a>(
         return Err(Error::msg(format!(
             "managed session `{}` is `{}`; health only probes running sessions",
             session.stable_id().unwrap_or(&selection_id),
-            session.status.as_str()
+            session.status().as_str()
         )));
     }
 
@@ -130,7 +130,7 @@ fn health_rows<'a>(
 fn health_row<'a>(session: &'a SessionRecord, probe: &impl RuntimeHealthProbe) -> HealthRow<'a> {
     let display = SessionDisplay::from_session(session);
 
-    let health = match (session.runtime_kind(), session.attach_endpoint.as_ref()) {
+    let health = match (session.runtime_kind(), session.attach_endpoint()) {
         (Some(runtime), Some(endpoint)) => probe.check(runtime, endpoint),
         (None, _) => RuntimeHealth::unhealthy("missing runtime metadata"),
         (_, None) => RuntimeHealth::unhealthy("missing attach endpoint"),
@@ -176,15 +176,15 @@ mod tests {
 
     #[test]
     fn health_rendering_uses_shared_session_display_fallbacks() {
-        let session = SessionRecord {
-            container_id: "container-id".to_string(),
-            container_name: "broken-container".to_string(),
-            container_kind: AgentboxContainerKind::Managed,
-            metadata: SessionMetadata::from_labels(&BTreeMap::new()),
-            attach_endpoint: None,
-            container_running: true,
-            status: SessionStatus::Running,
-        };
+        let session = SessionRecord::new(
+            "container-id",
+            "broken-container",
+            AgentboxContainerKind::Managed,
+            SessionMetadata::from_labels(&BTreeMap::new()),
+            None,
+            true,
+            SessionStatus::Running,
+        );
 
         let rows = health_rows(vec![&session], &UnusedProbe);
         let table = render_table(&rows);

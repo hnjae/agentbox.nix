@@ -119,8 +119,8 @@ fn cleanup_managed_container(
     podman: &Podman,
     session: &SessionRecord,
 ) -> Option<ContainerCleanupFailure> {
-    let cleanup = ManagedContainerCleanup::stop_and_verify(podman, &session.container_name);
-    cleanup.remaining_failure(&session.container_name)
+    let cleanup = ManagedContainerCleanup::stop_and_verify(podman, session.container_name());
+    cleanup.remaining_failure(session.container_name())
 }
 
 impl ContainerCleanupFailure {

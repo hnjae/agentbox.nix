@@ -51,8 +51,8 @@ fn validate_restartable_status(target_display: &str, session: &SessionRecord) ->
     if session.is_transient_run() {
         return Err(Error::msg(format!(
             "transient run container `{}` cannot be restarted; stop it with `agentbox stop {}`",
-            session.container_name,
-            session.stable_id().unwrap_or(&session.container_name),
+            session.container_name(),
+            session.stable_id().unwrap_or(session.container_name()),
         )));
     }
 
@@ -62,11 +62,11 @@ fn validate_restartable_status(target_display: &str, session: &SessionRecord) ->
         )));
     }
 
-    match session.status {
+    match session.status() {
         SessionStatus::Running => Ok(()),
         SessionStatus::Orphaned => Err(Error::orphaned_managed_session(
             restart_session_git_root(session)?.as_ref(),
-            &session.container_name,
+            session.container_name(),
         )),
         SessionStatus::Duplicate => Err(Error::duplicate_managed_sessions(
             restart_session_git_root(session)?.as_ref(),
@@ -74,12 +74,12 @@ fn validate_restartable_status(target_display: &str, session: &SessionRecord) ->
         SessionStatus::Failed(Some(failure)) => Err(resource_failure_requires_action_error(
             AgentboxContainerKind::Managed,
             restart_session_git_root(session)?.as_ref(),
-            &session.container_name,
+            session.container_name(),
             failure,
         )),
         SessionStatus::Failed(None) => Err(Error::failed_managed_session(
             restart_session_git_root(session)?.as_ref(),
-            &session.container_name,
+            session.container_name(),
         )),
     }
 }
@@ -88,7 +88,7 @@ fn restart_session_git_root(session: &SessionRecord) -> Result<Utf8PathBuf> {
     session.canonical_git_root().map(Utf8Path::to_path_buf).ok_or_else(|| {
         Error::msg(format!(
             "managed session `{}` cannot be restarted safely because it has no recoverable git-root label",
-            session.container_name
+            session.container_name()
         ))
     })
 }
@@ -97,7 +97,7 @@ fn session_runtime(session: &SessionRecord) -> Result<RuntimeKind> {
     session.runtime_kind().ok_or_else(|| {
         Error::msg(format!(
             "managed session `{}` cannot be restarted because it has an unsupported or malformed `io.agentbox.runtime` label",
-            session.container_name
+            session.container_name()
         ))
     })
 }
@@ -106,7 +106,7 @@ fn session_launch_directory(session: &SessionRecord) -> Result<&Utf8Path> {
     session.launch_directory().ok_or_else(|| {
         Error::msg(format!(
             "managed session `{}` cannot be restarted because it has a missing or malformed `io.agentbox.launch_directory` label",
-            session.container_name
+            session.container_name()
         ))
     })
 }
@@ -137,7 +137,7 @@ mod tests {
 
         let restartable = prepare_restart_session("/workspace/project", &session).unwrap();
 
-        assert_eq!(restartable.session().container_name, "agentbox-example");
+        assert_eq!(restartable.session().container_name(), "agentbox-example");
         assert_eq!(restartable.runtime(), RuntimeKind::Opencode);
         assert_eq!(
             restartable.launch_directory(),
@@ -203,14 +203,14 @@ mod tests {
             .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
             .collect::<BTreeMap<_, _>>();
 
-        SessionRecord {
-            container_id: "container-id".to_string(),
-            container_name: "agentbox-example".to_string(),
+        SessionRecord::new(
+            "container-id",
+            "agentbox-example",
             container_kind,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: None,
-            container_running: status == SessionStatus::Running,
+            SessionMetadata::from_labels(&labels),
+            None,
+            status == SessionStatus::Running,
             status,
-        }
+        )
     }
 }

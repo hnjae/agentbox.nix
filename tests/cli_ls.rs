@@ -62,16 +62,13 @@ fn ls_renders_all_status_rows_in_stable_order() {
 
 #[test]
 fn ls_renders_unknown_for_unrecoverable_failed_fields() {
-    let mut session = session(
+    let session = session(
         "/workspace/broken",
         "broken",
         SessionStatus::failed_unknown(),
-    );
-    session.metadata = SessionMetadata::from_labels(&BTreeMap::from([
-        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
-        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
-    ]));
-    session.attach_endpoint = None;
+    )
+    .with_metadata(unrecoverable_metadata())
+    .with_attach_endpoint(None);
 
     let table = render_table(&[session]);
 
@@ -107,16 +104,13 @@ fn ls_renders_json_rows_in_stable_order() {
 
 #[test]
 fn ls_renders_null_for_unrecoverable_json_fields() {
-    let mut session = session(
+    let session = session(
         "/workspace/broken",
         "broken",
         SessionStatus::failed_unknown(),
-    );
-    session.metadata = SessionMetadata::from_labels(&BTreeMap::from([
-        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
-        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
-    ]));
-    session.attach_endpoint = None;
+    )
+    .with_metadata(unrecoverable_metadata())
+    .with_attach_endpoint(None);
 
     let json = render_json(&[session]).unwrap();
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
@@ -156,28 +150,28 @@ fn ls_defaults_to_table_output() {
 }
 
 fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
-    SessionRecord {
-        container_id: format!("{name}-id"),
-        container_name: name.to_string(),
-        container_kind: AgentboxContainerKind::Managed,
-        metadata: metadata(root, name),
-        attach_endpoint: Some(AttachEndpoint {
+    SessionRecord::new(
+        format!("{name}-id"),
+        name,
+        AgentboxContainerKind::Managed,
+        metadata(root, name),
+        Some(AttachEndpoint {
             scheme: "http".to_string(),
             host_ip: "127.0.0.1".to_string(),
             host_port: 4096,
         }),
-        container_running: status != SessionStatus::Failed(None),
+        status != SessionStatus::Failed(None),
         status,
-    }
+    )
 }
 
 #[test]
 fn ls_renders_transient_run_type_in_table_and_json() {
-    let mut run = session("/workspace/run", "run-container", SessionStatus::Running);
-    run.container_kind = AgentboxContainerKind::Run;
-    run.metadata = transient_run_metadata("/workspace/run", "run-container");
+    let run = session("/workspace/run", "run-container", SessionStatus::Running)
+        .with_container_kind(AgentboxContainerKind::Run)
+        .with_metadata(transient_run_metadata("/workspace/run", "run-container"));
 
-    let table = render_table(&[run.clone()]);
+    let table = render_table(std::slice::from_ref(&run));
     assert!(table.lines().next().unwrap().contains("TYPE"));
     assert!(table.contains("run"));
     assert!(!table.contains("managed"));
@@ -200,6 +194,13 @@ fn metadata(root: &str, name: &str) -> SessionMetadata {
         (LABEL_ATTACH_SCHEME.to_string(), "http".to_string()),
         (LABEL_CONTAINER_PORT.to_string(), "4096".to_string()),
         (LABEL_CONTAINER_LISTEN_IP.to_string(), "0.0.0.0".to_string()),
+    ]))
+}
+
+fn unrecoverable_metadata() -> SessionMetadata {
+    SessionMetadata::from_labels(&BTreeMap::from([
+        (LABEL_MANAGED.to_string(), LABEL_MANAGED_VALUE.to_string()),
+        (LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string()),
     ]))
 }
 

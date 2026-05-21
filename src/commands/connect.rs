@@ -76,7 +76,7 @@ fn connect_directory(directory: &Path) -> Result<()> {
         .map_err(|error| {
             Error::msg(format!(
                 "failed to connect to managed session `{}` for `{}`: {error}. If the session already exited, rerun `{}` or remove the leftover container with `agentbox stop {}`.",
-                connect_session.session().container_name,
+                connect_session.session().container_name(),
                 workspace.canonical_git_root,
                 retry_run_command,
                 workspace.requested_target,

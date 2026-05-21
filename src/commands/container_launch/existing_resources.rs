@@ -93,7 +93,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(selected.unwrap().container_name, "agentbox-demo");
+        assert_eq!(selected.unwrap().container_name(), "agentbox-demo");
     }
 
     #[test]
@@ -154,14 +154,14 @@ mod tests {
             (LABEL_GIT_ROOT_HASH.to_string(), stable_id.to_string()),
         ]);
 
-        SessionRecord {
-            container_id: format!("{name}-id"),
-            container_name: name.to_string(),
-            container_kind: AgentboxContainerKind::Managed,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: None,
-            container_running: true,
-            status: SessionStatus::Running,
-        }
+        SessionRecord::new(
+            format!("{name}-id"),
+            name,
+            AgentboxContainerKind::Managed,
+            SessionMetadata::from_labels(&labels),
+            None,
+            true,
+            SessionStatus::Running,
+        )
     }
 }

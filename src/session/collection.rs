@@ -70,7 +70,7 @@ fn compare_sessions_by_identity(left: &SessionRecord, right: &SessionRecord) -> 
     left.canonical_git_root()
         .map(|root| root.as_str())
         .cmp(&right.canonical_git_root().map(|root| root.as_str()))
-        .then_with(|| left.container_name.cmp(&right.container_name))
+        .then_with(|| left.container_name().cmp(right.container_name()))
 }
 
 #[cfg(test)]
@@ -93,7 +93,7 @@ mod tests {
 
         let sorted = sorted_session_refs_by_identity(&sessions)
             .into_iter()
-            .map(|session| session.container_name.as_str())
+            .map(|session| session.container_name())
             .collect::<Vec<_>>();
 
         assert_eq!(sorted, ["unknown", "first", "second", "beta"]);
@@ -109,7 +109,7 @@ mod tests {
 
         let matches = exact_git_root_matches(sessions, Utf8Path::new("/workspace/a"))
             .into_iter()
-            .map(|session| session.container_name)
+            .map(|session| session.container_name().to_string())
             .collect::<Vec<_>>();
 
         assert_eq!(matches, ["match"]);
@@ -131,7 +131,7 @@ mod tests {
         let unrooted = partition
             .unrooted
             .iter()
-            .map(|session| session.container_name.as_str())
+            .map(|session| session.container_name())
             .collect::<Vec<_>>();
 
         assert_eq!(roots, ["/workspace/a", "/workspace/b"]);
@@ -143,14 +143,14 @@ mod tests {
             BTreeMap::from([(LABEL_GIT_ROOT.to_string(), root.to_string())])
         });
 
-        SessionRecord {
-            container_id: format!("{container_name}-id"),
-            container_name: container_name.to_string(),
-            container_kind: AgentboxContainerKind::Managed,
-            metadata: SessionMetadata::from_labels(&labels),
-            attach_endpoint: None,
-            container_running: false,
-            status: SessionStatus::failed_unknown(),
-        }
+        SessionRecord::new(
+            format!("{container_name}-id"),
+            container_name,
+            AgentboxContainerKind::Managed,
+            SessionMetadata::from_labels(&labels),
+            None,
+            false,
+            SessionStatus::failed_unknown(),
+        )
     }
 }

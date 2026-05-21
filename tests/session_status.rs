@@ -40,7 +40,7 @@ fn duplicate_root_group_marks_each_row_duplicate() {
     assert!(
         sessions
             .iter()
-            .all(|session| session.status == SessionStatus::Duplicate)
+            .all(|session| session.status() == SessionStatus::Duplicate)
     );
 
     let groups = group_sessions_by_git_root(&sessions);
@@ -60,9 +60,9 @@ fn transient_run_containers_are_discovered_as_run_resources() {
 
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].container_kind(), AgentboxContainerKind::Run);
-    assert_eq!(sessions[0].status, SessionStatus::Running);
+    assert_eq!(sessions[0].status(), SessionStatus::Running);
     assert_eq!(sessions[0].runtime(), Some("opencode"));
-    assert!(sessions[0].attach_endpoint.is_some());
+    assert!(sessions[0].attach_endpoint().is_some());
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn managed_discovery_excludes_transient_run_containers() {
         .unwrap();
 
     assert_eq!(sessions.len(), 1);
-    assert_eq!(sessions[0].container_name, "managed");
+    assert_eq!(sessions[0].container_name(), "managed");
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn missing_required_labels_marks_failed() {
         .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
         .unwrap();
 
-    assert!(sessions[0].status.is_failed());
+    assert!(sessions[0].status().is_failed());
 }
 
 #[test]
@@ -158,9 +158,9 @@ fn scoped_discovery_keeps_matching_root_when_identity_hash_is_missing() {
         .unwrap();
 
     assert_eq!(sessions.len(), 1);
-    assert!(sessions[0].status.is_failed());
+    assert!(sessions[0].status().is_failed());
     assert_eq!(
-        sessions[0].status.failure(),
+        sessions[0].status().failure(),
         Some(SessionFailure::MissingRequiredLabels)
     );
 }
@@ -180,7 +180,7 @@ fn scoped_discovery_skips_nonmatching_hash_without_inspect() {
         .unwrap();
 
     assert_eq!(sessions.len(), 1);
-    assert_eq!(sessions[0].container_name, "target");
+    assert_eq!(sessions[0].container_name(), "target");
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn missing_cache_mount_marks_failed() {
         .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
         .unwrap();
 
-    assert!(sessions[0].status.is_failed());
+    assert!(sessions[0].status().is_failed());
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn unsupported_runtime_label_records_specific_failure() {
         .unwrap();
 
     assert_eq!(
-        sessions[0].status.failure(),
+        sessions[0].status().failure(),
         Some(SessionFailure::UnsupportedRuntimeLabel)
     );
 }
@@ -232,7 +232,7 @@ fn malformed_endpoint_labels_record_specific_failure() {
         .unwrap();
 
     assert_eq!(
-        sessions[0].status.failure(),
+        sessions[0].status().failure(),
         Some(SessionFailure::MalformedEndpointLabels)
     );
 }
@@ -249,7 +249,7 @@ fn missing_published_attach_port_records_specific_failure() {
         .unwrap();
 
     assert_eq!(
-        sessions[0].status.failure(),
+        sessions[0].status().failure(),
         Some(SessionFailure::MissingPublishedAttachPort)
     );
 }
@@ -273,10 +273,10 @@ fn malformed_published_attach_port_records_specific_failure() {
         .unwrap();
 
     assert_eq!(
-        sessions[0].status.failure(),
+        sessions[0].status().failure(),
         Some(SessionFailure::MissingPublishedAttachPort)
     );
-    assert_eq!(sessions[0].attach_endpoint, None);
+    assert_eq!(sessions[0].attach_endpoint(), None);
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn missing_git_root_path_marks_orphaned() {
         .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
         .unwrap();
 
-    assert_eq!(sessions[0].status, SessionStatus::Orphaned);
+    assert_eq!(sessions[0].status(), SessionStatus::Orphaned);
 }
 
 #[test]
@@ -332,7 +332,7 @@ fn existing_git_root_path_that_resolves_to_different_repo_marks_orphaned() {
         .discover_from_ps(vec![ps], inspect_by_id(vec![inspect]))
         .unwrap();
 
-    assert_eq!(sessions[0].status, SessionStatus::Orphaned);
+    assert_eq!(sessions[0].status(), SessionStatus::Orphaned);
 }
 
 #[test]
@@ -365,7 +365,7 @@ fn status_for(
 ) -> SessionStatus {
     sessions
         .iter()
-        .find(|session| session.container_name == container_name)
-        .map(|session| session.status)
+        .find(|session| session.container_name() == container_name)
+        .map(|session| session.status())
         .unwrap()
 }

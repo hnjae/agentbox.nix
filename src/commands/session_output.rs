@@ -21,8 +21,8 @@ impl<'a> SessionDisplay<'a> {
             id: session.stable_id(),
             canonical_git_root: session.canonical_git_root(),
             runtime: session.runtime(),
-            endpoint: session.attach_endpoint.as_ref(),
-            container_name: &session.container_name,
+            endpoint: session.attach_endpoint(),
+            container_name: session.container_name(),
         }
     }
 

@@ -65,7 +65,7 @@ fn session_endpoint<'a>(
     workspace: &WorkspaceIdentity,
     session: &'a SessionRecord,
 ) -> Result<&'a AttachEndpoint> {
-    session.attach_endpoint.as_ref().ok_or_else(|| {
+    session.attach_endpoint().ok_or_else(|| {
         session_failure_error(workspace, session, SessionFailure::MalformedEndpointLabels)
     })
 }
@@ -83,23 +83,23 @@ fn validate_connectable_status(
     workspace: &WorkspaceIdentity,
     session: &SessionRecord,
 ) -> Result<()> {
-    match session.status {
+    match session.status() {
         SessionStatus::Running => Ok(()),
         SessionStatus::Orphaned => Err(Error::orphaned_managed_session(
             workspace.canonical_git_root.as_ref(),
-            &session.container_name,
+            session.container_name(),
         )),
         SessionStatus::Failed(Some(SessionFailure::NotRunning)) => {
             Err(not_running_session_error(workspace, session))
         }
         SessionStatus::Failed(Some(failure)) => Err(session_failure_requires_action_error(
             workspace.canonical_git_root.as_ref(),
-            &session.container_name,
+            session.container_name(),
             failure,
         )),
         SessionStatus::Failed(None) => Err(Error::failed_managed_session(
             workspace.canonical_git_root.as_ref(),
-            &session.container_name,
+            session.container_name(),
         )),
         SessionStatus::Duplicate => Err(duplicate_sessions_error(workspace)),
     }
@@ -108,7 +108,7 @@ fn validate_connectable_status(
 fn not_running_session_error(workspace: &WorkspaceIdentity, session: &SessionRecord) -> Error {
     Error::msg(format!(
         "managed session `{}` for `{}` is not running; rerun `{}` to start a new session or `agentbox stop {}` to remove the leftover container",
-        session.container_name,
+        session.container_name(),
         workspace.canonical_git_root,
         run_command_hint(session.runtime(), workspace),
         workspace.requested_target,
@@ -122,7 +122,7 @@ fn session_failure_error(
 ) -> Error {
     session_failure_requires_action_error(
         workspace.canonical_git_root.as_ref(),
-        &session.container_name,
+        session.container_name(),
         failure,
     )
 }

@@ -148,11 +148,11 @@ pub fn failed_session_requires_action_error(
     git_root: &Utf8Path,
     session: &SessionRecord,
 ) -> Option<Error> {
-    session.status.failure().map(|failure| {
+    session.status().failure().map(|failure| {
         resource_failure_requires_action_error(
             session.container_kind(),
             git_root,
-            &session.container_name,
+            session.container_name(),
             failure,
         )
     })
@@ -234,7 +234,7 @@ pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<S
     let mut group_sizes = BTreeMap::<Utf8PathBuf, usize>::new();
 
     for session in &sessions {
-        if session.status.is_failed() {
+        if session.status().is_failed() {
             continue;
         }
 
@@ -244,7 +244,7 @@ pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<S
     }
 
     for session in &mut sessions {
-        if session.status.is_failed() {
+        if session.status().is_failed() {
             continue;
         }
 
@@ -253,7 +253,7 @@ pub(super) fn mark_duplicate_sessions(mut sessions: Vec<SessionRecord>) -> Vec<S
             .and_then(|root| group_sizes.get(root))
             .is_some_and(|count| *count > 1)
         {
-            session.status = SessionStatus::Duplicate;
+            session.mark_duplicate();
         }
     }
 
