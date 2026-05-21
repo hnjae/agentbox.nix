@@ -49,28 +49,28 @@ fn append_common_run_args(
 
     let create = spec.create();
 
-    for (name, value) in &create.labels {
+    for (name, value) in create.labels() {
         args.key_value_option("--label", name, value);
     }
 
-    for mount in &create.mounts {
+    for mount in create.mounts() {
         args.option("--mount", render_mount(mount));
     }
 
-    for (name, value) in &create.default_env {
+    for (name, value) in create.default_env() {
         args.key_value_option("--env", name, value);
     }
 
-    if !create.network_enabled {
+    if !create.network_enabled() {
         args.flag("--network=none");
     }
 
-    for port in &create.published_ports {
+    for port in create.published_ports() {
         args.option("--publish", port);
     }
 
-    args.flag(create.image.as_str());
-    args.extend(create.command.iter().map(String::as_str));
+    args.flag(create.image());
+    args.extend(create.command().iter().map(String::as_str));
 }
 
 fn render_mount(mount: &RuntimeMount) -> String {
@@ -99,17 +99,17 @@ mod tests {
     #[test]
     fn run_detached_args_are_stable_and_complete() {
         let spec = RuntimeRunSpec::new(
-            RuntimeCreateSpec {
-                image: "localhost/agentbox-opencode:ctx-0123456789abcdef".to_string(),
-                labels: BTreeMap::from([
+            RuntimeCreateSpec::new(
+                "localhost/agentbox-opencode:ctx-0123456789abcdef",
+                BTreeMap::from([
                     ("io.agentbox.managed".to_string(), "true".to_string()),
                     ("io.agentbox.runtime".to_string(), "opencode".to_string()),
                 ]),
-                mounts: vec![
+                vec![
                     RuntimeMount::read_only_bind("/workspace", "/workspace"),
                     RuntimeMount::volume("agentbox-cache", "/home/user"),
                 ],
-                command: strings([
+                strings([
                     "opencode",
                     "serve",
                     "--hostname",
@@ -117,13 +117,10 @@ mod tests {
                     "--port",
                     "4096",
                 ]),
-                default_env: BTreeMap::from([(
-                    "NIX_CONFIG".to_string(),
-                    "sandbox = false".to_string(),
-                )]),
-                network_enabled: false,
-                published_ports: vec!["127.0.0.1::4096".to_string()],
-            },
+                BTreeMap::from([("NIX_CONFIG".to_string(), "sandbox = false".to_string())]),
+                false,
+                vec!["127.0.0.1::4096".to_string()],
+            ),
             "/workspace",
         );
 
@@ -170,21 +167,21 @@ mod tests {
     #[test]
     fn run_foreground_args_are_unmanaged_and_interactive() {
         let spec = RuntimeRunSpec::new(
-            RuntimeCreateSpec {
-                image: "localhost/agentbox-opencode:ctx-0123456789abcdef".to_string(),
-                labels: BTreeMap::new(),
-                mounts: vec![
+            RuntimeCreateSpec::new(
+                "localhost/agentbox-opencode:ctx-0123456789abcdef",
+                BTreeMap::new(),
+                vec![
                     RuntimeMount::read_only_bind("/workspace", "/workspace"),
                     RuntimeMount::volume("agentbox-cache", "/home/user"),
                 ],
-                command: strings(["opencode"]),
-                default_env: BTreeMap::from([(
+                strings(["opencode"]),
+                BTreeMap::from([(
                     "OPENCODE_CONFIG_CONTENT".to_string(),
                     r#"{"autoupdate":false}"#.to_string(),
                 )]),
-                network_enabled: true,
-                published_ports: Vec::new(),
-            },
+                true,
+                Vec::new(),
+            ),
             "/workspace",
         );
 

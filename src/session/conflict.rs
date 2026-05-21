@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::Error;
-use crate::metadata::{AgentboxContainerKind, LABEL_LOGICAL_NAME};
+use crate::metadata::AgentboxContainerKind;
 use crate::podman::{Podman, PodmanContainerInspect};
 use crate::runtime::RuntimeCreateSpec;
 use crate::workspace::WorkspaceIdentity;
@@ -60,7 +60,9 @@ pub(crate) fn classify_create_error_or_else(
     match podman.inspect_one(&workspace.container_name) {
         Ok(inspect) => classify_named_container_conflict(
             workspace,
-            &create_spec.labels[LABEL_LOGICAL_NAME],
+            create_spec
+                .logical_name()
+                .unwrap_or(workspace.container_name.as_str()),
             &inspect,
         ),
         Err(_) => fallback(original_error),

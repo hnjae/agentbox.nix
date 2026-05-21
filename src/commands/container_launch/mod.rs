@@ -128,9 +128,6 @@ fn record_runtime_image_version(
     }
 
     if let Some(version) = &preparation.runtime_image_version {
-        run_spec
-            .create_mut()
-            .labels
-            .insert(runtime_package_version_label(runtime), version.clone());
+        run_spec.insert_create_label(runtime_package_version_label(runtime), version.clone());
     }
 }

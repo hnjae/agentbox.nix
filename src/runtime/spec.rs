@@ -99,13 +99,79 @@ impl RuntimeInvocation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeCreateSpec {
-    pub image: String,
-    pub labels: BTreeMap<String, String>,
-    pub mounts: Vec<RuntimeMount>,
-    pub command: Vec<String>,
-    pub default_env: BTreeMap<String, String>,
-    pub network_enabled: bool,
-    pub published_ports: Vec<String>,
+    image: String,
+    labels: BTreeMap<String, String>,
+    mounts: Vec<RuntimeMount>,
+    command: Vec<String>,
+    default_env: BTreeMap<String, String>,
+    network_enabled: bool,
+    published_ports: Vec<String>,
+}
+
+impl RuntimeCreateSpec {
+    pub fn new(
+        image: impl Into<String>,
+        labels: BTreeMap<String, String>,
+        mounts: Vec<RuntimeMount>,
+        command: impl Into<Vec<String>>,
+        default_env: BTreeMap<String, String>,
+        network_enabled: bool,
+        published_ports: Vec<String>,
+    ) -> Self {
+        Self {
+            image: image.into(),
+            labels,
+            mounts,
+            command: command.into(),
+            default_env,
+            network_enabled,
+            published_ports,
+        }
+    }
+
+    pub fn image(&self) -> &str {
+        &self.image
+    }
+
+    pub fn labels(&self) -> &BTreeMap<String, String> {
+        &self.labels
+    }
+
+    pub fn mounts(&self) -> &[RuntimeMount] {
+        &self.mounts
+    }
+
+    pub fn command(&self) -> &[String] {
+        &self.command
+    }
+
+    pub fn default_env(&self) -> &BTreeMap<String, String> {
+        &self.default_env
+    }
+
+    pub fn network_enabled(&self) -> bool {
+        self.network_enabled
+    }
+
+    pub fn published_ports(&self) -> &[String] {
+        &self.published_ports
+    }
+
+    pub(crate) fn logical_name(&self) -> Option<&str> {
+        crate::metadata::required_label_value(&self.labels, crate::metadata::LABEL_LOGICAL_NAME)
+    }
+
+    fn insert_label(&mut self, name: impl Into<String>, value: impl Into<String>) {
+        self.labels.insert(name.into(), value.into());
+    }
+
+    fn add_mount(&mut self, mount: RuntimeMount) {
+        self.mounts.push(mount);
+    }
+
+    fn extend_default_env(&mut self, env: BTreeMap<String, String>) {
+        self.default_env.extend(env);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,12 +195,24 @@ impl RuntimeRunSpec {
         &self.create
     }
 
-    pub(crate) fn create_mut(&mut self) -> &mut RuntimeCreateSpec {
-        &mut self.create
-    }
-
     pub(crate) fn workdir(&self) -> &Utf8Path {
         &self.workdir
+    }
+
+    pub(crate) fn insert_create_label(
+        &mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) {
+        self.create.insert_label(name, value);
+    }
+
+    pub(crate) fn add_create_mount(&mut self, mount: RuntimeMount) {
+        self.create.add_mount(mount);
+    }
+
+    pub(crate) fn extend_create_default_env(&mut self, env: BTreeMap<String, String>) {
+        self.create.extend_default_env(env);
     }
 }
 
@@ -237,15 +315,15 @@ impl RuntimeKind {
             Vec::new()
         };
 
-        RuntimeCreateSpec {
+        RuntimeCreateSpec::new(
             image,
             labels,
-            mounts: runtime_mounts_for_workspace(workspace, host_nix_mounts, runtime_mounts),
-            command: command.into(),
-            default_env: self.default_env(),
-            network_enabled: true,
+            runtime_mounts_for_workspace(workspace, host_nix_mounts, runtime_mounts),
+            command,
+            self.default_env(),
+            true,
             published_ports,
-        }
+        )
     }
 
     fn default_env(self) -> BTreeMap<String, String> {

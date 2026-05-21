@@ -54,54 +54,54 @@ fn opencode_create_spec_matches_mvp_contract() {
     );
     let spec = run_spec.create();
 
-    assert_eq!(spec.image.as_str(), default_image.as_str());
+    assert_eq!(spec.image(), default_image.as_str());
     assert_eq!(
-        spec.labels.get(LABEL_MANAGED),
+        spec.labels().get(LABEL_MANAGED),
         Some(&LABEL_MANAGED_VALUE.to_string())
     );
     assert_eq!(
-        spec.labels.get(LABEL_CONTAINER_KIND),
+        spec.labels().get(LABEL_CONTAINER_KIND),
         Some(&LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE.to_string())
     );
     assert_eq!(
-        spec.labels.get(LABEL_SCHEMA),
+        spec.labels().get(LABEL_SCHEMA),
         Some(&LABEL_SCHEMA_VALUE.to_string())
     );
     assert_eq!(
-        spec.labels.get(LABEL_GIT_ROOT),
+        spec.labels().get(LABEL_GIT_ROOT),
         Some(&workspace.canonical_git_root.to_string())
     );
     assert_eq!(
-        spec.labels.get(LABEL_GIT_ROOT_HASH),
+        spec.labels().get(LABEL_GIT_ROOT_HASH),
         Some(&workspace.hash12)
     );
     assert_eq!(
-        spec.labels.get(LABEL_RUNTIME).map(String::as_str),
+        spec.labels().get(LABEL_RUNTIME).map(String::as_str),
         Some(RuntimeKind::Opencode.as_str())
     );
-    assert_eq!(spec.labels.get(LABEL_IMAGE), Some(&default_image));
+    assert_eq!(spec.labels().get(LABEL_IMAGE), Some(&default_image));
     assert_eq!(
-        spec.labels.get(LABEL_LAUNCH_DIRECTORY),
+        spec.labels().get(LABEL_LAUNCH_DIRECTORY),
         Some(&workspace.canonical_target.to_string())
     );
     assert_eq!(
-        spec.labels.get(LABEL_LOGICAL_NAME),
+        spec.labels().get(LABEL_LOGICAL_NAME),
         Some(&workspace.container_name)
     );
     assert_eq!(
-        spec.labels.get(LABEL_ATTACH_SCHEME),
+        spec.labels().get(LABEL_ATTACH_SCHEME),
         Some(&"http".to_string())
     );
     assert_eq!(
-        spec.labels.get(LABEL_CONTAINER_PORT),
+        spec.labels().get(LABEL_CONTAINER_PORT),
         Some(&"4096".to_string())
     );
     assert_eq!(
-        spec.labels.get(LABEL_CONTAINER_LISTEN_IP),
+        spec.labels().get(LABEL_CONTAINER_LISTEN_IP),
         Some(&"0.0.0.0".to_string())
     );
     assert_eq!(
-        spec.command,
+        spec.command(),
         vec![
             "opencode".to_string(),
             "serve".to_string(),
@@ -111,28 +111,28 @@ fn opencode_create_spec_matches_mvp_contract() {
             "4096".to_string()
         ]
     );
-    assert!(spec.network_enabled);
-    assert_eq!(spec.published_ports, vec!["127.0.0.1::4096".to_string()]);
+    assert!(spec.network_enabled());
+    assert_eq!(spec.published_ports(), vec!["127.0.0.1::4096".to_string()]);
     assert_eq!(
-        spec.default_env.get("OPENCODE_CONFIG_CONTENT"),
+        spec.default_env().get("OPENCODE_CONFIG_CONTENT"),
         Some(&r#"{"autoupdate":false}"#.to_string())
     );
     assert_eq!(
-        spec.default_env.get("OPENCODE_PERMISSION"),
+        spec.default_env().get("OPENCODE_PERMISSION"),
         Some(&r#"{"*":"allow"}"#.to_string())
     );
 
-    assert_eq!(spec.mounts[0].kind, RuntimeMountKind::Bind);
-    assert_eq!(spec.mounts[0].source, workspace.canonical_git_root);
-    assert_eq!(spec.mounts[0].destination, workspace.canonical_git_root);
-    assert!(!spec.mounts[0].read_only);
+    assert_eq!(spec.mounts()[0].kind, RuntimeMountKind::Bind);
+    assert_eq!(spec.mounts()[0].source, workspace.canonical_git_root);
+    assert_eq!(spec.mounts()[0].destination, workspace.canonical_git_root);
+    assert!(!spec.mounts()[0].read_only);
 
-    assert_eq!(spec.mounts[1].kind, RuntimeMountKind::Volume);
-    assert_eq!(spec.mounts[1].source, workspace.container_name);
-    assert_eq!(spec.mounts[1].destination, "/home/user");
-    assert!(!spec.mounts[1].read_only);
+    assert_eq!(spec.mounts()[1].kind, RuntimeMountKind::Volume);
+    assert_eq!(spec.mounts()[1].source, workspace.container_name);
+    assert_eq!(spec.mounts()[1].destination, "/home/user");
+    assert!(!spec.mounts()[1].read_only);
 
-    let host_mounts = &spec.mounts[2..6];
+    let host_mounts = &spec.mounts()[2..6];
     assert_eq!(
         host_mounts
             .iter()
@@ -146,7 +146,7 @@ fn opencode_create_spec_matches_mvp_contract() {
         ]
     );
     assert!(host_mounts.iter().all(|mount| mount.read_only));
-    let opencode_mounts = &spec.mounts[6..];
+    let opencode_mounts = &spec.mounts()[6..];
     assert_eq!(
         opencode_mounts
             .iter()
@@ -218,35 +218,35 @@ fn runtime_run_modes_encode_container_ownership_policy() {
         create_spec_for_mode(runtime, RuntimeRunMode::Foreground, &workspace, &preflight);
 
     assert_eq!(
-        managed.labels.get(LABEL_MANAGED),
+        managed.labels().get(LABEL_MANAGED),
         Some(&LABEL_MANAGED_VALUE.to_string())
     );
     assert_eq!(
-        managed.labels.get(LABEL_CONTAINER_KIND),
+        managed.labels().get(LABEL_CONTAINER_KIND),
         Some(&LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE.to_string())
     );
     assert_eq!(
-        transient.labels.get(LABEL_CONTAINER_KIND),
+        transient.labels().get(LABEL_CONTAINER_KIND),
         Some(&LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE.to_string())
     );
     assert_eq!(
-        transient.labels.get(LABEL_GIT_ROOT),
+        transient.labels().get(LABEL_GIT_ROOT),
         Some(&workspace.canonical_git_root.to_string())
     );
-    assert_eq!(transient.labels.get(LABEL_MANAGED), None);
-    assert!(foreground.labels.is_empty());
+    assert_eq!(transient.labels().get(LABEL_MANAGED), None);
+    assert!(foreground.labels().is_empty());
 
-    assert_eq!(managed.published_ports, ["127.0.0.1::4096"]);
-    assert_eq!(transient.published_ports, managed.published_ports);
-    assert!(foreground.published_ports.is_empty());
+    assert_eq!(managed.published_ports(), ["127.0.0.1::4096"]);
+    assert_eq!(transient.published_ports(), managed.published_ports());
+    assert!(foreground.published_ports().is_empty());
 
-    assert_eq!(transient.mounts, managed.mounts);
-    assert_eq!(foreground.mounts, managed.mounts);
-    assert_eq!(transient.default_env, managed.default_env);
-    assert_eq!(foreground.default_env, managed.default_env);
-    assert!(managed.network_enabled);
-    assert!(transient.network_enabled);
-    assert!(foreground.network_enabled);
+    assert_eq!(transient.mounts(), managed.mounts());
+    assert_eq!(foreground.mounts(), managed.mounts());
+    assert_eq!(transient.default_env(), managed.default_env());
+    assert_eq!(foreground.default_env(), managed.default_env());
+    assert!(managed.network_enabled());
+    assert!(transient.network_enabled());
+    assert!(foreground.network_enabled());
 }
 
 #[test]
@@ -352,7 +352,7 @@ fn codex_create_spec_includes_host_codex_config_mount() {
     );
     let spec = run_spec.create();
     let codex_mount = spec
-        .mounts
+        .mounts()
         .iter()
         .find(|mount| mount.destination == CODEX_CONFIG_DESTINATION)
         .unwrap();

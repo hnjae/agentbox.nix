@@ -37,11 +37,10 @@ struct SshCommitSigningPassthrough {
 
 impl SshCommitSigningPassthrough {
     fn apply_to(self, run_spec: &mut RuntimeRunSpec) {
-        let create = run_spec.create_mut();
         if let Some(mount) = self.agent_socket_mount {
-            create.mounts.push(mount);
+            run_spec.add_create_mount(mount);
         }
-        create.default_env.extend(self.env);
+        run_spec.extend_create_default_env(self.env);
     }
 }
 
@@ -56,9 +55,8 @@ impl SshKnownHostsPassthrough {
             return SshPassthroughGuard::default();
         };
         let (mount, env, file) = prepared.into_parts();
-        let create = run_spec.create_mut();
-        create.mounts.push(mount);
-        create.default_env.extend(env);
+        run_spec.add_create_mount(mount);
+        run_spec.extend_create_default_env(env);
         SshPassthroughGuard {
             _known_hosts_file: Some(file),
         }
@@ -440,15 +438,15 @@ mod tests {
     #[test]
     fn passthrough_applies_mount_and_env_to_run_spec() {
         let mut spec = RuntimeRunSpec::new(
-            RuntimeCreateSpec {
-                image: "image".to_string(),
-                labels: BTreeMap::new(),
-                mounts: Vec::new(),
-                command: vec!["runtime".to_string()],
-                default_env: BTreeMap::new(),
-                network_enabled: true,
-                published_ports: Vec::new(),
-            },
+            RuntimeCreateSpec::new(
+                "image",
+                BTreeMap::new(),
+                Vec::new(),
+                vec!["runtime".to_string()],
+                BTreeMap::new(),
+                true,
+                Vec::new(),
+            ),
             "/repo",
         );
         let passthrough = SshCommitSigningPassthrough {
@@ -465,7 +463,7 @@ mod tests {
         passthrough.apply_to(&mut spec);
 
         assert_eq!(
-            spec.create().mounts,
+            spec.create().mounts(),
             vec![RuntimeMount::bind(
                 "/tmp/agent.sock",
                 CONTAINER_SSH_AUTH_SOCK
@@ -473,7 +471,7 @@ mod tests {
         );
         assert_eq!(
             spec.create()
-                .default_env
+                .default_env()
                 .get(HOST_SSH_AUTH_SOCK_ENV)
                 .map(String::as_str),
             Some(CONTAINER_SSH_AUTH_SOCK)
