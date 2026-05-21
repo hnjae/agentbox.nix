@@ -240,8 +240,8 @@ mod tests {
     use super::*;
     use crate::metadata::{ManagedSessionLabelInput, managed_session_labels};
     use crate::podman::{
-        PodmanContainerConfig, PodmanContainerState, PodmanHostConfig, PodmanNetworkEndpoint,
-        PodmanNetworkSettings, PodmanPortBinding,
+        PodmanContainerConfig, PodmanContainerState, PodmanHostConfig, PodmanNetworkSettings,
+        PodmanPortBinding,
     };
     use crate::runtime::RuntimeHealth;
 
@@ -417,35 +417,24 @@ mod tests {
 
         PodmanContainerInspect {
             id: "container-id".to_string(),
-            created: "2026-05-21T00:00:00Z".to_string(),
             path: "/usr/bin/opencode".to_string(),
-            args: Vec::new(),
             state: PodmanContainerState {
                 status: "running".to_string(),
                 running: true,
-                exit_code: 0,
                 pid: 4321,
-                started_at: None,
-                finished_at: None,
-                health: None,
+                ..PodmanContainerState::default()
             },
             image_name: image,
             config: PodmanContainerConfig {
-                user: None,
-                env: Vec::new(),
-                cmd: Vec::new(),
-                working_dir: None,
                 labels,
-                entrypoint: None,
-                stop_signal: None,
+                ..PodmanContainerConfig::default()
             },
             host_config: PodmanHostConfig {
-                auto_remove: false,
                 network_mode: Some("bridge".to_string()),
-                privileged: false,
+                ..PodmanHostConfig::default()
             },
-            mounts: Vec::new(),
             network_settings: network_settings(host_port),
+            ..PodmanContainerInspect::default()
         }
     }
 
@@ -463,8 +452,8 @@ mod tests {
             .unwrap_or_default();
 
         PodmanNetworkSettings {
-            networks: BTreeMap::<String, PodmanNetworkEndpoint>::new(),
             ports,
+            ..PodmanNetworkSettings::default()
         }
     }
 }

@@ -35,7 +35,7 @@ pub struct PodmanPsContainer {
     pub namespaces: Option<PodmanNamespaces>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanVolume {
     pub name: String,
@@ -128,7 +128,7 @@ pub struct PodmanNamespaces {
     pub uts: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanContainerInspect {
     pub id: String,
@@ -145,7 +145,7 @@ pub struct PodmanContainerInspect {
     pub network_settings: PodmanNetworkSettings,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanContainerState {
     pub status: String,
@@ -171,7 +171,7 @@ pub struct PodmanHealth {
     pub failing_streak: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanContainerConfig {
     #[serde(default)]
@@ -190,7 +190,7 @@ pub struct PodmanContainerConfig {
     pub stop_signal: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanHostConfig {
     #[serde(default)]
@@ -258,7 +258,7 @@ impl Serialize for PodmanContainerMountKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanNetworkSettings {
     #[serde(default, deserialize_with = "deserialize_map_or_null_default")]
@@ -320,7 +320,7 @@ pub struct PodmanNetworkEndpoint {
     pub aliases: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PodmanPortBinding {
     #[serde(default)]

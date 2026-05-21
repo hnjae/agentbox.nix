@@ -273,12 +273,10 @@ fn add_candidate_or_skip(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::*;
     use crate::podman::{
-        PodmanContainerConfig, PodmanContainerInspect, PodmanContainerMount,
-        PodmanContainerMountKind, PodmanContainerState, PodmanHostConfig, PodmanNetworkSettings,
+        PodmanContainerInspect, PodmanContainerMount, PodmanContainerMountKind,
+        PodmanContainerState,
     };
 
     const USED_VOLUME: &str = "agentbox-used-abcdef123456";
@@ -434,33 +432,13 @@ mod tests {
     ) -> PodmanContainerInspect {
         PodmanContainerInspect {
             id: id.to_string(),
-            created: String::new(),
-            path: String::new(),
-            args: Vec::new(),
             state: PodmanContainerState {
                 status: "running".to_string(),
                 running: true,
-                exit_code: 0,
                 pid: 1,
-                started_at: None,
-                finished_at: None,
-                health: None,
+                ..PodmanContainerState::default()
             },
             image_name: image_name.to_string(),
-            config: PodmanContainerConfig {
-                user: None,
-                env: Vec::new(),
-                cmd: Vec::new(),
-                working_dir: None,
-                labels: BTreeMap::new(),
-                entrypoint: None,
-                stop_signal: None,
-            },
-            host_config: PodmanHostConfig {
-                auto_remove: false,
-                network_mode: None,
-                privileged: false,
-            },
             mounts: mount_sources
                 .iter()
                 .enumerate()
@@ -471,22 +449,14 @@ mod tests {
                     rw: true,
                 })
                 .collect(),
-            network_settings: PodmanNetworkSettings {
-                networks: BTreeMap::new(),
-                ports: BTreeMap::new(),
-            },
+            ..PodmanContainerInspect::default()
         }
     }
 
     fn volume(name: &str) -> PodmanVolume {
         PodmanVolume {
             name: name.to_string(),
-            driver: None,
-            mountpoint: None,
-            created_at: None,
-            labels: BTreeMap::new(),
-            scope: None,
-            options: BTreeMap::new(),
+            ..PodmanVolume::default()
         }
     }
 }

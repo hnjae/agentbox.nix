@@ -367,17 +367,17 @@ impl ManagedInspectFixture {
             image_name: self.image,
             config: PodmanContainerConfig {
                 user: Some("user".to_string()),
-                env: Vec::new(),
                 cmd: self.command,
                 working_dir: Some(self.working_dir),
                 labels: self.labels.clone(),
                 entrypoint: Some(vec!["/entrypoint".to_string()]),
                 stop_signal: Some("SIGTERM".to_string()),
+                ..PodmanContainerConfig::default()
             },
             host_config: PodmanHostConfig {
                 auto_remove: self.auto_remove,
                 network_mode: Some("bridge".to_string()),
-                privileged: false,
+                ..PodmanHostConfig::default()
             },
             mounts: managed_container_mounts(
                 &self.git_root,
@@ -385,8 +385,8 @@ impl ManagedInspectFixture {
                 self.include_cache_mount,
             ),
             network_settings: PodmanNetworkSettings {
-                networks: BTreeMap::new(),
                 ports: published_ports_for_labels(&self.labels, self.host_port),
+                ..PodmanNetworkSettings::default()
             },
         }
     }
@@ -403,8 +403,7 @@ fn container_state(running: bool) -> PodmanContainerState {
         exit_code: if running { 0 } else { 137 },
         pid: if running { 4321 } else { 0 },
         started_at: Some(FIXTURE_STARTED_RFC3339.to_string()),
-        finished_at: None,
-        health: None,
+        ..PodmanContainerState::default()
     }
 }
 
