@@ -358,10 +358,18 @@ impl RuntimeKind {
         host_nix_mounts: &[RuntimeMount],
         runtime_mounts: &[RuntimeMount],
         invocation: RuntimeInvocation,
+        server_args: &[String],
     ) -> RuntimeRunSpec {
         let (command, workdir) = invocation.into_parts();
         RuntimeRunSpec::new(
-            self.create_spec(mode, workspace, host_nix_mounts, runtime_mounts, command),
+            self.create_spec(
+                mode,
+                workspace,
+                host_nix_mounts,
+                runtime_mounts,
+                command,
+                server_args,
+            ),
             workdir,
         )
     }
@@ -373,9 +381,11 @@ impl RuntimeKind {
         host_nix_mounts: &[RuntimeMount],
         runtime_mounts: &[RuntimeMount],
         command: impl Into<Vec<String>>,
+        server_args: &[String],
     ) -> RuntimeCreateSpec {
         let image = self.default_image();
-        let label_input = ManagedSessionLabelInput::from_workspace(workspace, &image, self);
+        let label_input =
+            ManagedSessionLabelInput::from_workspace(workspace, &image, self, server_args);
         let labels = match mode {
             RuntimeRunMode::ManagedSession => managed_session_labels(label_input),
             RuntimeRunMode::TransientServer => transient_run_labels(label_input),

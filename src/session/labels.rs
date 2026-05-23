@@ -153,6 +153,7 @@ mod tests {
             image: "localhost/agentbox-opencode:ctx-0123456789abcdef",
             launch_directory: GIT_ROOT,
             logical_name: CONTAINER_NAME,
+            server_args: &[],
         })
     }
 }

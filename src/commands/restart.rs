@@ -101,6 +101,7 @@ fn restart_target(
             runtime,
             dev_env,
             connect,
+            restart_session.server_args().to_vec(),
         ))?;
 
         stop_existing_session(locked.podman(), restart_session.session())?;

@@ -25,6 +25,7 @@ pub const LABEL_LOGICAL_NAME: &str = "io.agentbox.logical_name";
 pub const LABEL_ATTACH_SCHEME: &str = "io.agentbox.attach_scheme";
 pub const LABEL_CONTAINER_PORT: &str = "io.agentbox.container_port";
 pub const LABEL_CONTAINER_LISTEN_IP: &str = "io.agentbox.container_listen_ip";
+pub const LABEL_SERVER_ARGS: &str = "io.agentbox.server_args";
 pub const LABEL_DEFAULT_RUNTIME_IMAGE: &str = "io.agentbox.default_runtime_image";
 pub const LABEL_IMAGE_CONTEXT_HASH: &str = "io.agentbox.image_context_hash";
 

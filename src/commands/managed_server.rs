@@ -145,6 +145,7 @@ fn finish_managed_server_launch(
             &endpoint,
             completion.client_launch_directory,
             codex_attach_token,
+            &[],
         )
         .map_err(|error| {
             Error::msg(completion.kind.connect_error_message(

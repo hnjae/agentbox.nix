@@ -37,6 +37,10 @@ pub struct StartArgs {
 
     /// Workspace directory inside a git repository.
     pub directory: PathBuf,
+
+    /// Arguments passed to the runtime server.
+    #[arg(value_name = "AGENT_ARG", last = true)]
+    pub agent_args: Vec<String>,
 }
 
 pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
@@ -53,6 +57,7 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             runtime,
             args.dev_env,
             args.connect,
+            args.agent_args,
         ))?;
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;

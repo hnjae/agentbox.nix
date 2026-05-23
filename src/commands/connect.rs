@@ -27,11 +27,15 @@ const CONNECT_NON_TTY_ERROR: &str =
 pub struct ConnectArgs {
     /// Workspace directory inside a git repository.
     pub directory: Option<PathBuf>,
+
+    /// Arguments passed to the runtime host client.
+    #[arg(value_name = "AGENT_ARG", last = true)]
+    pub agent_args: Vec<String>,
 }
 
 pub fn run(args: ConnectArgs) -> Result<()> {
     let directory = selected_connect_directory(args.directory)?;
-    connect_directory(&directory)
+    connect_directory(&directory, &args.agent_args)
 }
 
 fn selected_connect_directory(directory: Option<PathBuf>) -> Result<PathBuf> {
@@ -52,7 +56,7 @@ fn select_connect_directory() -> Result<PathBuf> {
     )
 }
 
-fn connect_directory(directory: &Path) -> Result<()> {
+fn connect_directory(directory: &Path, agent_args: &[String]) -> Result<()> {
     with_locked_workspace(directory, false, |locked| {
         let workspace = locked.workspace();
         let sessions = locked.discover_managed_sessions()?;
@@ -71,6 +75,7 @@ fn connect_directory(directory: &Path) -> Result<()> {
             connect_session.endpoint(),
             connect_session.launch_directory(),
             codex_attach_token.as_ref(),
+            agent_args,
         )
         .map_err(|error| {
             Error::msg(format!(

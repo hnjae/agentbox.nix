@@ -7,7 +7,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::metadata::{
     AgentboxContainerKind, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY,
-    LABEL_LOGICAL_NAME, LABEL_RUNTIME, agentbox_container_kind_from_labels, required_label_value,
+    LABEL_LOGICAL_NAME, LABEL_RUNTIME, LABEL_SERVER_ARGS, agentbox_container_kind_from_labels,
+    required_label_value,
 };
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 
@@ -104,6 +105,10 @@ impl SessionRecord {
         self.container_running
     }
 
+    pub(crate) fn server_args(&self) -> crate::Result<Vec<String>> {
+        self.metadata.server_args()
+    }
+
     pub fn with_container_kind(mut self, container_kind: AgentboxContainerKind) -> Self {
         self.container_kind = container_kind;
         self
@@ -186,6 +191,16 @@ impl SessionMetadata {
 
     pub(crate) fn logical_name_or<'a>(&'a self, fallback: &'a str) -> &'a str {
         self.label(LABEL_LOGICAL_NAME).unwrap_or(fallback)
+    }
+
+    pub(crate) fn server_args(&self) -> crate::Result<Vec<String>> {
+        let Some(value) = self.label(LABEL_SERVER_ARGS) else {
+            return Ok(Vec::new());
+        };
+
+        serde_json::from_str(value).map_err(|error| {
+            crate::Error::msg(format!("malformed `{LABEL_SERVER_ARGS}` label: {error}"))
+        })
     }
 
     pub(super) fn label(&self, name: &str) -> Option<&str> {

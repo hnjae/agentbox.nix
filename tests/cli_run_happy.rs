@@ -3,6 +3,7 @@
 
 use std::fs;
 
+use agentbox::metadata::LABEL_SERVER_ARGS;
 use agentbox::runtime::RuntimeKind;
 use agentbox::runtime::default_image::default_image_context_hash;
 use predicates::prelude::*;
@@ -192,6 +193,46 @@ fn run_launches_codex_transient_server_and_host_client_in_yolo_mode() {
     )));
     assert!(log[4].contains("--remote-auth-token-env AGENTBOX_CODEX_REMOTE_TOKEN"));
     assert!(log[4].contains(&format!("cwd={}", workspace.canonical_target)));
+}
+
+#[test]
+fn run_passes_agent_args_to_host_client_only() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Opencode.default_image();
+    let harness = Harness::new();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    let endpoint_port = endpoint.port();
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Opencode,
+            endpoint_port,
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .args(["run", "--runtime", "opencode"])
+        .arg(target)
+        .args(["--", "--no-alt-screen"]);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let expected_endpoint = format!("http://127.0.0.1:{endpoint_port}");
+    let commands = harness.command_log();
+    let run = commands.first("run");
+    run.assert_args_contain(&format!(
+        " {image} opencode serve --hostname 0.0.0.0 --port 4096"
+    ));
+    run.assert_args_do_not_contain("--no-alt-screen");
+    commands
+        .entry(4)
+        .assert_raw_contains(&format!("attach {expected_endpoint} --no-alt-screen"));
 }
 
 #[test]
@@ -1071,6 +1112,80 @@ fn start_uses_no_wrapper_when_flake_has_no_candidate_dev_shell() {
     );
     assert!(run.contains(" opencode serve --hostname 0.0.0.0 --port 4096"));
     assert!(!run.contains("nix develop"));
+}
+
+#[test]
+fn start_passes_agent_args_to_server_and_records_them() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    let endpoint_port = endpoint.port();
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint_port,
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .args(["start", "--runtime", "opencode"])
+        .arg(target)
+        .args(["--", "--server-flag", "value"]);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let commands = harness.command_log();
+    let run = commands.first("run");
+    run.assert_args_contain(" opencode serve --hostname 0.0.0.0 --port 4096 --server-flag value");
+    run.assert_args_contain(&format!(
+        "--label {LABEL_SERVER_ARGS}=[\"--server-flag\",\"value\"]"
+    ));
+}
+
+#[test]
+fn start_connect_does_not_pass_server_args_to_host_client() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    let endpoint_port = endpoint.port();
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint_port,
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .args(["start", "--connect", "--runtime", "opencode"])
+        .arg(target)
+        .args(["--", "--server-flag", "value"]);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let commands = harness.command_log();
+    commands
+        .first("run")
+        .assert_args_contain(" opencode serve --hostname 0.0.0.0 --port 4096 --server-flag value");
+    commands
+        .entry(5)
+        .assert_args_contain(&format!("attach http://127.0.0.1:{endpoint_port}"));
+    commands
+        .entry(5)
+        .assert_args_do_not_contain("--server-flag");
 }
 
 #[test]

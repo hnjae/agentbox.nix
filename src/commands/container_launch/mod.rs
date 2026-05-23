@@ -52,6 +52,7 @@ pub(super) fn prepare_runtime_launch(
         policy,
         git_identity,
         invocation,
+        server_args,
     } = request;
     let preparation = prepare_container_launch_for_workspace(
         podman,
@@ -74,7 +75,9 @@ pub(super) fn prepare_runtime_launch(
             workspace,
             &preparation.dev_env,
             codex_attach_token.as_ref(),
+            &server_args,
         )?,
+        &server_args,
     );
     run_spec.extend_create_default_env(preparation.preflight.runtime_environment.clone());
     let ssh_passthrough = apply_git_and_ssh_passthrough(

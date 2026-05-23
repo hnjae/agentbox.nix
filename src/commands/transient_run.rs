@@ -26,6 +26,7 @@ pub(super) struct TransientRunLaunch<'a> {
     runtime: RuntimeKind,
     run_spec: &'a RuntimeRunSpec,
     codex_attach_token: Option<&'a CodexAttachToken>,
+    client_args: &'a [String],
 }
 
 impl<'a> TransientRunLaunch<'a> {
@@ -35,6 +36,7 @@ impl<'a> TransientRunLaunch<'a> {
         runtime: RuntimeKind,
         run_spec: &'a RuntimeRunSpec,
         codex_attach_token: Option<&'a CodexAttachToken>,
+        client_args: &'a [String],
     ) -> Self {
         Self {
             podman,
@@ -42,6 +44,7 @@ impl<'a> TransientRunLaunch<'a> {
             runtime,
             run_spec,
             codex_attach_token,
+            client_args,
         }
     }
 
@@ -62,8 +65,9 @@ impl<'a> TransientRunLaunch<'a> {
             endpoint,
             self.workspace.canonical_target.as_ref(),
             self.codex_attach_token,
+            self.client_args,
         );
-        transient.finish_host_client_run(self.runtime, endpoint, status)
+        transient.finish_host_client_run(self.runtime, endpoint, status, self.client_args)
     }
 }
 
@@ -100,6 +104,7 @@ impl<'a> TransientRun<'a> {
         runtime: RuntimeKind,
         endpoint: &AttachEndpoint,
         status: Result<ExitStatus>,
+        client_args: &[String],
     ) -> Result<()> {
         let cleanup = self.cleanup();
         match status {
@@ -110,6 +115,7 @@ impl<'a> TransientRun<'a> {
                         endpoint,
                         self.workspace.canonical_target.as_ref(),
                         status,
+                        client_args,
                     )
                 }) else {
                     return cleanup;

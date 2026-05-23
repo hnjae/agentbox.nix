@@ -22,6 +22,7 @@ pub(in crate::commands) struct RuntimeLaunchRequest<'a> {
     pub(super) policy: RuntimeLaunchPolicy,
     pub(super) git_identity: GitIdentityPassthrough,
     pub(super) invocation: RuntimeLaunchInvocation<'a>,
+    pub(super) server_args: Vec<String>,
 }
 
 pub(super) enum RuntimeLaunchInvocation<'a> {
@@ -34,12 +35,14 @@ pub(in crate::commands) fn managed_server_launch_request<'a>(
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
     connect_after_start: bool,
+    server_args: Vec<String>,
 ) -> RuntimeLaunchRequest<'a> {
     server_launch_request(
         locked,
         runtime,
         dev_env_mode,
         RuntimeLaunchPolicy::managed_server(connect_after_start),
+        server_args,
     )
 }
 
@@ -53,6 +56,7 @@ pub(in crate::commands) fn transient_server_launch_request<'a>(
         runtime,
         dev_env_mode,
         RuntimeLaunchPolicy::transient_server(),
+        Vec::new(),
     )
 }
 
@@ -61,6 +65,7 @@ fn server_launch_request<'a>(
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
     policy: RuntimeLaunchPolicy,
+    server_args: Vec<String>,
 ) -> RuntimeLaunchRequest<'a> {
     RuntimeLaunchRequest {
         podman: locked.podman(),
@@ -70,6 +75,7 @@ fn server_launch_request<'a>(
         policy,
         git_identity: GitIdentityPassthrough::Host,
         invocation: RuntimeLaunchInvocation::Server,
+        server_args,
     }
 }
 
@@ -87,6 +93,7 @@ pub(in crate::commands) fn foreground_launch_request<'a>(
         policy: RuntimeLaunchPolicy::foreground(),
         git_identity: GitIdentityPassthrough::CodexExec,
         invocation: RuntimeLaunchInvocation::Custom(Box::new(invocation)),
+        server_args: Vec::new(),
     }
 }
 
@@ -96,6 +103,7 @@ pub(in crate::commands) fn replacement_server_launch_request<'a>(
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
     connect_after_start: bool,
+    server_args: Vec<String>,
 ) -> RuntimeLaunchRequest<'a> {
     RuntimeLaunchRequest {
         podman,
@@ -105,6 +113,7 @@ pub(in crate::commands) fn replacement_server_launch_request<'a>(
         policy: RuntimeLaunchPolicy::replacement_server(connect_after_start),
         git_identity: GitIdentityPassthrough::Host,
         invocation: RuntimeLaunchInvocation::Server,
+        server_args,
     }
 }
 
@@ -114,6 +123,7 @@ pub(super) fn build_runtime_invocation(
     workspace: &WorkspaceIdentity,
     dev_env: &DevEnvironment,
     codex_attach_token: Option<&CodexAttachToken>,
+    server_args: &[String],
 ) -> crate::Result<RuntimeInvocation> {
     match invocation {
         RuntimeLaunchInvocation::Server => server_runtime_command(
@@ -121,6 +131,7 @@ pub(super) fn build_runtime_invocation(
             workspace.canonical_target.as_ref(),
             dev_env,
             codex_attach_token,
+            server_args,
         ),
         RuntimeLaunchInvocation::Custom(invocation) => Ok(invocation(dev_env)),
     }
@@ -149,6 +160,7 @@ mod tests {
             &workspace,
             &DevEnvironment::Direnv,
             None,
+            &[],
         )
         .unwrap();
 
@@ -173,6 +185,7 @@ mod tests {
             &workspace,
             &DevEnvironment::None,
             Some(&token),
+            &["--server-flag".to_string()],
         )
         .unwrap();
 
@@ -188,6 +201,7 @@ mod tests {
                 "capability-token",
                 "--ws-token-sha256",
                 token.sha256(),
+                "--server-flag",
             ]
         );
 
@@ -197,6 +211,7 @@ mod tests {
             &workspace,
             &DevEnvironment::None,
             None,
+            &[],
         )
         .unwrap_err();
         assert_eq!(

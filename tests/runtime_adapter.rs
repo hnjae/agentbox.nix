@@ -51,6 +51,7 @@ fn opencode_create_spec_matches_mvp_contract() {
             runtime.server_command().argv,
             workspace.canonical_target.clone(),
         ),
+        &[],
     );
     let spec = run_spec.create();
 
@@ -357,6 +358,7 @@ fn codex_create_spec_includes_host_codex_config_mount() {
             RuntimeKind::Codex.server_command().argv,
             workspace.canonical_target.clone(),
         ),
+        &[],
     );
     let spec = run_spec.create();
     let codex_mount = spec
@@ -524,6 +526,7 @@ fn create_spec_for_mode(
                 runtime.server_command().argv,
                 workspace.canonical_target.clone(),
             ),
+            &[],
         )
         .create()
         .clone()

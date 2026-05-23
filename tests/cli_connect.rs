@@ -60,6 +60,44 @@ fn connect_to_a_running_session_runs_runtime_client() {
 }
 
 #[test]
+fn connect_passes_agent_args_to_host_client() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "running-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            labels_with_launch_directory(
+                opencode_workspace_labels(workspace),
+                workspace.canonical_target.as_str(),
+            ),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .arg("connect")
+        .arg(target)
+        .args(["--", "--no-alt-screen"]);
+
+    command.assert().success().stderr("");
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "opencode"]);
+    assert!(log[2].contains("attach http://127.0.0.1:49152 --no-alt-screen"));
+    assert!(log[2].contains(&format!("cwd={}", workspace.canonical_target)));
+}
+
+#[test]
 fn connect_without_target_requires_tty_for_selection() {
     let harness = Harness::new();
     let mut command = harness.agentbox_command();

@@ -19,6 +19,7 @@ pub(crate) fn server_runtime_command(
     target: &Utf8Path,
     dev_env: &DevEnvironment,
     codex_attach_token: Option<&CodexAttachToken>,
+    server_args: &[String],
 ) -> Result<RuntimeInvocation> {
     let mut argv = runtime.server_command().argv;
     if runtime == RuntimeKind::Codex {
@@ -31,6 +32,7 @@ pub(crate) fn server_runtime_command(
             token.sha256().to_string(),
         ]);
     }
+    argv.extend(server_args.iter().cloned());
 
     Ok(RuntimeInvocation::new(
         dev_env.wrap_argv(argv),
@@ -55,11 +57,12 @@ fn host_client_runtime_command(
     runtime: RuntimeKind,
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
+    client_args: &[String],
 ) -> RuntimeInvocation {
-    RuntimeInvocation::new(
-        runtime.host_client_command(endpoint).argv,
-        launch_directory.to_path_buf(),
-    )
+    let mut argv = runtime.host_client_command(endpoint).argv;
+    argv.extend(client_args.iter().cloned());
+
+    RuntimeInvocation::new(argv, launch_directory.to_path_buf())
 }
 
 pub(crate) fn run_host_runtime_client(
@@ -67,9 +70,15 @@ pub(crate) fn run_host_runtime_client(
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
     codex_attach_token: Option<&CodexAttachToken>,
+    client_args: &[String],
 ) -> Result<()> {
-    let status =
-        run_host_runtime_client_status(runtime, endpoint, launch_directory, codex_attach_token)?;
+    let status = run_host_runtime_client_status(
+        runtime,
+        endpoint,
+        launch_directory,
+        codex_attach_token,
+        client_args,
+    )?;
     if status.success() {
         Ok(())
     } else {
@@ -78,6 +87,7 @@ pub(crate) fn run_host_runtime_client(
             endpoint,
             launch_directory,
             status,
+            client_args,
         ))
     }
 }
@@ -87,9 +97,10 @@ pub(crate) fn run_host_runtime_client_status(
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
     codex_attach_token: Option<&CodexAttachToken>,
+    client_args: &[String],
 ) -> Result<ExitStatus> {
     let process_runner = ProcessRunner::new();
-    let client = host_client_runtime_command(runtime, endpoint, launch_directory);
+    let client = host_client_runtime_command(runtime, endpoint, launch_directory, client_args);
     let codex_attach_token = required_codex_client_token(runtime, codex_attach_token)?;
 
     run_host_client(&process_runner, &client, codex_attach_token)
@@ -117,8 +128,9 @@ pub(crate) fn host_client_status_error(
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
     status: ExitStatus,
+    client_args: &[String],
 ) -> Error {
-    let client = host_client_runtime_command(runtime, endpoint, launch_directory);
+    let client = host_client_runtime_command(runtime, endpoint, launch_directory, client_args);
     Error::msg(format!(
         "`{}` exited with {}",
         client.argv().join(" "),

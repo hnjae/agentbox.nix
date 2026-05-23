@@ -501,6 +501,7 @@ pub fn opencode_transient_run_labels(
         image: &image,
         launch_directory: git_root,
         logical_name,
+        server_args: &[],
     })
 }
 
@@ -535,7 +536,10 @@ fn workspace_managed_labels(
     runtime: RuntimeKind,
 ) -> BTreeMap<String, String> {
     managed_session_labels(ManagedSessionLabelInput::from_workspace(
-        workspace, image, runtime,
+        workspace,
+        image,
+        runtime,
+        &[],
     ))
 }
 
@@ -554,6 +558,7 @@ fn managed_labels_with_launch_directory(
         image,
         launch_directory,
         logical_name,
+        server_args: &[],
     })
 }
 

@@ -36,6 +36,7 @@ pub(super) fn running_inspect(
         image: &image,
         launch_directory: workspace.canonical_target.as_str(),
         logical_name: workspace.container_name.as_str(),
+        server_args: &[],
     });
 
     PodmanContainerInspect {

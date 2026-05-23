@@ -94,12 +94,14 @@ fn core_commands_parse_into_expected_variants() {
             runtime: Some(RuntimeKind::Opencode),
             dev_env: DevEnvMode::Auto,
             directory: "/tmp/workspace".into(),
+            agent_args: Vec::new(),
         })
     );
     assert_eq!(
         connect.command,
         Command::Connect(ConnectArgs {
             directory: Some("/tmp/workspace".into()),
+            agent_args: Vec::new(),
         })
     );
     assert_eq!(
@@ -117,6 +119,7 @@ fn core_commands_parse_into_expected_variants() {
             dev_env: DevEnvMode::Auto,
             connect: true,
             directory: "/tmp/workspace".into(),
+            agent_args: Vec::new(),
         })
     );
     assert_eq!(
@@ -517,6 +520,31 @@ fn run_accepts_runtime_selection() {
             runtime: Some(RuntimeKind::Codex),
             dev_env: DevEnvMode::Auto,
             directory: "/tmp/workspace".into(),
+            agent_args: Vec::new(),
+        })
+    );
+}
+
+#[test]
+fn run_accepts_agent_client_args_after_double_dash() {
+    let cli = Cli::try_parse_from([
+        "agentbox",
+        "run",
+        "--runtime",
+        "codex",
+        "/tmp/workspace",
+        "--",
+        "--no-alt-screen",
+    ])
+    .unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Run(RunArgs {
+            runtime: Some(RuntimeKind::Codex),
+            dev_env: DevEnvMode::Auto,
+            directory: "/tmp/workspace".into(),
+            agent_args: vec!["--no-alt-screen".to_string()],
         })
     );
 }
@@ -541,9 +569,36 @@ fn start_accepts_connect_flag() {
                 dev_env: DevEnvMode::Auto,
                 connect: true,
                 directory: "/tmp/workspace".into(),
+                agent_args: Vec::new(),
             })
         );
     }
+}
+
+#[test]
+fn start_accepts_agent_server_args_after_double_dash() {
+    let cli = Cli::try_parse_from([
+        "agentbox",
+        "start",
+        "--runtime",
+        "opencode",
+        "/tmp/workspace",
+        "--",
+        "--server-flag",
+        "value",
+    ])
+    .unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Start(StartArgs {
+            runtime: Some(RuntimeKind::Opencode),
+            dev_env: DevEnvMode::Auto,
+            connect: false,
+            directory: "/tmp/workspace".into(),
+            agent_args: vec!["--server-flag".to_string(), "value".to_string()],
+        })
+    );
 }
 
 #[test]
@@ -619,6 +674,37 @@ fn run_rejects_connect_flag() {
 }
 
 #[test]
+fn agent_passthrough_flags_require_double_dash() {
+    for args in [
+        vec![
+            "agentbox",
+            "run",
+            "--runtime",
+            "codex",
+            "/tmp/workspace",
+            "--no-alt-screen",
+        ],
+        vec![
+            "agentbox",
+            "start",
+            "--runtime",
+            "opencode",
+            "/tmp/workspace",
+            "--server-flag",
+        ],
+        vec!["agentbox", "connect", "/tmp/workspace", "--no-alt-screen"],
+    ] {
+        let error = Cli::try_parse_from(args).unwrap_err();
+
+        assert_eq!(error.exit_code(), 2);
+        assert!(
+            error.to_string().contains("unexpected argument"),
+            "expected clap to require `--` before agent passthrough flags"
+        );
+    }
+}
+
+#[test]
 fn run_accepts_missing_runtime_for_prompting() {
     let cli = Cli::try_parse_from(["agentbox", "run", "/tmp/workspace"]).unwrap();
 
@@ -628,6 +714,7 @@ fn run_accepts_missing_runtime_for_prompting() {
             runtime: None,
             dev_env: DevEnvMode::Auto,
             directory: "/tmp/workspace".into(),
+            agent_args: Vec::new(),
         })
     );
 }
@@ -638,7 +725,39 @@ fn connect_accepts_missing_directory_for_prompting() {
 
     assert_eq!(
         cli.command,
-        Command::Connect(ConnectArgs { directory: None })
+        Command::Connect(ConnectArgs {
+            directory: None,
+            agent_args: Vec::new(),
+        })
+    );
+}
+
+#[test]
+fn connect_accepts_agent_client_args_after_double_dash() {
+    let with_directory = Cli::try_parse_from([
+        "agentbox",
+        "connect",
+        "/tmp/workspace",
+        "--",
+        "--no-alt-screen",
+    ])
+    .unwrap();
+    let with_prompt =
+        Cli::try_parse_from(["agentbox", "connect", "--", "--no-alt-screen"]).unwrap();
+
+    assert_eq!(
+        with_directory.command,
+        Command::Connect(ConnectArgs {
+            directory: Some("/tmp/workspace".into()),
+            agent_args: vec!["--no-alt-screen".to_string()],
+        })
+    );
+    assert_eq!(
+        with_prompt.command,
+        Command::Connect(ConnectArgs {
+            directory: None,
+            agent_args: vec!["--no-alt-screen".to_string()],
+        })
     );
 }
 

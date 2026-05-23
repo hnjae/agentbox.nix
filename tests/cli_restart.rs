@@ -3,6 +3,7 @@
 
 use std::fs;
 
+use agentbox::metadata::LABEL_SERVER_ARGS;
 use agentbox::runtime::RuntimeKind;
 use agentbox::workspace::resolve_workspace_identity;
 use predicates::prelude::*;
@@ -13,7 +14,7 @@ mod support;
 use support::{
     CliHarness as Harness, ReadyEndpoint, managed_inspect_fixture, managed_ps_entry,
     opencode_transient_run_labels as transient_run_labels, opencode_workspace_inspect_fixture,
-    operation_names, ps_fixture, running_workspace_inspect_fixture,
+    opencode_workspace_labels, operation_names, ps_fixture, running_workspace_inspect_fixture,
     running_workspace_inspect_fixture_with_host_port, transient_run_ps_entry, workspace_ps_entry,
 };
 
@@ -110,6 +111,58 @@ fn restart_recreates_running_session_with_stored_runtime_and_launch_directory() 
     let token = fs::read_to_string(harness.codex_attach_token_path(&launch_workspace)).unwrap();
     assert!(!token.trim().is_empty());
     run.assert_args_do_not_contain(token.trim());
+}
+
+#[test]
+fn restart_reuses_stored_server_args() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Opencode.default_image();
+    let harness = Harness::new();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    let mut labels = opencode_workspace_labels(workspace);
+    labels.insert(
+        LABEL_SERVER_ARGS.to_string(),
+        r#"["--server-flag","value"]"#.to_string(),
+    );
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        "running-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            labels,
+        ),
+    );
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("restart").arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let commands = harness.command_log();
+    let run = commands.first("run");
+    run.assert_args_contain(" opencode serve --hostname 0.0.0.0 --port 4096 --server-flag value");
+    run.assert_args_contain(&format!(
+        "--label {LABEL_SERVER_ARGS}=[\"--server-flag\",\"value\"]"
+    ));
 }
 
 #[test]
@@ -350,6 +403,40 @@ fn restart_with_connect_runs_host_client_from_stored_launch_directory() {
     commands
         .entry(7)
         .assert_raw_contains(&format!("cwd={}", workspace.canonical_target));
+}
+
+#[test]
+fn restart_rejects_malformed_stored_server_args_before_stopping() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let mut labels = opencode_workspace_labels(workspace);
+    labels.insert(LABEL_SERVER_ARGS.to_string(), "not-json".to_string());
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "running-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            labels,
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("restart").arg(target);
+
+    command.assert().failure().stderr(predicate::str::contains(
+        "malformed `io.agentbox.server_args` label",
+    ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
 }
 
 #[test]

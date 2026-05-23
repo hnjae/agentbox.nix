@@ -15,6 +15,7 @@ pub(crate) struct RestartableSession<'a> {
     session: &'a SessionRecord,
     runtime: RuntimeKind,
     launch_directory: &'a Utf8Path,
+    server_args: Vec<String>,
 }
 
 impl<'a> RestartableSession<'a> {
@@ -29,6 +30,10 @@ impl<'a> RestartableSession<'a> {
     pub(crate) fn launch_directory(&self) -> &'a Utf8Path {
         self.launch_directory
     }
+
+    pub(crate) fn server_args(&self) -> &[String] {
+        &self.server_args
+    }
 }
 
 pub(crate) fn prepare_restart_session<'a>(
@@ -39,11 +44,13 @@ pub(crate) fn prepare_restart_session<'a>(
 
     let runtime = session_runtime(session)?;
     let launch_directory = session_launch_directory(session)?;
+    let server_args = session_server_args(session)?;
 
     Ok(RestartableSession {
         session,
         runtime,
         launch_directory,
+        server_args,
     })
 }
 
@@ -111,9 +118,18 @@ fn session_launch_directory(session: &SessionRecord) -> Result<&Utf8Path> {
     })
 }
 
+fn session_server_args(session: &SessionRecord) -> Result<Vec<String>> {
+    session.server_args().map_err(|error| {
+        Error::msg(format!(
+            "managed session `{}` cannot be restarted because it has a malformed `io.agentbox.server_args` label: {error}",
+            session.container_name()
+        ))
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::metadata::{LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME};
+    use crate::metadata::{LABEL_LAUNCH_DIRECTORY, LABEL_RUNTIME, LABEL_SERVER_ARGS};
     use crate::session::test_support::SessionRecordFixture;
 
     use super::*;
@@ -133,6 +149,37 @@ mod tests {
         assert_eq!(
             restartable.launch_directory(),
             Utf8Path::new("/workspace/project/nested")
+        );
+        assert!(restartable.server_args().is_empty());
+    }
+
+    #[test]
+    fn running_managed_session_returns_stored_server_args() {
+        let session = SessionRecordFixture::managed("abcdef123456")
+            .named("agentbox-example")
+            .root("/workspace/project")
+            .label(LABEL_SERVER_ARGS, r#"["--flag","value"]"#)
+            .build();
+
+        let restartable = prepare_restart_session("/workspace/project", &session).unwrap();
+
+        assert_eq!(restartable.server_args(), ["--flag", "value"]);
+    }
+
+    #[test]
+    fn running_session_requires_well_formed_server_args_label() {
+        let session = SessionRecordFixture::managed("abcdef123456")
+            .named("agentbox-example")
+            .root("/workspace/project")
+            .label(LABEL_SERVER_ARGS, "not-json")
+            .build();
+
+        let error = prepare_restart_session("/workspace/project", &session).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("malformed `io.agentbox.server_args` label")
         );
     }
 

@@ -23,6 +23,10 @@ pub struct RunArgs {
 
     /// Workspace directory inside a git repository.
     pub directory: std::path::PathBuf,
+
+    /// Arguments passed to the runtime host client.
+    #[arg(value_name = "AGENT_ARG", last = true)]
+    pub agent_args: Vec<String>,
 }
 
 pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
@@ -45,6 +49,7 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             runtime,
             &preparation.run_spec,
             preparation.codex_attach_token.as_ref(),
+            &args.agent_args,
         )
         .execute()
     })?;

@@ -11,6 +11,7 @@ use super::{
     LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT,
     LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_IMAGE, LABEL_LAUNCH_DIRECTORY, LABEL_LOGICAL_NAME,
     LABEL_MANAGED, LABEL_MANAGED_VALUE, LABEL_RUNTIME, LABEL_SCHEMA, LABEL_SCHEMA_VALUE,
+    LABEL_SERVER_ARGS,
 };
 
 /// Input values for constructing the complete managed-session container label set.
@@ -22,6 +23,7 @@ pub struct ManagedSessionLabelInput<'a> {
     pub image: &'a str,
     pub launch_directory: &'a str,
     pub logical_name: &'a str,
+    pub server_args: &'a [String],
 }
 
 impl<'a> ManagedSessionLabelInput<'a> {
@@ -29,6 +31,7 @@ impl<'a> ManagedSessionLabelInput<'a> {
         workspace: &'a WorkspaceIdentity,
         image: &'a str,
         runtime: RuntimeKind,
+        server_args: &'a [String],
     ) -> Self {
         Self {
             canonical_git_root: workspace.canonical_git_root.as_str(),
@@ -37,6 +40,7 @@ impl<'a> ManagedSessionLabelInput<'a> {
             image,
             launch_directory: workspace.canonical_target.as_str(),
             logical_name: workspace.container_name.as_str(),
+            server_args,
         }
     }
 }
@@ -50,6 +54,13 @@ pub fn managed_session_labels(input: ManagedSessionLabelInput<'_>) -> BTreeMap<S
         LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE.to_string(),
     );
     labels.insert(LABEL_SCHEMA.to_string(), LABEL_SCHEMA_VALUE.to_string());
+    if !input.server_args.is_empty() {
+        labels.insert(
+            LABEL_SERVER_ARGS.to_string(),
+            serde_json::to_string(input.server_args)
+                .expect("serializing runtime server arguments should not fail"),
+        );
+    }
     labels
 }
 
@@ -138,6 +149,7 @@ mod tests {
             image: "localhost/agentbox-codex:latest",
             launch_directory: "/workspace/demo",
             logical_name: "agentbox-demo",
+            server_args: &[],
         }
     }
 }
