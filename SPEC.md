@@ -723,6 +723,21 @@ Rules:
 - Git identity passthrough does not depend on `SSH_AUTH_SOCK`.
 - `agentbox` does not mount the host Git config files, credential helpers, or other Git configuration for identity passthrough.
 
+### Host Git Excludes File Passthrough
+
+For `run`, `start`, `restart`, and `exec`, `agentbox` passes the invoking repository's effective host Git excludes file into the runtime container when that file exists. This makes container Git commands honor the same host ignore patterns without mounting host Git configuration files.
+
+Rules:
+
+- `agentbox` first reads the repository's effective `core.excludesFile` value with `git -C <git-root> config --path --get core.excludesFile`.
+- If `core.excludesFile` is unset, `agentbox` uses Git's default excludes file path: `${XDG_CONFIG_HOME}/git/ignore` when `XDG_CONFIG_HOME` is set and non-empty, otherwise `${HOME}/.config/git/ignore`.
+- If no source path can be determined, or if the source file does not exist, container launch behavior is unchanged.
+- If the source path exists and is a readable regular file, `agentbox` bind-mounts it read-only at `/run/agentbox/git-ignore` and injects `core.excludesFile=/run/agentbox/git-ignore` with Git's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment variables.
+- If the configured source path is relative, `agentbox` resolves it relative to the canonical git root.
+- If reading `core.excludesFile` fails unexpectedly, the source path is not UTF-8, or the resolved source exists but is not a readable regular file, `agentbox` prints a warning, skips the excludes passthrough, and continues launching.
+- Git excludes file passthrough does not depend on `SSH_AUTH_SOCK`.
+- `agentbox` does not mount the host Git config files, credential helpers, `~/.gitconfig`, or the full `${XDG_CONFIG_HOME}/git` directory for excludes passthrough.
+
 ### SSH Commit Signing Passthrough
 
 When the invoking host environment has a usable SSH agent socket, `run`, `start`, `restart`, and `exec` make SSH-based Git commit signing available inside the runtime container without mounting private keys or host SSH configuration.
