@@ -177,12 +177,15 @@ fn run_launches_codex_transient_server_and_host_client_in_yolo_mode() {
     assert!(run.contains(&format!(
         " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
     )));
+    assert!(run.contains("--ws-auth capability-token"));
+    assert!(run.contains("--ws-token-sha256 "));
     assert!(run.contains("--publish 127.0.0.1::1455"));
     assert!(!run.contains("--label io.agentbox.managed=true"));
     assert!(run.contains("--label io.agentbox.container_kind=transient-run"));
     assert!(log[4].contains(&format!(
         "codex lock=held args=--dangerously-bypass-approvals-and-sandbox --remote {expected_endpoint}"
     )));
+    assert!(log[4].contains("--remote-auth-token-env AGENTBOX_CODEX_REMOTE_TOKEN"));
     assert!(log[4].contains(&format!("cwd={}", workspace.canonical_target)));
 }
 
@@ -1056,6 +1059,8 @@ fn start_launches_codex_server_in_yolo_mode() {
     run.assert_args_contain(&format!(
         " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
     ));
+    run.assert_args_contain("--ws-auth capability-token");
+    run.assert_args_contain("--ws-token-sha256 ");
     let state_path = harness
         .state_home_path()
         .join("agentbox/runtime/codex.json");
@@ -1064,6 +1069,9 @@ fn start_launches_codex_server_in_yolo_mode() {
     assert!(state.contains(&format!("\"image\": \"{image}\"")));
     assert!(state.contains(&format!("\"image_context_hash\": \"{context_hash}\"")));
     assert!(state.contains("\"installed_version\": \"0.99.0\""));
+    let token = fs::read_to_string(harness.codex_attach_token_path(workspace)).unwrap();
+    assert!(!token.trim().is_empty());
+    run.assert_args_do_not_contain(token.trim());
 }
 
 #[test]

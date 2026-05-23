@@ -63,6 +63,7 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             workspace,
             runtime,
             &preparation.run_spec,
+            preparation.codex_attach_token.as_ref(),
             StartServerLaunchPolicy { cleanup },
             ManagedServerCompletion::new(
                 ManagedServerCompletionKind::Start,

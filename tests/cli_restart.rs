@@ -101,10 +101,15 @@ fn restart_recreates_running_session_with_stored_runtime_and_launch_directory() 
     run.assert_args_contain(&format!(
         " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
     ));
+    run.assert_args_contain("--ws-auth capability-token");
+    run.assert_args_contain("--ws-token-sha256 ");
     run.assert_args_contain(&format!(
         "type=volume,src={},dst=/home/user,U",
         launch_workspace.container_name
     ));
+    let token = fs::read_to_string(harness.codex_attach_token_path(&launch_workspace)).unwrap();
+    assert!(!token.trim().is_empty());
+    run.assert_args_do_not_contain(token.trim());
 }
 
 #[test]

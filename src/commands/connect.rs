@@ -13,6 +13,7 @@ use crate::session::{prepare_connect_session, run_command_hint, select_single_se
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
+use super::codex_attach_auth::load_codex_attach_token_for_client;
 use super::runtime_command::run_host_runtime_client;
 use super::session_targets::{
     SessionTargetSurface, connect_prompt_label, select_one_session_target,
@@ -61,12 +62,15 @@ fn connect_directory(directory: &Path) -> Result<()> {
         let connect_session = prepare_connect_session(workspace, session)?;
         let retry_run_command =
             run_command_hint(Some(connect_session.runtime().as_str()), workspace);
+        let codex_attach_token =
+            load_codex_attach_token_for_client(connect_session.runtime(), workspace)?;
         report_launch_directory_notice(workspace, connect_session.launch_directory());
 
         run_host_runtime_client(
             connect_session.runtime(),
             connect_session.endpoint(),
             connect_session.launch_directory(),
+            codex_attach_token.as_ref(),
         )
         .map_err(|error| {
             Error::msg(format!(

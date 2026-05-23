@@ -109,6 +109,7 @@ fn restart_target(
             &launch_workspace,
             runtime,
             &preparation.run_spec,
+            preparation.codex_attach_token.as_ref(),
             RestartServerLaunchPolicy {
                 workspace: &launch_workspace,
                 runtime,

@@ -182,6 +182,7 @@ fn connect_to_codex_session_passes_yolo_flag_to_remote_client() {
         "running-id",
         &running_workspace_inspect_fixture(workspace, &image, RuntimeKind::Codex),
     );
+    harness.write_codex_attach_token(workspace, "test-codex-token");
 
     let mut command = harness.locked_agentbox_command(workspace);
     command.arg("connect").arg(target);
@@ -193,7 +194,40 @@ fn connect_to_codex_session_passes_yolo_flag_to_remote_client() {
     assert!(
         log[2].contains("--dangerously-bypass-approvals-and-sandbox --remote ws://127.0.0.1:49152")
     );
+    assert!(log[2].contains("--remote-auth-token-env AGENTBOX_CODEX_REMOTE_TOKEN"));
+    assert!(!log[2].contains("test-codex-token"));
     assert!(log[2].contains(&format!("cwd={}", workspace.canonical_target)));
+}
+
+#[test]
+fn connect_to_codex_session_requires_stored_attach_token() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "running-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &running_workspace_inspect_fixture(workspace, &image, RuntimeKind::Codex),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("connect").arg(target);
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("missing Codex attach token"))
+        .stderr(predicates::str::contains(
+            "restart or recreate the session before connecting",
+        ));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect"]);
 }
 
 #[test]

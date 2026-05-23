@@ -5,6 +5,7 @@ use crate::cli::Command;
 use crate::error::Result;
 
 pub mod clean;
+mod codex_attach_auth;
 pub mod completion;
 pub mod connect;
 mod container_cleanup;

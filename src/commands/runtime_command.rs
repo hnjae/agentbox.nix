@@ -7,18 +7,35 @@ use camino::Utf8Path;
 
 use crate::dev_env::DevEnvironment;
 use crate::process::{ProcessRunner, format_status};
-use crate::runtime::{AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeInvocation, RuntimeKind};
+use crate::runtime::{
+    AttachEndpoint, CODEX_REMOTE_TOKEN_ENV, DEFAULT_HOST_ATTACH_IP, RuntimeInvocation, RuntimeKind,
+};
 use crate::{Error, Result};
+
+use super::codex_attach_auth::CodexAttachToken;
 
 pub(crate) fn server_runtime_command(
     runtime: RuntimeKind,
     target: &Utf8Path,
     dev_env: &DevEnvironment,
-) -> RuntimeInvocation {
-    RuntimeInvocation::new(
-        dev_env.wrap_argv(runtime.server_command().argv),
+    codex_attach_token: Option<&CodexAttachToken>,
+) -> Result<RuntimeInvocation> {
+    let mut argv = runtime.server_command().argv;
+    if runtime == RuntimeKind::Codex {
+        let token = codex_attach_token
+            .ok_or_else(|| Error::msg("missing Codex attach token for runtime server command"))?;
+        argv.extend([
+            "--ws-auth".to_string(),
+            "capability-token".to_string(),
+            "--ws-token-sha256".to_string(),
+            token.sha256().to_string(),
+        ]);
+    }
+
+    Ok(RuntimeInvocation::new(
+        dev_env.wrap_argv(argv),
         target.to_path_buf(),
-    )
+    ))
 }
 
 pub(crate) fn codex_exec_runtime_command(
@@ -49,8 +66,10 @@ pub(crate) fn run_host_runtime_client(
     runtime: RuntimeKind,
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
+    codex_attach_token: Option<&CodexAttachToken>,
 ) -> Result<()> {
-    let status = run_host_runtime_client_status(runtime, endpoint, launch_directory)?;
+    let status =
+        run_host_runtime_client_status(runtime, endpoint, launch_directory, codex_attach_token)?;
     if status.success() {
         Ok(())
     } else {
@@ -67,11 +86,13 @@ pub(crate) fn run_host_runtime_client_status(
     runtime: RuntimeKind,
     endpoint: &AttachEndpoint,
     launch_directory: &Utf8Path,
+    codex_attach_token: Option<&CodexAttachToken>,
 ) -> Result<ExitStatus> {
     let process_runner = ProcessRunner::new();
     let client = host_client_runtime_command(runtime, endpoint, launch_directory);
+    let codex_attach_token = required_codex_client_token(runtime, codex_attach_token)?;
 
-    run_host_client(&process_runner, &client)
+    run_host_client(&process_runner, &client, codex_attach_token)
 }
 
 pub(crate) fn ensure_host_runtime_client_available(runtime: RuntimeKind) -> Result<()> {
@@ -108,6 +129,7 @@ pub(crate) fn host_client_status_error(
 fn run_host_client(
     process_runner: &ProcessRunner,
     client: &RuntimeInvocation,
+    codex_attach_token: Option<&CodexAttachToken>,
 ) -> Result<ExitStatus> {
     let argv = client.argv();
     let Some((program, args)) = argv.split_first() else {
@@ -118,11 +140,27 @@ fn run_host_client(
         .configured_command(program, |command| {
             command.args(args);
             command.current_dir(client.workdir().as_std_path());
+            if let Some(token) = codex_attach_token {
+                command.env(CODEX_REMOTE_TOKEN_ENV, token.value());
+            }
             command.stdin(Stdio::inherit());
             command.stdout(Stdio::inherit());
             command.stderr(Stdio::inherit());
         })?
         .status()
+}
+
+fn required_codex_client_token(
+    runtime: RuntimeKind,
+    token: Option<&CodexAttachToken>,
+) -> Result<Option<&CodexAttachToken>> {
+    if runtime == RuntimeKind::Codex {
+        token
+            .map(Some)
+            .ok_or_else(|| Error::msg("missing Codex attach token for host client command"))
+    } else {
+        Ok(None)
+    }
 }
 
 fn host_client_not_found_message(program: &str) -> String {

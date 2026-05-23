@@ -332,6 +332,8 @@ fn runtime_adapters_render_host_client_commands() {
             "--dangerously-bypass-approvals-and-sandbox".to_string(),
             "--remote".to_string(),
             "ws://127.0.0.1:49153".to_string(),
+            "--remote-auth-token-env".to_string(),
+            "AGENTBOX_CODEX_REMOTE_TOKEN".to_string(),
         ]
     );
 }

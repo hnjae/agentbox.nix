@@ -5,6 +5,7 @@ use std::path::Path;
 
 use agentbox::commands::stop::stop_prompt_candidates;
 use agentbox::metadata::{LABEL_ATTACH_SCHEME, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH};
+use agentbox::runtime::RuntimeKind;
 use agentbox::session::SessionDiscoveryQuery;
 use agentbox::workspace::git_root_hash12;
 use camino::Utf8Path;
@@ -17,8 +18,8 @@ use support::{
     inspect_models_by_id, managed_container_models, managed_ps_entry,
     opencode_managed_labels as managed_labels,
     opencode_transient_run_labels as transient_run_labels, opencode_workspace_inspect_fixture,
-    operation_names, ps_fixture, transient_run_container_models, transient_run_ps_entry,
-    workspace_ps_entry,
+    operation_names, ps_fixture, running_workspace_inspect_fixture, transient_run_container_models,
+    transient_run_ps_entry, workspace_ps_entry,
 };
 
 #[test]
@@ -53,6 +54,28 @@ fn stop_stops_the_container_and_leaves_the_volume_and_workspace_untouched() {
         !log.iter().any(|line| line.starts_with("volume ")),
         "stop must not delete the matching cache volume"
     );
+}
+
+#[test]
+fn stop_removes_codex_managed_attach_token_after_cleanup() {
+    let fixture = support::temp_workspace("codex");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = install_harness();
+    let token_path = harness.write_codex_attach_token(workspace, "test-codex-token");
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "session-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "session-id",
+        &running_workspace_inspect_fixture(workspace, &image, RuntimeKind::Codex),
+    );
+
+    run_command(&harness, target, &[]).success();
+
+    assert!(!token_path.exists());
 }
 
 #[test]

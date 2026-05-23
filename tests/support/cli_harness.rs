@@ -150,6 +150,20 @@ impl CliHarness {
         fs::write(self.fixtures.path().join(format!("logs-{name}.txt")), logs).unwrap();
     }
 
+    pub fn write_codex_attach_token(&self, workspace: &WorkspaceIdentity, token: &str) -> PathBuf {
+        let path = self.codex_attach_token_path(workspace);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, token).unwrap();
+        path
+    }
+
+    pub fn codex_attach_token_path(&self, workspace: &WorkspaceIdentity) -> PathBuf {
+        self.state_home
+            .path()
+            .join("agentbox/codex/ws-tokens")
+            .join(format!("{}.token", workspace.digest64))
+    }
+
     pub fn write_git_config(&self, key: &str, value: &str) {
         fs::write(
             self.fixtures

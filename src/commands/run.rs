@@ -39,7 +39,14 @@ pub fn run(args: RunArgs, verbose: bool) -> Result<()> {
             runtime,
             args.dev_env,
         ))?;
-        TransientRunLaunch::new(podman, workspace, runtime, &preparation.run_spec).execute()
+        TransientRunLaunch::new(
+            podman,
+            workspace,
+            runtime,
+            &preparation.run_spec,
+            preparation.codex_attach_token.as_ref(),
+        )
+        .execute()
     })?;
     Ok(())
 }

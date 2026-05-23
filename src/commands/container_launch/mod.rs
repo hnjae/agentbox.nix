@@ -11,6 +11,7 @@ use crate::runtime::{RuntimeKind, RuntimeRunSpec};
 use crate::ssh_signing::{SshPassthroughGuard, apply_git_and_ssh_passthrough};
 use crate::workspace::WorkspaceIdentity;
 
+use super::codex_attach_auth::{CodexAttachToken, prepare_codex_attach_token};
 use super::runtime::ensure_default_runtime_image;
 use super::runtime_command::ensure_host_runtime_client_available;
 
@@ -36,6 +37,7 @@ struct ContainerLaunchPreparation {
 #[derive(Debug)]
 pub(super) struct RuntimeLaunchPreparation {
     pub(super) run_spec: RuntimeRunSpec,
+    pub(super) codex_attach_token: Option<CodexAttachToken>,
     _ssh_passthrough: SshPassthroughGuard,
 }
 
@@ -59,12 +61,19 @@ pub(super) fn prepare_runtime_launch(
         policy.host_client,
         policy.existing_check,
     )?;
+    let codex_attach_token = prepare_codex_attach_token(runtime, policy.run_mode, workspace)?;
     let mut run_spec = runtime.run_spec(
         policy.run_mode,
         workspace,
         &preparation.preflight.host_nix_mounts,
         &preparation.preflight.runtime_mounts,
-        build_runtime_invocation(invocation, runtime, workspace, &preparation.dev_env),
+        build_runtime_invocation(
+            invocation,
+            runtime,
+            workspace,
+            &preparation.dev_env,
+            codex_attach_token.as_ref(),
+        )?,
     );
     let ssh_passthrough = apply_git_and_ssh_passthrough(
         &mut run_spec,
@@ -75,6 +84,7 @@ pub(super) fn prepare_runtime_launch(
 
     Ok(RuntimeLaunchPreparation {
         run_spec,
+        codex_attach_token,
         _ssh_passthrough: ssh_passthrough,
     })
 }

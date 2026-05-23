@@ -9,6 +9,7 @@ use crate::session::classify_create_error_or_else;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
+use super::codex_attach_auth::CodexAttachToken;
 use super::detached_server::{
     DetachedServerContext, DetachedServerLifecycle, launch_detached_server,
 };
@@ -53,6 +54,7 @@ pub(super) struct ManagedServerLaunch<'a, P> {
     workspace: &'a WorkspaceIdentity,
     runtime: RuntimeKind,
     run_spec: &'a RuntimeRunSpec,
+    codex_attach_token: Option<&'a CodexAttachToken>,
     policy: P,
     completion: ManagedServerCompletion<'a>,
 }
@@ -66,6 +68,7 @@ where
         workspace: &'a WorkspaceIdentity,
         runtime: RuntimeKind,
         run_spec: &'a RuntimeRunSpec,
+        codex_attach_token: Option<&'a CodexAttachToken>,
         policy: P,
         completion: ManagedServerCompletion<'a>,
     ) -> Self {
@@ -74,6 +77,7 @@ where
             workspace,
             runtime,
             run_spec,
+            codex_attach_token,
             policy,
             completion,
         }
@@ -87,7 +91,13 @@ where
             self.run_spec,
             self.policy,
         )?;
-        finish_managed_server_launch(self.completion, self.workspace, self.runtime, endpoint)
+        finish_managed_server_launch(
+            self.completion,
+            self.workspace,
+            self.runtime,
+            endpoint,
+            self.codex_attach_token,
+        )
     }
 }
 
@@ -126,18 +136,23 @@ fn finish_managed_server_launch(
     workspace: &WorkspaceIdentity,
     runtime: RuntimeKind,
     endpoint: AttachEndpoint,
+    codex_attach_token: Option<&CodexAttachToken>,
 ) -> Result<()> {
     if completion.connect {
         crate::diagnostic::info(completion.kind.connecting_message(workspace, &endpoint));
-        run_host_runtime_client(runtime, &endpoint, completion.client_launch_directory).map_err(
-            |error| {
-                Error::msg(completion.kind.connect_error_message(
-                    workspace,
-                    completion.retry_target,
-                    error,
-                ))
-            },
+        run_host_runtime_client(
+            runtime,
+            &endpoint,
+            completion.client_launch_directory,
+            codex_attach_token,
         )
+        .map_err(|error| {
+            Error::msg(completion.kind.connect_error_message(
+                workspace,
+                completion.retry_target,
+                error,
+            ))
+        })
     } else {
         crate::diagnostic::info(completion.kind.ready_message(
             workspace,

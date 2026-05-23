@@ -7,6 +7,8 @@ use crate::session::SessionRecord;
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
+use super::codex_attach_auth::remove_codex_attach_token_for_session;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ManagedContainerCleanup {
     stop_error: Option<String>,
@@ -155,7 +157,11 @@ fn cleanup_managed_container(
     session: &SessionRecord,
 ) -> Option<ContainerCleanupFailure> {
     let cleanup = ManagedContainerCleanup::stop_and_verify(podman, session.container_name());
-    cleanup.remaining_failure(session.container_name())
+    let failure = cleanup.remaining_failure(session.container_name());
+    if failure.is_none() {
+        let _ = remove_codex_attach_token_for_session(session);
+    }
+    failure
 }
 
 impl ContainerCleanupFailure {

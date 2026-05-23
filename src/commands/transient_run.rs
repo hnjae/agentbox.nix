@@ -9,6 +9,7 @@ use crate::runtime::{AttachEndpoint, RuntimeKind, RuntimeRunSpec};
 use crate::workspace::WorkspaceIdentity;
 use crate::{Error, Result};
 
+use super::codex_attach_auth::CodexAttachToken;
 use super::container_cleanup::{cleanup_transient_container, combine_error_with_cleanup_result};
 use super::detached_server::{
     DetachedServerContext, DetachedServerLifecycle, launch_detached_server,
@@ -24,6 +25,7 @@ pub(super) struct TransientRunLaunch<'a> {
     workspace: &'a WorkspaceIdentity,
     runtime: RuntimeKind,
     run_spec: &'a RuntimeRunSpec,
+    codex_attach_token: Option<&'a CodexAttachToken>,
 }
 
 impl<'a> TransientRunLaunch<'a> {
@@ -32,12 +34,14 @@ impl<'a> TransientRunLaunch<'a> {
         workspace: &'a WorkspaceIdentity,
         runtime: RuntimeKind,
         run_spec: &'a RuntimeRunSpec,
+        codex_attach_token: Option<&'a CodexAttachToken>,
     ) -> Self {
         Self {
             podman,
             workspace,
             runtime,
             run_spec,
+            codex_attach_token,
         }
     }
 
@@ -57,6 +61,7 @@ impl<'a> TransientRunLaunch<'a> {
             self.runtime,
             endpoint,
             self.workspace.canonical_target.as_ref(),
+            self.codex_attach_token,
         );
         transient.finish_host_client_run(self.runtime, endpoint, status)
     }

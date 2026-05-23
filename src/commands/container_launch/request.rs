@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use crate::commands::codex_attach_auth::CodexAttachToken;
 use crate::commands::runtime_command::server_runtime_command;
 use crate::commands::workspace_flow::LockedWorkspace;
 use crate::dev_env::{DevEnvMode, DevEnvironment};
@@ -112,12 +113,16 @@ pub(super) fn build_runtime_invocation(
     runtime: RuntimeKind,
     workspace: &WorkspaceIdentity,
     dev_env: &DevEnvironment,
-) -> RuntimeInvocation {
+    codex_attach_token: Option<&CodexAttachToken>,
+) -> crate::Result<RuntimeInvocation> {
     match invocation {
-        RuntimeLaunchInvocation::Server => {
-            server_runtime_command(runtime, workspace.canonical_target.as_ref(), dev_env)
-        }
-        RuntimeLaunchInvocation::Custom(invocation) => invocation(dev_env),
+        RuntimeLaunchInvocation::Server => server_runtime_command(
+            runtime,
+            workspace.canonical_target.as_ref(),
+            dev_env,
+            codex_attach_token,
+        ),
+        RuntimeLaunchInvocation::Custom(invocation) => Ok(invocation(dev_env)),
     }
 }
 
@@ -143,7 +148,9 @@ mod tests {
             RuntimeKind::Codex,
             &workspace,
             &DevEnvironment::Direnv,
-        );
+            None,
+        )
+        .unwrap();
 
         assert_eq!(
             runtime_invocation.argv(),
@@ -152,6 +159,49 @@ mod tests {
         assert_eq!(
             runtime_invocation.workdir(),
             Utf8Path::new("/workspace/demo")
+        );
+    }
+
+    #[test]
+    fn codex_server_launch_invocation_requires_and_applies_attach_auth() {
+        let workspace = workspace();
+        let token = CodexAttachToken::from_value("test-token");
+
+        let runtime_invocation = build_runtime_invocation(
+            RuntimeLaunchInvocation::Server,
+            RuntimeKind::Codex,
+            &workspace,
+            &DevEnvironment::None,
+            Some(&token),
+        )
+        .unwrap();
+
+        assert_eq!(
+            runtime_invocation.argv(),
+            [
+                "codex",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "app-server",
+                "--listen",
+                "ws://0.0.0.0:1455",
+                "--ws-auth",
+                "capability-token",
+                "--ws-token-sha256",
+                token.sha256(),
+            ]
+        );
+
+        let error = build_runtime_invocation(
+            RuntimeLaunchInvocation::Server,
+            RuntimeKind::Codex,
+            &workspace,
+            &DevEnvironment::None,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "missing Codex attach token for runtime server command"
         );
     }
 

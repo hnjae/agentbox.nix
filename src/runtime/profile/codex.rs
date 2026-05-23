@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::preflight::CODEX_CONFIG_DESTINATION;
+use crate::runtime::CODEX_REMOTE_TOKEN_ENV;
 use crate::runtime::command::{
     DirectCommandArg, DirectCommandTemplate, HostClientCommandArg, HostClientCommandTemplate,
     ServerCommandArg, ServerCommandTemplate,
@@ -33,6 +34,8 @@ const HOST_CLIENT_COMMAND: HostClientCommandTemplate = HostClientCommandTemplate
     HostClientCommandArg::Literal(YOLO_FLAG),
     HostClientCommandArg::Literal("--remote"),
     HostClientCommandArg::AttachEndpoint,
+    HostClientCommandArg::Literal("--remote-auth-token-env"),
+    HostClientCommandArg::Literal(CODEX_REMOTE_TOKEN_ENV),
 ]);
 const FOREGROUND_COMMAND: DirectCommandTemplate = DirectCommandTemplate::new(&[
     DirectCommandArg::Literal("codex"),
