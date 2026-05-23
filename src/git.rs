@@ -62,11 +62,16 @@ impl Git {
     }
 
     pub(crate) fn config_get(&self, git_root: &Utf8Path, key: &str) -> Result<Option<String>> {
+        self.config_get_with_args(git_root, &["config", "--get", key])
+    }
+
+    pub(crate) fn config_path_get(&self, git_root: &Utf8Path, key: &str) -> Result<Option<String>> {
+        self.config_get_with_args(git_root, &["config", "--path", "--get", key])
+    }
+
+    fn config_get_with_args(&self, git_root: &Utf8Path, args: &[&str]) -> Result<Option<String>> {
         let output = self.runner.capture_status("git", |command| {
-            command
-                .arg("-C")
-                .arg(git_root.as_str())
-                .args(["config", "--get", key]);
+            command.arg("-C").arg(git_root.as_str()).args(args);
         })?;
 
         if output.status.success() {
@@ -78,6 +83,7 @@ impl Git {
         }
 
         let detail = output.stderr_or_status_detail();
+        let key = args.last().copied().unwrap_or("unknown");
         Err(Error::msg(format!(
             "failed to read git config `{key}` for `{git_root}`: {detail}"
         )))

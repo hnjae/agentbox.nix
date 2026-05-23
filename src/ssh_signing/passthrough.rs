@@ -59,6 +59,7 @@ pub(crate) fn apply_git_and_ssh_passthrough(
         git_identity,
         |name| std::env::var_os(name),
         |git_root, key| git.config_get(git_root, key),
+        |git_root, key| git.config_path_get(git_root, key),
         |git_root, environment, warning| {
             super::known_hosts::prepare(git_root, environment, warning)
         },
@@ -72,6 +73,7 @@ fn detect_with(
     git_identity: GitIdentityPassthrough,
     mut environment: impl FnMut(&str) -> Option<std::ffi::OsString>,
     mut git_config: impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
+    mut git_config_path: impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
     mut known_hosts: impl FnMut(
         &Utf8Path,
         &mut dyn FnMut(&str) -> Option<std::ffi::OsString>,
@@ -84,6 +86,7 @@ fn detect_with(
         git_identity,
         &mut environment,
         &mut git_config,
+        &mut git_config_path,
         &mut warning,
     );
 

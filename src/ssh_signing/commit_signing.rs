@@ -15,6 +15,7 @@ use super::git_config::{
     append_git_config_env, codex_exec_identity_entries, read_git_identity_entries,
     read_ssh_signing_config_entries,
 };
+use super::git_excludes;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GitIdentityPassthrough {
@@ -24,13 +25,13 @@ pub(crate) enum GitIdentityPassthrough {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct SshCommitSigningPassthrough {
-    agent_socket_mount: Option<RuntimeMount>,
+    mounts: Vec<RuntimeMount>,
     env: BTreeMap<String, String>,
 }
 
 impl SshCommitSigningPassthrough {
     pub(super) fn apply_to(self, run_spec: &mut RuntimeRunSpec) {
-        if let Some(mount) = self.agent_socket_mount {
+        for mount in self.mounts {
             run_spec.add_create_mount(mount);
         }
         run_spec.extend_create_default_env(self.env);
@@ -48,18 +49,23 @@ pub(super) fn detect_with(
     git_identity: GitIdentityPassthrough,
     environment: &mut impl FnMut(&str) -> Option<OsString>,
     git_config: &mut impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
+    git_config_path: &mut impl FnMut(&Utf8Path, &str) -> Result<Option<String>>,
     warning: &mut impl FnMut(String),
 ) -> SshCommitSigningDetection {
     let mut env = BTreeMap::new();
+    let mut mounts = Vec::new();
     let mut git_entries = git_identity_entries(git_root, git_identity, git_config, warning);
+    let git_excludes = git_excludes::detect_with(git_root, environment, git_config_path, warning);
+
+    if let Some(mount) = git_excludes.mount {
+        mounts.push(mount);
+    }
+    git_entries.extend(git_excludes.git_config_entries);
 
     let Some(host_socket) = detect_host_agent_socket(environment, warning) else {
         append_git_config_env(&mut env, &git_entries);
         return SshCommitSigningDetection {
-            passthrough: SshCommitSigningPassthrough {
-                agent_socket_mount: None,
-                env,
-            },
+            passthrough: SshCommitSigningPassthrough { mounts, env },
             host_agent_available: false,
         };
     };
@@ -69,6 +75,10 @@ pub(super) fn detect_with(
         HOST_SSH_AUTH_SOCK_ENV.to_string(),
         CONTAINER_SSH_AUTH_SOCK.to_string(),
     );
+    mounts.push(RuntimeMount::bind(
+        host_socket.to_string(),
+        CONTAINER_SSH_AUTH_SOCK,
+    ));
     git_entries.extend(read_ssh_signing_config_entries(
         git_root,
         home.as_deref(),
@@ -78,13 +88,7 @@ pub(super) fn detect_with(
     append_git_config_env(&mut env, &git_entries);
 
     SshCommitSigningDetection {
-        passthrough: SshCommitSigningPassthrough {
-            agent_socket_mount: Some(RuntimeMount::bind(
-                host_socket.to_string(),
-                CONTAINER_SSH_AUTH_SOCK,
-            )),
-            env,
-        },
+        passthrough: SshCommitSigningPassthrough { mounts, env },
         host_agent_available: true,
     }
 }
@@ -127,12 +131,13 @@ mod tests {
                     _ => Some("must-not-be-read".to_string()),
                 })
             },
+            &mut |_git_root, _key| Ok(None),
             &mut panic_warning,
         );
 
         assert_eq!(requested_keys, GIT_IDENTITY_KEYS);
         assert!(!detection.host_agent_available);
-        assert!(detection.passthrough.agent_socket_mount.is_none());
+        assert!(detection.passthrough.mounts.is_empty());
         assert_eq!(
             detection
                 .passthrough
@@ -157,11 +162,12 @@ mod tests {
             GitIdentityPassthrough::CodexExec,
             &mut |_| None,
             &mut |_git_root, _key| panic!("git config must not be read for Codex exec identity"),
+            &mut |_git_root, _key| Ok(None),
             &mut panic_warning,
         );
 
         assert!(!detection.host_agent_available);
-        assert!(detection.passthrough.agent_socket_mount.is_none());
+        assert!(detection.passthrough.mounts.is_empty());
         assert_eq!(
             detection
                 .passthrough
@@ -189,16 +195,17 @@ mod tests {
             GitIdentityPassthrough::Host,
             &mut |name| test_env(name, &socket_path, None),
             &mut |_git_root, _key| Ok(None),
+            &mut |_git_root, _key| Ok(None),
             &mut panic_warning,
         );
 
         assert!(detection.host_agent_available);
         assert_eq!(
-            detection.passthrough.agent_socket_mount,
-            Some(RuntimeMount::bind(
+            detection.passthrough.mounts,
+            [RuntimeMount::bind(
                 socket_path.to_string(),
                 CONTAINER_SSH_AUTH_SOCK
-            ))
+            )]
         );
         assert_eq!(
             detection
@@ -222,11 +229,12 @@ mod tests {
             GitIdentityPassthrough::Host,
             &mut |name| test_env(name, &socket_path, None),
             &mut |_git_root, _key| Ok(None),
+            &mut |_git_root, _key| Ok(None),
             &mut |warning| warnings.push(warning),
         );
 
         assert!(!detection.host_agent_available);
-        assert!(detection.passthrough.agent_socket_mount.is_none());
+        assert!(detection.passthrough.mounts.is_empty());
         assert!(detection.passthrough.env.is_empty());
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("SSH_AUTH_SOCK does not reference a usable Unix socket"));
@@ -253,6 +261,7 @@ mod tests {
                     _ => Some("must-not-be-read".to_string()),
                 })
             },
+            &mut |_git_root, _key| Ok(None),
             &mut panic_warning,
         );
 
@@ -316,6 +325,7 @@ mod tests {
                     _ => None,
                 })
             },
+            &mut |_git_root, _key| Ok(None),
             &mut |warning| warnings.push(warning),
         );
 
@@ -360,10 +370,10 @@ mod tests {
             "/repo",
         );
         let passthrough = SshCommitSigningPassthrough {
-            agent_socket_mount: Some(RuntimeMount::bind(
+            mounts: vec![RuntimeMount::bind(
                 "/tmp/agent.sock",
                 CONTAINER_SSH_AUTH_SOCK,
-            )),
+            )],
             env: BTreeMap::from([(
                 HOST_SSH_AUTH_SOCK_ENV.to_string(),
                 CONTAINER_SSH_AUTH_SOCK.to_string(),

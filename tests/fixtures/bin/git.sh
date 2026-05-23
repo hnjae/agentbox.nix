@@ -33,6 +33,17 @@ if [ "$1" = "-C" ] && [ "$3" = "config" ] && [ "$4" = "--get" ]; then
     exit 1
 fi
 
+if [ "$1" = "-C" ] && [ "$3" = "config" ] && [ "$4" = "--path" ] && [ "$5" = "--get" ]; then
+    fixtures=${AGENTBOX_TEST_FIXTURES:-}
+    key=${6:-}
+    if [ "$fixtures" != "" ] && [ -f "$fixtures/git-config-path-$(safe_git_config_key "$key")" ]; then
+        cat "$fixtures/git-config-path-$(safe_git_config_key "$key")"
+        exit 0
+    fi
+
+    exit 1
+fi
+
 if [ "$1" = "-C" ] && [ "$3" = "remote" ] && [ "$4" = "-v" ]; then
     fixtures=${AGENTBOX_TEST_FIXTURES:-}
     if [ "$fixtures" != "" ] && [ -f "$fixtures/git-remotes" ]; then

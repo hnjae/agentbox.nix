@@ -324,9 +324,59 @@ fn exec_uses_codex_git_identity_without_ssh_agent() {
     assert!(!run.contains("/run/agentbox/ssh-agent.sock"));
 }
 
+#[test]
+fn run_mounts_host_git_excludes_file_and_injects_config() {
+    let fixture = support::temp_workspace("nested");
+    let harness = Harness::new();
+    let git_ignore = fixture.repo.path().join("host-ignore");
+    fs::write(&git_ignore, "target\n").unwrap();
+    harness.write_git_config("user.name", "Alice Agent\n");
+    harness.write_git_config("user.email", "alice@example.test\n");
+    harness.write_git_config_path("core.excludesFile", &format!("{}\n", git_ignore.display()));
+
+    let log = run_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains(&format!(
+        "--mount type=bind,src={},dst=/run/agentbox/git-ignore,ro",
+        git_ignore.display()
+    )));
+    assert!(run.contains("--env GIT_CONFIG_COUNT=3"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_0=user.name"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_0=Alice Agent"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_1=alice@example.test"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_2=core.excludesFile"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_2=/run/agentbox/git-ignore"));
+}
+
+#[test]
+fn exec_mounts_host_git_excludes_file_with_codex_identity() {
+    let fixture = support::temp_workspace("nested");
+    let harness = Harness::new();
+    let git_ignore = fixture.repo.path().join("host-ignore");
+    fs::write(&git_ignore, "target\n").unwrap();
+    harness.write_git_config_path("core.excludesFile", &format!("{}\n", git_ignore.display()));
+
+    let log = exec_codex_success(&fixture, &harness, &["--dev-env", "none"], &["fix-tests"]);
+    let run = podman_run_command(&log);
+
+    assert!(run.contains(&format!(
+        "--mount type=bind,src={},dst=/run/agentbox/git-ignore,ro",
+        git_ignore.display()
+    )));
+    assert!(run.contains("--env GIT_CONFIG_COUNT=3"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_0=user.name"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_0=Codex"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_1=noreply@openai.com"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_2=core.excludesFile"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_2=/run/agentbox/git-ignore"));
+}
+
 #[cfg(unix)]
 #[test]
-fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
+fn run_mounts_ssh_agent_socket_git_excludes_and_minimal_git_signing_config() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
@@ -342,8 +392,11 @@ fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
             endpoint.port(),
         ),
     );
+    let git_ignore = fixture.repo.path().join("host-ignore");
+    fs::write(&git_ignore, "target\n").unwrap();
     harness.write_git_config("user.name", "Alice Agent\n");
     harness.write_git_config("user.email", "alice@example.test\n");
+    harness.write_git_config_path("core.excludesFile", &format!("{}\n", git_ignore.display()));
     harness.write_git_config("gpg.format", "ssh\n");
     harness.write_git_config("user.signingkey", "ssh-ed25519 AAAATEST alice\n");
     harness.write_git_config("commit.gpgsign", "true\n");
@@ -370,6 +423,10 @@ fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
         "--mount type=bind,src={},dst=/run/agentbox/ssh-agent.sock",
         socket_path
     )));
+    assert!(run.contains(&format!(
+        "--mount type=bind,src={},dst=/run/agentbox/git-ignore,ro",
+        git_ignore.display()
+    )));
     assert!(run.contains("--env SSH_AUTH_SOCK=/run/agentbox/ssh-agent.sock"));
     assert!(run.contains("dst=/run/agentbox/known_hosts,ro"));
     assert!(
@@ -377,17 +434,19 @@ fn run_mounts_ssh_agent_socket_and_minimal_git_signing_config() {
             "--env GIT_SSH_COMMAND=ssh -o UserKnownHostsFile=/run/agentbox/known_hosts -o StrictHostKeyChecking=yes"
         )
     );
-    assert!(run.contains("--env GIT_CONFIG_COUNT=5"));
+    assert!(run.contains("--env GIT_CONFIG_COUNT=6"));
     assert!(run.contains("--env GIT_CONFIG_KEY_0=user.name"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_0=Alice Agent"));
     assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_1=alice@example.test"));
-    assert!(run.contains("--env GIT_CONFIG_KEY_2=gpg.format"));
-    assert!(run.contains("--env GIT_CONFIG_VALUE_2=ssh"));
-    assert!(run.contains("--env GIT_CONFIG_KEY_3=user.signingkey"));
-    assert!(run.contains("--env GIT_CONFIG_VALUE_3=ssh-ed25519 AAAATEST alice"));
-    assert!(run.contains("--env GIT_CONFIG_KEY_4=commit.gpgsign"));
-    assert!(run.contains("--env GIT_CONFIG_VALUE_4=true"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_2=core.excludesFile"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_2=/run/agentbox/git-ignore"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_3=gpg.format"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_3=ssh"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_4=user.signingkey"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_4=ssh-ed25519 AAAATEST alice"));
+    assert!(run.contains("--env GIT_CONFIG_KEY_5=commit.gpgsign"));
+    assert!(run.contains("--env GIT_CONFIG_VALUE_5=true"));
     assert!(!run.contains("credential.helper"));
     assert_eq!(
         harness.captured_known_hosts().as_deref(),

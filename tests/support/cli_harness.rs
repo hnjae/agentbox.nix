@@ -174,6 +174,16 @@ impl CliHarness {
         .unwrap();
     }
 
+    pub fn write_git_config_path(&self, key: &str, value: &str) {
+        fs::write(
+            self.fixtures
+                .path()
+                .join(format!("git-config-path-{}", safe_git_config_key(key))),
+            value,
+        )
+        .unwrap();
+    }
+
     pub fn write_git_remotes(&self, remotes: &str) {
         fs::write(self.fixtures.path().join("git-remotes"), remotes).unwrap();
     }

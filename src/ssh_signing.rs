@@ -6,6 +6,7 @@ pub(crate) const CONTAINER_SSH_AUTH_SOCK: &str = "/run/agentbox/ssh-agent.sock";
 mod agent_socket;
 mod commit_signing;
 mod git_config;
+mod git_excludes;
 mod known_hosts;
 mod passthrough;
 mod signing_key;
