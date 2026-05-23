@@ -51,6 +51,32 @@ fn prompt_selection_errors_are_stable() {
 }
 
 #[test]
+fn codex_server_launch_fails_when_codex_home_is_missing() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = install_harness();
+    let codex_home = harness.home_path().join("missing-codex-home");
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("CODEX_HOME", &codex_home)
+        .args(["run", "--runtime", "codex"])
+        .arg(target);
+
+    command
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(format!(
+            "Missing host Codex configuration directory: {}",
+            codex_home.display()
+        )));
+
+    let log = harness.read_log();
+    assert!(log.is_empty());
+}
+
+#[test]
 fn start_existing_managed_session_suggests_connect_before_image_work() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();

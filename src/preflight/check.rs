@@ -3,7 +3,9 @@
 
 use camino::Utf8Path;
 
-use crate::runtime::{RuntimeKind, RuntimeMount};
+use std::collections::BTreeMap;
+
+use crate::runtime::{RuntimeKind, RuntimeMount, RuntimeRunMode};
 use crate::{Error, Result};
 
 use super::{
@@ -15,22 +17,52 @@ use super::{
 pub struct PreflightReport {
     pub host_nix_mounts: Vec<RuntimeMount>,
     pub runtime_mounts: Vec<RuntimeMount>,
+    pub runtime_environment: BTreeMap<String, String>,
 }
 
 pub fn check_host_prerequisites_for_runtime(runtime: RuntimeKind) -> Result<PreflightReport> {
-    check_host_prerequisites_with_snapshot(&PreflightSnapshot::detect(runtime), runtime)
+    check_host_prerequisites_for_runtime_mode(runtime, RuntimeRunMode::ManagedSession)
+}
+
+pub fn check_host_prerequisites_for_runtime_mode(
+    runtime: RuntimeKind,
+    run_mode: RuntimeRunMode,
+) -> Result<PreflightReport> {
+    check_host_prerequisites_with_snapshot_for_mode(
+        &PreflightSnapshot::detect_for_run_mode(runtime, run_mode),
+        runtime,
+        run_mode,
+    )
 }
 
 pub fn check_host_prerequisites_with_snapshot(
     snapshot: &PreflightSnapshot,
     runtime: RuntimeKind,
 ) -> Result<PreflightReport> {
-    PreflightCheck { snapshot, runtime }.run()
+    check_host_prerequisites_with_snapshot_for_mode(
+        snapshot,
+        runtime,
+        RuntimeRunMode::ManagedSession,
+    )
+}
+
+pub fn check_host_prerequisites_with_snapshot_for_mode(
+    snapshot: &PreflightSnapshot,
+    runtime: RuntimeKind,
+    run_mode: RuntimeRunMode,
+) -> Result<PreflightReport> {
+    PreflightCheck {
+        snapshot,
+        runtime,
+        run_mode,
+    }
+    .run()
 }
 
 struct PreflightCheck<'a> {
     snapshot: &'a PreflightSnapshot,
     runtime: RuntimeKind,
+    run_mode: RuntimeRunMode,
 }
 
 impl PreflightCheck<'_> {
@@ -39,14 +71,15 @@ impl PreflightCheck<'_> {
         self.validate_nix_daemon()?;
         let nix_client_source = self.nix_client_source()?;
         self.validate_nix_config()?;
-        let runtime_mounts = runtime_mounts(self.snapshot, self.runtime)?;
+        let runtime_preflight = runtime_mounts(self.snapshot, self.runtime, self.run_mode)?;
 
         Ok(PreflightReport {
             host_nix_mounts: host_nix_mounts(
                 nix_client_source,
                 self.snapshot.nix.config.custom_conf.needs_static_mount,
             ),
-            runtime_mounts,
+            runtime_mounts: runtime_preflight.mounts,
+            runtime_environment: runtime_preflight.environment,
         })
     }
 

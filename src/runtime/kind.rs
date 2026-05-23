@@ -11,7 +11,9 @@ use crate::{Error, Result};
 use super::default_image::{self, DefaultImageBuildContext};
 use super::host_state::RuntimeHostStateMount;
 use super::profile::{self, RuntimePackageSpec};
-use super::spec::{AttachEndpoint, RuntimeAttachSpec, RuntimeCommand, RuntimeHealthCheck};
+use super::spec::{
+    AttachEndpoint, RuntimeAttachSpec, RuntimeCommand, RuntimeHealthCheck, RuntimeRunMode,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 #[value(rename_all = "kebab-case")]
@@ -50,8 +52,11 @@ impl RuntimeKind {
         self.profile().package
     }
 
-    pub(crate) fn host_state_mounts(self) -> &'static [RuntimeHostStateMount] {
-        self.profile().host_state_mounts
+    pub(crate) fn host_state_mounts(
+        self,
+        run_mode: RuntimeRunMode,
+    ) -> &'static [RuntimeHostStateMount] {
+        (self.profile().host_state_mounts)(run_mode)
     }
 
     pub fn attach_spec(self) -> RuntimeAttachSpec {

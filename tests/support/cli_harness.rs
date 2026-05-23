@@ -357,6 +357,7 @@ impl CliHarness {
         for (key, value) in self.agentbox_env() {
             command.set_env(key, &value);
         }
+        command.remove_env("CODEX_HOME");
         command.remove_env("SSH_AUTH_SOCK");
     }
 

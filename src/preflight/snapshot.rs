@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use crate::runtime::RuntimeKind;
+use crate::runtime::{RuntimeKind, RuntimeRunMode};
 
 mod host;
 mod host_state;
@@ -21,12 +21,20 @@ pub struct PreflightSnapshot {
 
 impl PreflightSnapshot {
     pub fn detect(runtime: RuntimeKind) -> Self {
-        Self::detect_with(runtime, &SystemPreflightHost)
+        Self::detect_for_run_mode(runtime, RuntimeRunMode::ManagedSession)
     }
 
-    fn detect_with(runtime: RuntimeKind, host: &impl PreflightHost) -> Self {
+    pub(crate) fn detect_for_run_mode(runtime: RuntimeKind, run_mode: RuntimeRunMode) -> Self {
+        Self::detect_with(runtime, run_mode, &SystemPreflightHost)
+    }
+
+    fn detect_with(
+        runtime: RuntimeKind,
+        run_mode: RuntimeRunMode,
+        host: &impl PreflightHost,
+    ) -> Self {
         Self {
-            host: HostPreflightSnapshot::detect(runtime, host),
+            host: HostPreflightSnapshot::detect(runtime, run_mode, host),
             nix: NixPreflightSnapshot::detect(host),
         }
     }
@@ -77,7 +85,11 @@ mod tests {
                 },
             );
 
-        let snapshot = PreflightSnapshot::detect_with(RuntimeKind::Opencode, &host);
+        let snapshot = PreflightSnapshot::detect_with(
+            RuntimeKind::Opencode,
+            RuntimeRunMode::ManagedSession,
+            &host,
+        );
 
         assert!(snapshot.host.has_git);
         assert!(snapshot.host.has_podman);
@@ -111,7 +123,11 @@ mod tests {
     fn preflight_snapshot_fixture_mode_short_circuits_host_nix_requirements() {
         let host = FakePreflightHost::default().with_test_fixtures_enabled();
 
-        let snapshot = PreflightSnapshot::detect_with(RuntimeKind::Codex, &host);
+        let snapshot = PreflightSnapshot::detect_with(
+            RuntimeKind::Codex,
+            RuntimeRunMode::ManagedSession,
+            &host,
+        );
 
         assert!(snapshot.host.has_git);
         assert!(!snapshot.host.has_podman);
@@ -130,5 +146,65 @@ mod tests {
                 .and_then(|state| state.source.as_ref()),
             None
         );
+    }
+
+    #[test]
+    fn preflight_snapshot_uses_codex_home_for_server_mode_only() {
+        let host = FakePreflightHost::default()
+            .with_env_path("HOME", "/home/example")
+            .with_env_path("CODEX_HOME", "/custom/codex")
+            .with_path_status(
+                "/custom/codex",
+                HostPathStatus {
+                    exists: true,
+                    is_directory: true,
+                    readable: true,
+                    writable: true,
+                    searchable: true,
+                },
+            )
+            .with_path_status(
+                "/home/example/.codex",
+                HostPathStatus {
+                    exists: true,
+                    is_directory: true,
+                    readable: true,
+                    writable: true,
+                    searchable: true,
+                },
+            );
+
+        let server_snapshot = PreflightSnapshot::detect_with(
+            RuntimeKind::Codex,
+            RuntimeRunMode::ManagedSession,
+            &host,
+        );
+        let foreground_snapshot =
+            PreflightSnapshot::detect_with(RuntimeKind::Codex, RuntimeRunMode::Foreground, &host);
+
+        let server_state = server_snapshot
+            .host
+            .runtime_state
+            .get(CODEX_CONFIG_DESTINATION)
+            .unwrap();
+        assert_eq!(
+            server_state.source.as_deref(),
+            Some(Utf8Path::new("/custom/codex"))
+        );
+        assert_eq!(
+            server_state.source_environment_variable.as_deref(),
+            Some("CODEX_HOME")
+        );
+
+        let foreground_state = foreground_snapshot
+            .host
+            .runtime_state
+            .get(CODEX_CONFIG_DESTINATION)
+            .unwrap();
+        assert_eq!(
+            foreground_state.source.as_deref(),
+            Some(Utf8Path::new("/home/example/.codex"))
+        );
+        assert_eq!(foreground_state.source_environment_variable, None);
     }
 }

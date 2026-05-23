@@ -8,9 +8,14 @@ use crate::runtime::command::{
     ServerCommandArg, ServerCommandTemplate,
 };
 use crate::runtime::default_image;
-use crate::runtime::host_state::{RuntimeHostStateMount, RuntimeHostStateSource};
+use crate::runtime::host_state::{
+    RuntimeHostStateContainerEnvironment, RuntimeHostStateDestination, RuntimeHostStateMount,
+    RuntimeHostStateSource,
+};
 use crate::runtime::kind::RuntimeKind;
-use crate::runtime::spec::{RuntimeAttachSpec, RuntimeHealthCheck, RuntimeHealthResponsePolicy};
+use crate::runtime::spec::{
+    RuntimeAttachSpec, RuntimeHealthCheck, RuntimeHealthResponsePolicy, RuntimeRunMode,
+};
 
 use super::{
     CONTAINER_LISTEN_IP, NPM_INSTALL_SOURCE, RuntimeDefaultEnv, RuntimePackageSpec, RuntimeProfile,
@@ -19,6 +24,7 @@ use super::{
 const NPM_PACKAGE: &str = "@openai/codex";
 const YOLO_FLAG: &str = "--dangerously-bypass-approvals-and-sandbox";
 const READY_PATH: &str = "/readyz";
+const CODEX_HOME_ENV: &str = "CODEX_HOME";
 
 const SERVER_COMMAND: ServerCommandTemplate = ServerCommandTemplate::new(&[
     ServerCommandArg::Literal("codex"),
@@ -44,14 +50,41 @@ const FOREGROUND_COMMAND: DirectCommandTemplate = DirectCommandTemplate::new(&[
 
 const DEFAULT_ENV: &[RuntimeDefaultEnv] = &[];
 
-const HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[RuntimeHostStateMount {
+const SERVER_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[RuntimeHostStateMount {
+    source: RuntimeHostStateSource::EnvironmentOrHome {
+        environment_variable: CODEX_HOME_ENV,
+        home_relative_components: &[".codex"],
+    },
+    product_name: "Codex",
+    description: "configuration",
+    destination: RuntimeHostStateDestination::SourcePathWhenEnvironment {
+        environment_variable: CODEX_HOME_ENV,
+        fallback_destination: CODEX_CONFIG_DESTINATION,
+    },
+    container_environment: Some(RuntimeHostStateContainerEnvironment {
+        name: CODEX_HOME_ENV,
+        source_environment_variable: CODEX_HOME_ENV,
+    }),
+}];
+
+const FOREGROUND_HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[RuntimeHostStateMount {
     source: RuntimeHostStateSource::HomeOnly {
         home_relative_components: &[".codex"],
     },
     product_name: "Codex",
     description: "configuration",
-    destination: CODEX_CONFIG_DESTINATION,
+    destination: RuntimeHostStateDestination::Fixed(CODEX_CONFIG_DESTINATION),
+    container_environment: None,
 }];
+
+fn host_state_mounts(run_mode: RuntimeRunMode) -> &'static [RuntimeHostStateMount] {
+    match run_mode {
+        RuntimeRunMode::Foreground => FOREGROUND_HOST_STATE_MOUNTS,
+        RuntimeRunMode::ManagedSession | RuntimeRunMode::TransientServer => {
+            SERVER_HOST_STATE_MOUNTS
+        }
+    }
+}
 
 pub(super) const PROFILE: RuntimeProfile = RuntimeProfile {
     kind: RuntimeKind::Codex,
@@ -71,7 +104,7 @@ pub(super) const PROFILE: RuntimeProfile = RuntimeProfile {
         path: READY_PATH,
         response_policy: RuntimeHealthResponsePolicy::HttpOk,
     },
-    host_state_mounts: HOST_STATE_MOUNTS,
+    host_state_mounts,
     default_env: DEFAULT_ENV,
     server_command: SERVER_COMMAND,
     host_client_command: HOST_CLIENT_COMMAND,

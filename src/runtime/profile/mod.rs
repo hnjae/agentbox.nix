@@ -10,7 +10,7 @@ use super::command::{DirectCommandTemplate, HostClientCommandTemplate, ServerCom
 use super::default_image::DefaultImageBuildContext;
 use super::host_state::RuntimeHostStateMount;
 use super::kind::RuntimeKind;
-use super::spec::{RuntimeAttachSpec, RuntimeHealthCheck};
+use super::spec::{RuntimeAttachSpec, RuntimeHealthCheck, RuntimeRunMode};
 
 const CONTAINER_LISTEN_IP: &str = "0.0.0.0";
 const NPM_INSTALL_SOURCE: &str = "npm";
@@ -25,7 +25,7 @@ pub(super) struct RuntimeProfile {
     pub(super) package: RuntimePackageSpec,
     pub(super) attach: RuntimeAttachSpec,
     pub(super) health_check: RuntimeHealthCheck,
-    pub(super) host_state_mounts: &'static [RuntimeHostStateMount],
+    pub(super) host_state_mounts: fn(RuntimeRunMode) -> &'static [RuntimeHostStateMount],
     pub(super) default_env: &'static [RuntimeDefaultEnv],
     pub(super) server_command: ServerCommandTemplate,
     pub(super) host_client_command: HostClientCommandTemplate,
@@ -53,10 +53,12 @@ pub(super) fn runtime_profile(kind: RuntimeKind) -> &'static RuntimeProfile {
 }
 
 #[cfg(test)]
-fn all_host_state_mounts() -> impl Iterator<Item = &'static RuntimeHostStateMount> {
+fn all_host_state_mounts(
+    run_mode: RuntimeRunMode,
+) -> impl Iterator<Item = &'static RuntimeHostStateMount> {
     RUNTIME_PROFILES
         .iter()
-        .flat_map(|profile| profile.host_state_mounts.iter())
+        .flat_map(move |profile| (profile.host_state_mounts)(run_mode).iter())
 }
 
 pub(super) fn runtime_kind_from_name(value: &str) -> Option<RuntimeKind> {
@@ -124,21 +126,51 @@ mod tests {
 
     #[test]
     fn runtime_host_state_mount_destinations_are_unique() {
-        let mut destinations = BTreeSet::new();
-
-        for mount in all_host_state_mounts() {
-            assert!(
-                destinations.insert(mount.destination),
-                "duplicate runtime host-state mount destination `{}`",
-                mount.destination,
-            );
+        for run_mode in [
+            RuntimeRunMode::ManagedSession,
+            RuntimeRunMode::TransientServer,
+            RuntimeRunMode::Foreground,
+        ] {
+            let mut destinations = BTreeSet::new();
+            for mount in all_host_state_mounts(run_mode) {
+                assert!(
+                    destinations.insert(mount.snapshot_key()),
+                    "duplicate runtime host-state mount destination `{}` for `{run_mode:?}`",
+                    mount.snapshot_key(),
+                );
+            }
         }
     }
 
     #[test]
-    fn runtime_profile_host_state_sources_match_expected_locations() {
-        let expressions = all_host_state_mounts()
-            .map(|mount| (mount.destination, mount.source_expression()))
+    fn runtime_profile_server_host_state_sources_match_expected_locations() {
+        let expressions = all_host_state_mounts(RuntimeRunMode::ManagedSession)
+            .map(|mount| (mount.snapshot_key(), mount.source_expression()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            expressions,
+            vec![
+                (
+                    OPENCODE_CONFIG_DESTINATION,
+                    "`${XDG_CONFIG_HOME:-$HOME/.config}/opencode`".to_string(),
+                ),
+                (
+                    OPENCODE_DATA_DESTINATION,
+                    "`${XDG_DATA_HOME:-$HOME/.local/share}/opencode`".to_string(),
+                ),
+                (
+                    CODEX_CONFIG_DESTINATION,
+                    "`CODEX_HOME` or `$HOME/.codex`".to_string(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn runtime_profile_foreground_host_state_sources_match_expected_locations() {
+        let expressions = all_host_state_mounts(RuntimeRunMode::Foreground)
+            .map(|mount| (mount.snapshot_key(), mount.source_expression()))
             .collect::<Vec<_>>();
 
         assert_eq!(

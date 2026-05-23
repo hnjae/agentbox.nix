@@ -13,7 +13,9 @@ mod spec;
 pub const CODEX_REMOTE_TOKEN_ENV: &str = "AGENTBOX_CODEX_REMOTE_TOKEN";
 
 pub(crate) use health::{HostRuntimeHealthProbe, RuntimeHealth, RuntimeHealthProbe};
-pub(crate) use host_state::{RuntimeHostStateMount, RuntimeHostStateSource};
+pub(crate) use host_state::{
+    RuntimeHostStateMount, RuntimeHostStateSource, RuntimeHostStateSourceResolution,
+};
 pub use kind::RuntimeKind;
 pub use spec::{
     AttachEndpoint, DEFAULT_HOST_ATTACH_IP, RuntimeAttachSpec, RuntimeCommand, RuntimeCreateSpec,

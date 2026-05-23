@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 
 use camino::Utf8PathBuf;
 
-use crate::runtime::{RuntimeHostStateSource, RuntimeKind};
+use crate::runtime::{
+    RuntimeHostStateSource, RuntimeHostStateSourceResolution, RuntimeKind, RuntimeRunMode,
+};
 
 use super::host::PreflightHost;
 
@@ -19,6 +21,8 @@ pub struct HostPreflightSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostDirectoryPreflightSnapshot {
     pub source: Option<Utf8PathBuf>,
+    pub source_environment_variable: Option<String>,
+    pub source_error: Option<String>,
     pub exists: bool,
     pub is_directory: bool,
     pub readable: bool,
@@ -27,17 +31,25 @@ pub struct HostDirectoryPreflightSnapshot {
 }
 
 impl HostPreflightSnapshot {
-    pub(super) fn detect(runtime: RuntimeKind, host: &impl PreflightHost) -> Self {
+    pub(super) fn detect(
+        runtime: RuntimeKind,
+        run_mode: RuntimeRunMode,
+        host: &impl PreflightHost,
+    ) -> Self {
         Self {
             has_git: host.test_fixtures_enabled() || host.command_exists("git"),
             has_podman: host.command_exists("podman"),
-            runtime_state: detect_runtime_state(runtime, host),
+            runtime_state: detect_runtime_state(runtime, run_mode, host),
         }
     }
 }
 
 impl HostDirectoryPreflightSnapshot {
-    pub(super) fn detect_with(source: Option<Utf8PathBuf>, host: &impl PreflightHost) -> Self {
+    pub(super) fn detect_with(
+        source: Option<Utf8PathBuf>,
+        source_environment_variable: Option<String>,
+        host: &impl PreflightHost,
+    ) -> Self {
         let status = source
             .as_deref()
             .map(|path| host.path_status(path))
@@ -45,6 +57,8 @@ impl HostDirectoryPreflightSnapshot {
 
         Self {
             source,
+            source_environment_variable,
+            source_error: None,
             exists: status.exists,
             is_directory: status.is_directory,
             readable: status.readable,
@@ -52,22 +66,40 @@ impl HostDirectoryPreflightSnapshot {
             searchable: status.searchable,
         }
     }
+
+    fn detect_error(error: crate::Error) -> Self {
+        Self {
+            source: None,
+            source_environment_variable: None,
+            source_error: Some(error.to_string()),
+            exists: false,
+            is_directory: false,
+            readable: false,
+            writable: false,
+            searchable: false,
+        }
+    }
 }
 
 fn detect_runtime_state(
     runtime: RuntimeKind,
+    run_mode: RuntimeRunMode,
     host: &impl PreflightHost,
 ) -> BTreeMap<String, HostDirectoryPreflightSnapshot> {
     runtime
-        .host_state_mounts()
+        .host_state_mounts(run_mode)
         .iter()
         .map(|mount| {
             (
-                mount.destination.to_string(),
-                HostDirectoryPreflightSnapshot::detect_with(
-                    host_state_source(mount.source, host),
-                    host,
-                ),
+                mount.snapshot_key().to_string(),
+                match host_state_source(mount.source, host) {
+                    Ok(resolution) => HostDirectoryPreflightSnapshot::detect_with(
+                        resolution.source,
+                        resolution.source_environment_variable.map(str::to_string),
+                        host,
+                    ),
+                    Err(error) => HostDirectoryPreflightSnapshot::detect_error(error),
+                },
             )
         })
         .collect()
@@ -76,7 +108,7 @@ fn detect_runtime_state(
 fn host_state_source(
     source: RuntimeHostStateSource,
     host: &impl PreflightHost,
-) -> Option<Utf8PathBuf> {
+) -> crate::Result<RuntimeHostStateSourceResolution> {
     source.resolve(|variable| host.path_from_environment(variable))
 }
 
@@ -105,6 +137,7 @@ mod tests {
 
         let snapshot = HostDirectoryPreflightSnapshot::detect_with(
             Some(state_directory.clone()),
+            None,
             &SystemPreflightHost,
         );
 
@@ -134,6 +167,7 @@ mod tests {
 
         let snapshot = HostDirectoryPreflightSnapshot::detect_with(
             Some(state_directory.clone()),
+            None,
             &SystemPreflightHost,
         );
 

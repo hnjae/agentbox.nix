@@ -7,7 +7,9 @@ mod path;
 mod snapshot;
 
 pub use check::{
-    PreflightReport, check_host_prerequisites_for_runtime, check_host_prerequisites_with_snapshot,
+    PreflightReport, check_host_prerequisites_for_runtime,
+    check_host_prerequisites_for_runtime_mode, check_host_prerequisites_with_snapshot,
+    check_host_prerequisites_with_snapshot_for_mode,
 };
 pub use mounts::required_host_mount_destinations;
 pub use snapshot::{

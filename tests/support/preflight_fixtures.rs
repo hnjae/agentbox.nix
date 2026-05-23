@@ -43,6 +43,8 @@ pub fn host_state_mut<'a>(
 fn host_directory(path: &str) -> HostDirectoryPreflightSnapshot {
     HostDirectoryPreflightSnapshot {
         source: Some(path.into()),
+        source_environment_variable: None,
+        source_error: None,
         exists: true,
         is_directory: true,
         readable: true,

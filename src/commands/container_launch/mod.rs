@@ -6,7 +6,7 @@ use crate::dev_env::DevEnvMode;
 use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
 use crate::metadata::runtime_package_version_label;
-use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime};
+use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime_mode};
 use crate::runtime::{RuntimeKind, RuntimeRunSpec};
 use crate::ssh_signing::{SshPassthroughGuard, apply_git_and_ssh_passthrough};
 use crate::workspace::WorkspaceIdentity;
@@ -58,6 +58,7 @@ pub(super) fn prepare_runtime_launch(
         workspace,
         runtime,
         dev_env_mode,
+        policy.run_mode,
         policy.host_client,
         policy.existing_check,
     )?;
@@ -75,6 +76,7 @@ pub(super) fn prepare_runtime_launch(
             codex_attach_token.as_ref(),
         )?,
     );
+    run_spec.extend_create_default_env(preparation.preflight.runtime_environment.clone());
     let ssh_passthrough = apply_git_and_ssh_passthrough(
         &mut run_spec,
         workspace.canonical_git_root.as_ref(),
@@ -94,11 +96,12 @@ fn prepare_container_launch_for_workspace(
     workspace: &WorkspaceIdentity,
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
+    run_mode: crate::runtime::RuntimeRunMode,
     host_client: HostClientRequirement,
     existing_check: ExistingResourceCheck,
 ) -> Result<ContainerLaunchPreparation> {
     diagnostic::info("checking workspace prerequisites");
-    let preflight = check_host_prerequisites_for_runtime(runtime)?;
+    let preflight = check_host_prerequisites_for_runtime_mode(runtime, run_mode)?;
 
     ensure_required_resources_absent(podman, workspace, existing_check)?;
 

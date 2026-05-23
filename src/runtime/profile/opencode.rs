@@ -7,9 +7,13 @@ use crate::runtime::command::{
     ServerCommandArg, ServerCommandTemplate,
 };
 use crate::runtime::default_image;
-use crate::runtime::host_state::{RuntimeHostStateMount, RuntimeHostStateSource};
+use crate::runtime::host_state::{
+    RuntimeHostStateDestination, RuntimeHostStateMount, RuntimeHostStateSource,
+};
 use crate::runtime::kind::RuntimeKind;
-use crate::runtime::spec::{RuntimeAttachSpec, RuntimeHealthCheck, RuntimeHealthResponsePolicy};
+use crate::runtime::spec::{
+    RuntimeAttachSpec, RuntimeHealthCheck, RuntimeHealthResponsePolicy, RuntimeRunMode,
+};
 
 use super::{
     CONTAINER_LISTEN_IP, NPM_INSTALL_SOURCE, RuntimeDefaultEnv, RuntimePackageSpec, RuntimeProfile,
@@ -54,7 +58,8 @@ const HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[
         },
         product_name: "OpenCode",
         description: "configuration",
-        destination: OPENCODE_CONFIG_DESTINATION,
+        destination: RuntimeHostStateDestination::Fixed(OPENCODE_CONFIG_DESTINATION),
+        container_environment: None,
     },
     RuntimeHostStateMount {
         source: RuntimeHostStateSource::XdgOrHome {
@@ -64,9 +69,14 @@ const HOST_STATE_MOUNTS: &[RuntimeHostStateMount] = &[
         },
         product_name: "OpenCode",
         description: "data",
-        destination: OPENCODE_DATA_DESTINATION,
+        destination: RuntimeHostStateDestination::Fixed(OPENCODE_DATA_DESTINATION),
+        container_environment: None,
     },
 ];
+
+fn host_state_mounts(_run_mode: RuntimeRunMode) -> &'static [RuntimeHostStateMount] {
+    HOST_STATE_MOUNTS
+}
 
 pub(super) const PROFILE: RuntimeProfile = RuntimeProfile {
     kind: RuntimeKind::Opencode,
@@ -86,7 +96,7 @@ pub(super) const PROFILE: RuntimeProfile = RuntimeProfile {
         path: HEALTH_PATH,
         response_policy: RuntimeHealthResponsePolicy::JsonHealthyFlag,
     },
-    host_state_mounts: HOST_STATE_MOUNTS,
+    host_state_mounts,
     default_env: DEFAULT_ENV,
     server_command: SERVER_COMMAND,
     host_client_command: HOST_CLIENT_COMMAND,

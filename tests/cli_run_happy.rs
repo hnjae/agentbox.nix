@@ -180,6 +180,11 @@ fn run_launches_codex_transient_server_and_host_client_in_yolo_mode() {
     assert!(run.contains("--ws-auth capability-token"));
     assert!(run.contains("--ws-token-sha256 "));
     assert!(run.contains("--publish 127.0.0.1::1455"));
+    assert!(run.contains(&format!(
+        "type=bind,src={},dst=/home/user/.codex",
+        harness.home_path().join(".codex").display()
+    )));
+    assert!(!run.contains("--env CODEX_HOME="));
     assert!(!run.contains("--label io.agentbox.managed=true"));
     assert!(run.contains("--label io.agentbox.container_kind=transient-run"));
     assert!(log[4].contains(&format!(
@@ -190,15 +195,58 @@ fn run_launches_codex_transient_server_and_host_client_in_yolo_mode() {
 }
 
 #[test]
+fn run_passes_codex_home_to_codex_server_container() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = Harness::new();
+    let codex_home = harness.home_path().join("custom-codex-home");
+    fs::create_dir(&codex_home).unwrap();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Codex);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Codex,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("CODEX_HOME", &codex_home)
+        .args(["run", "--runtime", "codex"])
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let log = harness.read_log();
+    let run = podman_run_command(&log);
+    assert!(run.contains(&format!(
+        "type=bind,src={},dst={}",
+        codex_home.display(),
+        codex_home.display()
+    )));
+    assert!(run.contains(&format!("--env CODEX_HOME={}", codex_home.display())));
+    assert!(!run.contains("dst=/home/user/.codex"));
+}
+
+#[test]
 fn exec_launches_codex_exec_foreground_without_managed_metadata() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
     let workspace = &fixture.workspace;
     let image = RuntimeKind::Codex.default_image();
     let harness = Harness::new();
+    let codex_home = harness.home_path().join("custom-codex-home");
+    fs::create_dir(&codex_home).unwrap();
 
     let mut command = harness.locked_agentbox_command(workspace);
     command
+        .env("CODEX_HOME", &codex_home)
         .args(["exec", "--dev-env", "none"])
         .arg(target)
         .args(["--", "--json", "fix-tests"]);
@@ -237,6 +285,8 @@ fn exec_launches_codex_exec_foreground_without_managed_metadata() {
         "type=bind,src={},dst=/home/user/.codex",
         harness.home_path().join(".codex").display()
     )));
+    assert!(!run.contains(&format!("{}", codex_home.display())));
+    assert!(!run.contains("--env CODEX_HOME="));
     assert!(run.contains(&format!(
         " {image} codex --dangerously-bypass-approvals-and-sandbox exec --disable codex_git_commit --json fix-tests"
     )));
@@ -1056,6 +1106,7 @@ fn start_launches_codex_server_in_yolo_mode() {
         "type=bind,src={},dst=/home/user/.codex",
         harness.home_path().join(".codex").display()
     ));
+    run.assert_args_do_not_contain("--env CODEX_HOME=");
     run.assert_args_contain(&format!(
         " {image} codex --dangerously-bypass-approvals-and-sandbox app-server --listen ws://0.0.0.0:1455"
     ));
@@ -1072,6 +1123,46 @@ fn start_launches_codex_server_in_yolo_mode() {
     let token = fs::read_to_string(harness.codex_attach_token_path(workspace)).unwrap();
     assert!(!token.trim().is_empty());
     run.assert_args_do_not_contain(token.trim());
+}
+
+#[test]
+fn start_passes_codex_home_to_codex_server_container() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = Harness::new();
+    let codex_home = harness.home_path().join("managed-codex-home");
+    fs::create_dir(&codex_home).unwrap();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Codex);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Codex,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("CODEX_HOME", &codex_home)
+        .args(["start", "--runtime", "codex"])
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let commands = harness.command_log();
+    let run = commands.first("run");
+    run.assert_args_contain(&format!(
+        "type=bind,src={},dst={}",
+        codex_home.display(),
+        codex_home.display()
+    ));
+    run.assert_args_contain(&format!("--env CODEX_HOME={}", codex_home.display()));
+    run.assert_args_do_not_contain("dst=/home/user/.codex");
 }
 
 #[test]

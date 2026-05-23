@@ -113,6 +113,53 @@ fn restart_recreates_running_session_with_stored_runtime_and_launch_directory() 
 }
 
 #[test]
+fn restart_passes_codex_home_to_replacement_server_container() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = Harness::new();
+    let codex_home = harness.home_path().join("restart-codex-home");
+    fs::create_dir(&codex_home).unwrap();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Codex);
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "running-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &running_workspace_inspect_fixture(workspace, &image, RuntimeKind::Codex),
+    );
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Codex,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("CODEX_HOME", &codex_home)
+        .arg("restart")
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let run = harness.command_log().first("run").clone();
+    run.assert_args_contain(&format!(
+        "type=bind,src={},dst={}",
+        codex_home.display(),
+        codex_home.display()
+    ));
+    run.assert_args_contain(&format!("--env CODEX_HOME={}", codex_home.display()));
+    run.assert_args_do_not_contain("dst=/home/user/.codex");
+}
+
+#[test]
 fn restart_stable_id_target_is_revalidated_under_the_git_root_lock() {
     let fixture = support::temp_workspace("nested");
     let workspace = &fixture.workspace;
