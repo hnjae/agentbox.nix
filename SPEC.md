@@ -776,14 +776,16 @@ Rules:
 
 ### Codex Host Configuration Passthrough
 
-Codex sessions use the invoking host user's Codex configuration directory as the runtime Codex home.
+Codex server sessions use the invoking host user's Codex configuration directory as the runtime Codex home. A non-empty `CODEX_HOME` overrides the default host Codex home for server sessions.
 
 Rules:
 
-- For `agentbox run --runtime codex`, `agentbox start --runtime codex`, and `agentbox restart` of a Codex session, the host `${HOME}/.codex` directory is bind-mounted read-write at `/home/user/.codex`.
+- For `agentbox run --runtime codex`, `agentbox start --runtime codex`, and `agentbox restart` of a Codex session, if `CODEX_HOME` is set to a non-empty value, that host directory is bind-mounted read-write at the same absolute path inside the container and the server container receives `CODEX_HOME` with the same value.
+- If `CODEX_HOME` is unset or empty for those Codex server launches, the host `${HOME}/.codex` directory is bind-mounted read-write at `/home/user/.codex`.
 - The mount is required so auth refreshes, skills, MCP configuration, plugins, rules, and other Codex user state remain consistent between host and container Codex clients.
-- `run --runtime codex`, `start --runtime codex`, and `restart` of a Codex session fail before starting or replacing a container if `${HOME}/.codex` is missing, is not a directory, or is not readable and writable by the invoking host user.
-- `agentbox` does not create, migrate, or write files inside `${HOME}/.codex`.
+- `run --runtime codex`, `start --runtime codex`, and `restart` of a Codex session fail before starting or replacing a container if the selected host Codex home directory is missing, is not a directory, is not an absolute path, or is not readable and writable by the invoking host user.
+- `agentbox exec` uses the default host `${HOME}/.codex` passthrough at `/home/user/.codex` and does not apply `CODEX_HOME` server passthrough.
+- `agentbox` does not create, migrate, or write files inside the selected host Codex home directory.
 - OpenCode sessions do not receive the Codex passthrough mount.
 
 ### OpenCode Host State Passthrough
