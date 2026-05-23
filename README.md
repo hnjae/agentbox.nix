@@ -17,6 +17,10 @@ It is built to:
 - Detects `direnv`, `devenv`, and `nix develop`.
 - Manages agentbox-owned containers, images and volumes.
 
+## Documentation
+
+- [Code agent exposure surface](docs/code-agent-exposure.md): host paths, environment, network access, and host-side processes visible to runtime agents.
+
 ## Install
 
 ```sh
