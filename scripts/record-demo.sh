@@ -15,6 +15,8 @@ Options:
     --workspace PATH       Existing git workspace to use instead of a temporary one
     --agentbox PATH        agentbox executable to record (default: local cargo build)
     --connect              Connect to the session and send /exit before stopping it
+    --render-media         Require and generate @2x.gif and @2x.avif outputs
+    --no-render-media      Do not generate media outputs
     -o, --output PATH      Cast output path
     -h, --help             Show this help
 
@@ -26,6 +28,18 @@ Environment:
     AGENTBOX_DEMO_CONNECT  Same as --connect when set to 1
     AGENTBOX_DEMO_CONNECT_DELAY
                             Seconds to wait before sending /exit (default: 2)
+    AGENTBOX_DEMO_RENDER_MEDIA
+                            1, 0, or auto (default: auto)
+    AGENTBOX_DEMO_MEDIA_FONT_SIZE
+                            agg font size for @2x output (default: 32)
+    AGENTBOX_DEMO_MEDIA_FPS_CAP
+                            agg FPS cap for @2x output (default: 20)
+    AGENTBOX_DEMO_MEDIA_IDLE_TIME_LIMIT
+                            agg idle time limit for @2x output (default: 1)
+    AGENTBOX_DEMO_MEDIA_AVIF_CRF
+                            ffmpeg libaom-av1 CRF for @2x AVIF (default: 28)
+    AGENTBOX_DEMO_MEDIA_AVIF_CPU_USED
+                            ffmpeg libaom-av1 cpu-used for @2x AVIF (default: 4)
     AGENTBOX_DEMO_PAUSE    Delay between demo steps in seconds (default: 0.8)
 EOF
 }
@@ -37,6 +51,10 @@ error() {
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || error "required command not found on PATH: $1"
+}
+
+has_command() {
+    command -v "$1" >/dev/null 2>&1
 }
 
 absolute_script_path() {
@@ -148,6 +166,75 @@ prepare_agentbox_binary() {
     fi
 
     printf '%s\n' "$agentbox_bin"
+}
+
+media_output_prefix() {
+    output=$1
+    output_dir=$(dirname "$output")
+    output_name=$(basename "$output")
+
+    case $output_name in
+    *.cast) output_stem=${output_name%.cast} ;;
+    *.*) output_stem=${output_name%.*} ;;
+    *) output_stem=$output_name ;;
+    esac
+
+    printf '%s/%s' "$output_dir" "$output_stem"
+}
+
+media_output_paths() {
+    output=$1
+    output_prefix=$(media_output_prefix "$output")
+
+    printf '%s@2x.gif\n' "$output_prefix"
+    printf '%s@2x.avif\n' "$output_prefix"
+}
+
+check_media_outputs() {
+    output=$1
+
+    media_output_paths "$output" | while IFS= read -r media_output; do
+        if [ -e "$media_output" ]; then
+            error "media output file already exists: $media_output"
+        fi
+    done
+}
+
+preflight_media_rendering() {
+    require_command agg
+    require_command ffmpeg
+
+    ffmpeg -hide_banner -h encoder=libaom-av1 >/dev/null 2>&1 || error "ffmpeg does not support the libaom-av1 encoder"
+    ffmpeg -hide_banner -h muxer=avif >/dev/null 2>&1 || error "ffmpeg does not support the avif muxer"
+}
+
+render_demo_media() {
+    output=$1
+    output_prefix=$(media_output_prefix "$output")
+    gif_output=$output_prefix@2x.gif
+    avif_output=$output_prefix@2x.avif
+
+    printf 'Rendering @2x GIF demo to %s\n' "$gif_output"
+    agg \
+        --font-size "$AGENTBOX_DEMO_MEDIA_FONT_SIZE" \
+        --fps-cap "$AGENTBOX_DEMO_MEDIA_FPS_CAP" \
+        --idle-time-limit "$AGENTBOX_DEMO_MEDIA_IDLE_TIME_LIMIT" \
+        "$output" \
+        "$gif_output"
+
+    printf 'Rendering @2x AVIF demo to %s\n' "$avif_output"
+    ffmpeg \
+        -hide_banner \
+        -loglevel error \
+        -n \
+        -i "$gif_output" \
+        -an \
+        -c:v libaom-av1 \
+        -crf "$AGENTBOX_DEMO_MEDIA_AVIF_CRF" \
+        -cpu-used "$AGENTBOX_DEMO_MEDIA_AVIF_CPU_USED" \
+        -pix_fmt yuv444p \
+        -loop 0 \
+        "$avif_output"
 }
 
 run_step() {
@@ -349,8 +436,14 @@ main() {
     workspace=${AGENTBOX_DEMO_WORKSPACE-}
     agentbox_bin=${AGENTBOX_BIN-}
     connect_exit=${AGENTBOX_DEMO_CONNECT:-0}
+    render_media=${AGENTBOX_DEMO_RENDER_MEDIA:-auto}
     AGENTBOX_DEMO_PAUSE=${AGENTBOX_DEMO_PAUSE:-0.8}
     AGENTBOX_DEMO_CONNECT_DELAY=${AGENTBOX_DEMO_CONNECT_DELAY:-2}
+    AGENTBOX_DEMO_MEDIA_FONT_SIZE=${AGENTBOX_DEMO_MEDIA_FONT_SIZE:-32}
+    AGENTBOX_DEMO_MEDIA_FPS_CAP=${AGENTBOX_DEMO_MEDIA_FPS_CAP:-20}
+    AGENTBOX_DEMO_MEDIA_IDLE_TIME_LIMIT=${AGENTBOX_DEMO_MEDIA_IDLE_TIME_LIMIT:-1}
+    AGENTBOX_DEMO_MEDIA_AVIF_CRF=${AGENTBOX_DEMO_MEDIA_AVIF_CRF:-28}
+    AGENTBOX_DEMO_MEDIA_AVIF_CPU_USED=${AGENTBOX_DEMO_MEDIA_AVIF_CPU_USED:-4}
 
     while [ "$#" -gt 0 ]; do
         case $1 in
@@ -373,6 +466,8 @@ main() {
             ;;
         --agentbox=*) agentbox_bin=${1#--agentbox=} ;;
         --connect) connect_exit=1 ;;
+        --render-media) render_media=1 ;;
+        --no-render-media) render_media=0 ;;
         -o | --output)
             option=$1
             shift
@@ -405,11 +500,25 @@ main() {
     0 | 1) ;;
     *) error "AGENTBOX_DEMO_CONNECT must be 0 or 1" ;;
     esac
+    case $render_media in
+    auto)
+        if has_command agg && has_command ffmpeg; then
+            render_media=1
+        else
+            render_media=0
+        fi
+        ;;
+    0 | 1) ;;
+    *) error "AGENTBOX_DEMO_RENDER_MEDIA must be 0, 1, or auto" ;;
+    esac
 
     require_command asciinema
     require_command git
     if [ "$connect_exit" = 1 ]; then
         require_command expect
+    fi
+    if [ "$render_media" = 1 ]; then
+        preflight_media_rendering
     fi
     preflight_runtime_state "$runtime"
     agentbox_bin=$(prepare_agentbox_binary "$repo_root" "$agentbox_bin")
@@ -422,6 +531,9 @@ main() {
     mkdir -p "$output_dir"
     if [ -e "$output" ]; then
         error "output file already exists: $output"
+    fi
+    if [ "$render_media" = 1 ]; then
+        check_media_outputs "$output"
     fi
 
     AGENTBOX_DEMO_SCRIPT=$script_path
@@ -437,6 +549,9 @@ main() {
     record_command='sh "$AGENTBOX_DEMO_SCRIPT" --demo'
     asciinema rec --return -c "$record_command" "$output"
     printf 'Recorded agentbox demo: %s\n' "$output"
+    if [ "$render_media" = 1 ]; then
+        render_demo_media "$output"
+    fi
 }
 
 main "$@"
