@@ -8,25 +8,25 @@ This document specifies user-visible CLI behavior and operator-visible runtime s
 
 The MVP is workspace-centric:
 
-- `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>`
+- `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-client-args>...]`
 - `agentbox exec [--dev-env <auto|none>] <directory> [-- <codex-exec-args>...]`
-- `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>`
+- `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-server-args>...]`
 - `agentbox runtime update <opencode|codex>`
-- `agentbox connect [directory]`
+- `agentbox connect [directory] [-- <agent-client-args>...]`
 - `agentbox ls`
 - `agentbox health`
 - `agentbox stop [target]...`
 - `agentbox clean`
 
-`agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>` resolves `<directory>` to its canonical git root, starts a transient runtime server container, and connects with the selected host client from the canonical target directory. The transient container is agentbox-owned and visible to `ls` and `stop`, but not a managed session for `connect` or `health`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. Interactive use prompts for `--runtime` when omitted.
+`agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-client-args>...]` resolves `<directory>` to its canonical git root, starts a transient runtime server container, and connects with the selected host client from the canonical target directory. The transient container is agentbox-owned and visible to `ls` and `stop`, but not a managed session for `connect` or `health`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. Interactive use prompts for `--runtime` when omitted. Agent client arguments must follow `--` and are appended to the host client command only.
 
 `agentbox exec [--dev-env <auto|none>] <directory> [-- <codex-exec-args>...]` resolves `<directory>` to its canonical git root and runs `codex exec` once in a foreground Podman container. It is not managed and is not listed or selectable by lifecycle commands. `--dev-env auto` wraps `codex exec` in the applicable development environment; `--dev-env none` runs it directly. Codex arguments must follow `--`.
 
-`agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>` resolves `<directory>` to its canonical git root and starts one managed detached runtime server session for that repository. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--connect` attaches with the host client after readiness.
+`agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-server-args>...]` resolves `<directory>` to its canonical git root and starts one managed detached runtime server session for that repository. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--connect` attaches with the host client after readiness. Agent server arguments must follow `--`, are appended to the runtime server command, and are preserved for `restart`.
 
-`agentbox restart [--connect|-c] [--dev-env <auto|none>] [target]` replaces one running managed session for the same repository. It recovers runtime and launch directory metadata, reuses the named cache volume, and re-evaluates development environment loading for the stored launch directory.
+`agentbox restart [--connect|-c] [--dev-env <auto|none>] [target]` replaces one running managed session for the same repository. It recovers runtime, launch directory metadata, and stored agent server arguments, reuses the named cache volume, and re-evaluates development environment loading for the stored launch directory.
 
-`agentbox connect [directory]` discovers the running server endpoint for the resolved repository or selected session and runs the matching host client from the stored launch directory. A provided directory selects the workspace only; it does not change the running session's working directory. Interactive use prompts when the directory is omitted.
+`agentbox connect [directory] [-- <agent-client-args>...]` discovers the running server endpoint for the resolved repository or selected session and runs the matching host client from the stored launch directory. A provided directory selects the workspace only; it does not change the running session's working directory. Interactive use prompts when the directory is omitted. Agent client arguments must follow `--` and are appended to the host client command only.
 
 Foreground `exec`, transient `run`, and managed containers use Podman's `--rm` cleanup flag. Podman removes stopped containers after foreground exit, transient stop, managed server exit, `agentbox stop`, or the stop phase of `agentbox restart`. Default runtime images and named runtime cache volumes remain for explicit cleanup or update.
 
@@ -128,10 +128,11 @@ Managed containers are visible through Podman while they are running. They carry
 - the logical name
 - the attach endpoint scheme
 - the runtime server container port and listen address
+- the stored agent server arguments in `io.agentbox.server_args`, when any were supplied at `start`
 
 `agentbox` discovers sessions from live Podman state. It does not require a separate host-side session database.
 
-Transient `run` containers are not managed containers. They use the workspace's deterministic runtime cache volume name and publish a local-only attach endpoint for the matching host client. They omit the managed-session marker label, but carry `io.agentbox.container_kind=transient-run` plus canonical git root, stable git-root identity token, selected runtime, default runtime image reference, launch directory, logical name, attach endpoint scheme, and runtime server port/listen address. `ls` and `stop` discover transient `run` containers; `connect` and `health` do not.
+Transient `run` containers are not managed containers. They use the workspace's deterministic runtime cache volume name and publish a local-only attach endpoint for the matching host client. They omit the managed-session marker label, but carry `io.agentbox.container_kind=transient-run` plus canonical git root, stable git-root identity token, selected runtime, default runtime image reference, launch directory, logical name, attach endpoint scheme, and runtime server port/listen address. `run` client arguments are not recorded on transient containers. `ls` and `stop` discover transient `run` containers; `connect` and `health` do not.
 
 `agentbox` treats a live container as agentbox-owned only when it carries either `io.agentbox.managed=true` or `io.agentbox.container_kind=transient-run`. Image labels, image references, and container name patterns alone do not prove ownership.
 
@@ -157,7 +158,7 @@ Global output rules:
 - Clap parse errors and usage text keep Clap's native stderr format. `--help` and `--version` keep Clap's native stdout format.
 - Interactive prompt UI is rendered on stderr without being wrapped as log lines. `connect` runs the runtime host client with inherited stdio and does not wrap the client output as logs.
 
-### `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>`
+### `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-client-args>...]`
 
 `run` launches a transient selected-runtime server container, waits until its local-only attach endpoint is ready, and connects with the selected runtime host client.
 
@@ -165,6 +166,7 @@ Optional flags:
 
 - `--runtime <opencode|codex>`
 - `--dev-env <auto|none>`: controls automatic development environment wrapping for the transient runtime server. The default is `auto`.
+- `<agent-client-args>...`: arguments passed to the selected runtime host client. They must appear after a `--` delimiter so `agentbox` flags and agent flags are unambiguous.
 
 Expected behavior:
 
@@ -181,7 +183,7 @@ Expected behavior:
 11. Execute the selected runtime server command inside the container: `opencode serve --hostname 0.0.0.0 --port <port>` for OpenCode and `codex --dangerously-bypass-approvals-and-sandbox app-server --listen <endpoint> --ws-auth capability-token --ws-token-sha256 <token-sha256>` for Codex.
 12. With the default `--dev-env auto`, start the runtime server command through the selected development environment wrapper, if one applies. With `--dev-env none`, start the runtime server command directly.
 13. Wait for the published runtime server endpoint to become ready using the selected runtime's health check.
-14. Execute the selected runtime host client from the canonical target directory with inherited stdin, stdout, and stderr: `opencode attach <endpoint>` for OpenCode and `codex --dangerously-bypass-approvals-and-sandbox --remote <endpoint> --remote-auth-token-env <env-var>` for Codex.
+14. Execute the selected runtime host client from the canonical target directory with inherited stdin, stdout, and stderr: `opencode attach <endpoint>` for OpenCode and `codex --dangerously-bypass-approvals-and-sandbox --remote <endpoint> --remote-auth-token-env <env-var>` for Codex, followed by any `<agent-client-args>`.
 15. After the host client exits, fails to start, or `run` is interrupted after the container starts, stop the transient container.
 16. Exit with the host client process exit code when it is available.
 
@@ -199,6 +201,8 @@ Runtime rules:
 - `--dev-env auto` is the default and enables automatic development environment loading for the runtime server command.
 - `--dev-env none` disables automatic development environment loading for the runtime server command.
 - `run` does not accept `--connect` or `-c`; clap rejects those options.
+- Runtime client passthrough options such as `--no-alt-screen` are accepted only after the `--` delimiter. Without the delimiter, clap rejects them as `agentbox run` options.
+- `run` does not pass `<agent-client-args>` to the transient runtime server command.
 - Transient `run` is not a managed session. It is listed by `ls`, can be selected by `stop`, cannot be selected by `connect` or `health`, and does not create live managed metadata.
 - If a managed session or transient `run` already exists for the resolved git root, `run` fails before reusing or comparing any stored runtime value.
 - If the selected runtime host client command is missing, `run` fails before starting a container.
@@ -251,7 +255,7 @@ Runtime rules:
 - `agentbox exec <directory>` with no Codex arguments is valid; Codex owns the resulting no-argument `codex exec` behavior.
 - Codex passthrough options such as `--model` are accepted only after the `--` delimiter. Without the delimiter, clap rejects them as `agentbox exec` options.
 
-### `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory>`
+### `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-server-args>...]`
 
 `start` launches a new workspace session as a detached runtime server.
 
@@ -260,6 +264,7 @@ Optional flags:
 - `--connect`, `-c`: connect with the runtime host-side client after the new session is ready
 - `--runtime <opencode|codex>`
 - `--dev-env <auto|none>`: controls automatic development environment wrapping for the runtime server. The default is `auto`.
+- `<agent-server-args>...`: arguments passed to the selected runtime server command. They must appear after a `--` delimiter so `agentbox` flags and agent flags are unambiguous.
 
 Expected behavior:
 
@@ -272,10 +277,10 @@ Expected behavior:
 7. If more than one matching agentbox container exists, fail as `duplicate` and do not guess which one to use.
 8. If exactly one matching agentbox container exists, fail clearly instead of reusing or replacing it. For a healthy running managed session, suggest `agentbox connect <directory>` or `agentbox stop <directory>`. For a transient `run`, suggest `agentbox stop <id>`.
 9. If none exists, record the canonical target directory as the session launch directory and start detached `podman run --rm` with the required labels, including `io.agentbox.container_kind=managed-session`, mounts, default runtime image, local-only published attach endpoint, and launch-directory working directory.
-10. Start the selected runtime server for the session. With the default `--dev-env auto`, the server starts through the selected development environment wrapper, if one applies. With `--dev-env none`, the server command starts directly.
+10. Start the selected runtime server for the session, followed by any `<agent-server-args>`, and record those arguments in managed-session metadata. With the default `--dev-env auto`, the server starts through the selected development environment wrapper, if one applies. With `--dev-env none`, the server command starts directly.
 11. Wait until the runtime server endpoint is ready for connection or the container exits.
 12. If `--connect` is absent, report that the discovered attach endpoint is ready and suggest `agentbox connect <directory>`.
-13. If `--connect` is present, report that the discovered attach endpoint is ready and execute the runtime host client command from the session's launch directory with stdio inherited, using the same client command behavior as `agentbox connect`.
+13. If `--connect` is present, report that the discovered attach endpoint is ready and execute the runtime host client command from the session's launch directory with stdio inherited, using the same client command behavior as `agentbox connect`, without passing `<agent-server-args>` to the host client.
 
 Progress and diagnostics:
 
@@ -294,6 +299,8 @@ Runtime rules:
 - `--runtime` selects the runtime for the new session when it is present.
 - `--dev-env auto` is the default and enables automatic development environment loading for the server command.
 - `--dev-env none` disables automatic development environment loading for the server command.
+- Runtime server passthrough options are accepted only after the `--` delimiter. Without the delimiter, clap rejects them as `agentbox start` options.
+- Stored agent server arguments are reused by `restart`. If the stored metadata is malformed, `restart` fails before stopping the existing session.
 - `--connect` does not change session identity, runtime selection, container startup, endpoint readiness checks, or existing-session handling.
 - If `--connect` is set and a managed session or transient `run` already exists for the resolved git root, `start` still fails before reusing or connecting to that resource.
 - When `--runtime` is absent in an interactive terminal, the runtime prompt is rendered on stderr and the final success message is an `INFO` log on stderr.
@@ -310,7 +317,7 @@ Runtime rules:
 
 ### `agentbox restart [--connect|-c] [--dev-env <auto|none>] [target]`
 
-`restart` replaces one running managed workspace session for the same canonical git root. It preserves the selected runtime, deterministic container name, stored launch directory, and named runtime cache volume, while re-evaluating the server command's development environment.
+`restart` replaces one running managed workspace session for the same canonical git root. It preserves the selected runtime, deterministic container name, stored launch directory, stored agent server arguments, and named runtime cache volume, while re-evaluating the server command's development environment.
 
 Optional flags and arguments:
 
@@ -327,13 +334,13 @@ Expected behavior:
 5. If `[target]` is not resolved as a path, treat it as a case-insensitive stable id prefix.
 6. Select exactly one running managed session. A transient `run` container, stopped session, orphaned session, failed session, duplicate session, malformed runtime or launch-directory label, or missing target match is a clear failure and is not restarted.
 7. Lock the selected canonical git root and re-discover the target before any lifecycle mutation. If the selected target is no longer exactly one running managed session, fail before stopping anything.
-8. Read the runtime and stored launch directory from the existing managed session. The requested target identifies the session only; it does not update the launch directory.
+8. Read the runtime, stored launch directory, and stored agent server arguments from the existing managed session. The requested target identifies the session only; it does not update the launch directory.
 9. Validate Podman, the recovered runtime, and host-attached Nix prerequisites.
 10. Resolve the development environment from the stored launch directory.
 11. If `--connect` is present, verify that the recovered runtime's host client command is available before stopping the existing container.
 12. Ensure the recovered runtime's default image is available before stopping the existing container.
 13. Stop the existing managed container and verify that it is gone. If stop or cleanup verification fails, do not start a replacement container and report the remaining container.
-14. Start detached `podman run --detach --rm` with the same deterministic container name, selected runtime, stored launch directory as the container working directory, required labels and mounts, default runtime image, local-only published attach endpoint, and existing named runtime cache volume.
+14. Start detached `podman run --detach --rm` with the same deterministic container name, selected runtime, stored launch directory as the container working directory, required labels and mounts, default runtime image, local-only published attach endpoint, existing named runtime cache volume, and stored agent server arguments.
 15. Wait until the replacement runtime server endpoint is ready for connection or the container exits.
 16. If `--connect` is absent, report that the replacement session is ready and suggest `agentbox connect <launch-directory>`.
 17. If `--connect` is present, report that the replacement session is ready and execute the runtime host client command from the stored launch directory with stdio inherited, using the same client command behavior as `agentbox connect`.
@@ -348,6 +355,8 @@ Progress and diagnostics:
 Runtime rules:
 
 - `restart` does not accept `--runtime`; the runtime is recovered from the existing session metadata.
+- `restart` does not accept new agent passthrough arguments. It reuses the stored server arguments from the managed session being replaced.
+- If stored agent server argument metadata is malformed, `restart` fails before stopping the existing session.
 - `restart` does not accept `--all` or `--force`.
 - `--dev-env auto` is the default and re-evaluates automatic development environment loading for the replacement server command from the stored launch directory.
 - `--dev-env none` disables automatic development environment loading for the replacement server command.
@@ -436,9 +445,13 @@ Rules:
 - The update command does not write metadata under runtime host state directories such as `~/.codex`, `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`, or `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`.
 - Progress and result messages from `runtime update` are `INFO` logs on stderr. Successful `runtime update` does not write to stdout.
 
-### `agentbox connect [directory]`
+### `agentbox connect [directory] [-- <agent-client-args>...]`
 
 `connect` connects to an already-running managed workspace session. For `connect`, a provided `<directory>` is a workspace selector, not a requested working directory for the running session.
+
+Optional arguments:
+
+- `<agent-client-args>...`: arguments passed to the selected runtime host client. They must appear after a `--` delimiter so `agentbox` flags and agent flags are unambiguous.
 
 Expected behavior:
 
@@ -454,7 +467,7 @@ Expected behavior:
 10. Fail if the matching container is not running.
 11. Discover the runtime attach endpoint and stored launch directory from managed-container metadata and Podman's published port data.
 12. If the canonical requested directory differs from the stored launch directory, report that the requested directory was used only to identify the workspace and that `connect` is using the stored launch directory.
-13. Execute the runtime host client command from the stored launch directory with stdio inherited, without re-evaluating or wrapping the client in any development environment.
+13. Execute the runtime host client command from the stored launch directory with stdio inherited, without re-evaluating or wrapping the client in any development environment, followed by any `<agent-client-args>`.
 
 Rules:
 
@@ -467,6 +480,8 @@ Rules:
 - The connect prompt is rendered on stderr and does not write to stdout before the runtime host client starts.
 - `connect` does not accept or interpret `--runtime`.
 - `connect` does not accept or interpret `--image`.
+- Runtime client passthrough options such as `--no-alt-screen` are accepted only after the `--` delimiter. Without the delimiter, clap rejects them as `agentbox connect` options.
+- `connect` may prompt for a target while still accepting `<agent-client-args>` after `--`.
 - `connect` does not use `podman attach` as the user transport in the MVP.
 - `connect` does not open a raw shell through `podman exec`.
 - The host client process current working directory is the running session's stored launch directory.
