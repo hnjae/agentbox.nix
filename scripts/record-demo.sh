@@ -15,6 +15,7 @@ Options:
     --workspace PATH       Existing git workspace to use instead of a temporary one
     --agentbox PATH        agentbox executable to record (default: local cargo build)
     --connect              Connect to the session and send /exit before stopping it
+    --no-connect           Do not connect to the session before stopping it
     --render-media         Require and generate @2x.gif and @2x.avif outputs
     --no-render-media      Do not generate media outputs
     -o, --output PATH      Cast output path
@@ -25,7 +26,7 @@ Environment:
     AGENTBOX_DEMO_WORKSPACE
                             Same as --workspace
     AGENTBOX_BIN           Same as --agentbox
-    AGENTBOX_DEMO_CONNECT  Same as --connect when set to 1
+    AGENTBOX_DEMO_CONNECT  1 enables or 0 disables the connect step
     AGENTBOX_DEMO_CONNECT_DELAY
                             Seconds to wait before sending /exit (default: 2)
     AGENTBOX_DEMO_RENDER_MEDIA
@@ -389,8 +390,14 @@ demo_main() {
     : "${AGENTBOX_DEMO_REPO_ROOT:?}"
     : "${AGENTBOX_DEMO_RUNTIME:?}"
     : "${AGENTBOX_DEMO_PAUSE:=0.8}"
-    : "${AGENTBOX_DEMO_CONNECT:=0}"
+    : "${AGENTBOX_DEMO_CONNECT:=}"
     : "${AGENTBOX_DEMO_CONNECT_DELAY:=2}"
+    if [ "$AGENTBOX_DEMO_CONNECT" = "" ]; then
+        case $AGENTBOX_DEMO_RUNTIME in
+        codex) AGENTBOX_DEMO_CONNECT=1 ;;
+        *) AGENTBOX_DEMO_CONNECT=0 ;;
+        esac
+    fi
 
     workspace=$(prepare_demo_workspace "$AGENTBOX_DEMO_REPO_ROOT" "${AGENTBOX_DEMO_WORKSPACE-}")
     AGENTBOX_DEMO_WORKSPACE_RESOLVED=$workspace
@@ -435,7 +442,7 @@ main() {
     runtime=${AGENTBOX_DEMO_RUNTIME:-codex}
     workspace=${AGENTBOX_DEMO_WORKSPACE-}
     agentbox_bin=${AGENTBOX_BIN-}
-    connect_exit=${AGENTBOX_DEMO_CONNECT:-0}
+    connect_exit=${AGENTBOX_DEMO_CONNECT-}
     render_media=${AGENTBOX_DEMO_RENDER_MEDIA:-auto}
     AGENTBOX_DEMO_PAUSE=${AGENTBOX_DEMO_PAUSE:-0.8}
     AGENTBOX_DEMO_CONNECT_DELAY=${AGENTBOX_DEMO_CONNECT_DELAY:-2}
@@ -466,6 +473,7 @@ main() {
             ;;
         --agentbox=*) agentbox_bin=${1#--agentbox=} ;;
         --connect) connect_exit=1 ;;
+        --no-connect) connect_exit=0 ;;
         --render-media) render_media=1 ;;
         --no-render-media) render_media=0 ;;
         -o | --output)
@@ -496,6 +504,12 @@ main() {
     codex | opencode) ;;
     *) error "unsupported runtime: $runtime" ;;
     esac
+    if [ "$connect_exit" = "" ]; then
+        case $runtime in
+        codex) connect_exit=1 ;;
+        opencode) connect_exit=0 ;;
+        esac
+    fi
     case $connect_exit in
     0 | 1) ;;
     *) error "AGENTBOX_DEMO_CONNECT must be 0 or 1" ;;
