@@ -61,7 +61,7 @@ Out of scope for the MVP:
 - silent runtime switching or automatic recreation when an existing managed session has invalid runtime metadata
 - user-supplied runtime image references
 - generic container orchestration
-- durable runtime state beyond the workspace bind mount, one Podman-managed runtime cache volume, Codex host configuration passthrough, OpenCode host state passthrough, runtime image version metadata, and live managed-container metadata
+- durable runtime state beyond the workspace bind mount, one Podman-managed runtime cache volume, Codex host configuration passthrough, OpenCode host state passthrough, runtime image version metadata, Codex managed-session attach tokens, and live managed-container metadata
 - a bundled standalone Nix installation inside the runtime image
 - stopped managed containers that remain after the runtime server exits
 
@@ -178,10 +178,10 @@ Expected behavior:
 8. If exactly one matching agentbox container exists, fail clearly instead of reusing, replacing, or connecting to it. For a healthy running managed session, suggest `agentbox connect <directory>` or `agentbox stop <directory>`. For a transient `run`, suggest `agentbox stop <id>`.
 9. If none exists, start detached `podman run --detach --rm` with the required mounts, default runtime image, runtime cache volume, canonical target working directory, and local-only published attach endpoint.
 10. Pass `io.agentbox.container_kind=transient-run`, but do not pass the managed-session marker label `io.agentbox.managed=true`.
-11. Execute the selected runtime server command inside the container: `opencode serve --hostname 0.0.0.0 --port <port>` for OpenCode and `codex --dangerously-bypass-approvals-and-sandbox app-server --listen <endpoint>` for Codex.
+11. Execute the selected runtime server command inside the container: `opencode serve --hostname 0.0.0.0 --port <port>` for OpenCode and `codex --dangerously-bypass-approvals-and-sandbox app-server --listen <endpoint> --ws-auth capability-token --ws-token-sha256 <token-sha256>` for Codex.
 12. With the default `--dev-env auto`, start the runtime server command through the selected development environment wrapper, if one applies. With `--dev-env none`, start the runtime server command directly.
 13. Wait for the published runtime server endpoint to become ready using the selected runtime's health check.
-14. Execute the selected runtime host client from the canonical target directory with inherited stdin, stdout, and stderr: `opencode attach <endpoint>` for OpenCode and `codex --dangerously-bypass-approvals-and-sandbox --remote <endpoint>` for Codex.
+14. Execute the selected runtime host client from the canonical target directory with inherited stdin, stdout, and stderr: `opencode attach <endpoint>` for OpenCode and `codex --dangerously-bypass-approvals-and-sandbox --remote <endpoint> --remote-auth-token-env <env-var>` for Codex.
 15. After the host client exits, fails to start, or `run` is interrupted after the container starts, stop the transient container.
 16. Exit with the host client process exit code when it is available.
 
@@ -471,7 +471,8 @@ Rules:
 - `connect` does not open a raw shell through `podman exec`.
 - The host client process current working directory is the running session's stored launch directory.
 - The host client process uses the host environment of the `agentbox connect` invocation; `connect` does not re-evaluate `.envrc`, `devenv.nix`, or `flake.nix` from the requested directory or stored launch directory.
-- For Codex sessions, the host client command includes `--dangerously-bypass-approvals-and-sandbox` when connecting with `--remote`, matching Codex 0.128.0 behavior that requires the YOLO flag on both the app-server and connecting client sides.
+- For Codex sessions, the host client command includes `--dangerously-bypass-approvals-and-sandbox` when connecting with `--remote`, matching Codex behavior that requires the YOLO flag on both the app-server and connecting client sides.
+- For Codex sessions, the host client command also passes `--remote-auth-token-env AGENTBOX_CODEX_REMOTE_TOKEN`, and `agentbox` sets that environment variable to the capability token for the selected session.
 - When the requested directory differs from the stored launch directory, `connect` prints a short notice before launching the host client.
 - The running server process keeps the working directory and environment from its original `start`.
 - A different requested directory under the same git root does not change the running server or host client working directory for that `connect`.
@@ -857,6 +858,7 @@ Codex managed sessions:
 
 - use Codex's app server and host-side remote client
 - expose a `ws` attach endpoint
+- use Codex WebSocket capability-token authentication on the app server and host-side remote client
 
 Endpoint rules:
 
@@ -869,6 +871,9 @@ Endpoint rules:
 - `agentbox` may let Podman allocate the host port, but it must discover the concrete host port from Podman before reporting success from `start` or `restart`, or executing the `run`, `start --connect`, `restart --connect`, or `connect` host client.
 - The attach endpoint must be discoverable from the runtime's attach specification plus Podman's published port data. For managed sessions, stored managed-container metadata must also be consistent with that endpoint.
 - The host client command is executed with inherited stdio. `run` executes it from the canonical target directory, while `start --connect`, `restart --connect`, and `connect` execute it from the running session's stored launch directory.
+- Codex app-server commands that listen on the container-wide attach address must use capability-token authentication. `agentbox` passes only the token SHA-256 to the container server command.
+- For transient Codex `run`, the attach token is held only for the lifetime of the `agentbox run` process.
+- For managed Codex `start` and `restart`, the attach token is stored under `$XDG_STATE_HOME/agentbox/codex/ws-tokens/` and read by later `agentbox connect`. Missing token state makes `connect` fail clearly and require session restart or recreation.
 
 ### Host-Attached Nix Model
 
