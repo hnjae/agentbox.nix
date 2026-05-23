@@ -21,7 +21,6 @@ in
       pkgs.devenv
       pkgs.direnv
       pkgs.nix-direnv
-      pkgs.fzf
       pkgs.ast-grep
       pkgs.yq-go
 
