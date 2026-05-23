@@ -266,51 +266,13 @@ run_connect_exit_step() {
 
     set +e
     # shellcheck disable=SC2016
-    env \
+    (
+        sleep "$AGENTBOX_DEMO_CONNECT_DELAY"
+        printf '/exit\r'
+    ) | env \
         AGENTBOX_DEMO_CONNECT_WORKSPACE="$workspace" \
         AGENTBOX_DEMO_CONNECT_AGENTBOX_BIN="$AGENTBOX_DEMO_AGENTBOX_BIN" \
-        AGENTBOX_DEMO_CONNECT_DELAY_SECONDS="$AGENTBOX_DEMO_CONNECT_DELAY" \
-        expect -c '
-        set timeout 60
-        set workspace $env(AGENTBOX_DEMO_CONNECT_WORKSPACE)
-        set agentbox_bin $env(AGENTBOX_DEMO_CONNECT_AGENTBOX_BIN)
-        set exit_delay_ms [expr {int(double($env(AGENTBOX_DEMO_CONNECT_DELAY_SECONDS)) * 1000)}]
-
-        spawn -noecho $agentbox_bin connect $workspace
-        after $exit_delay_ms
-        send -- "/exit"
-
-        set exited 0
-        foreach submit_delay_ms {500 1500 3000} {
-            after $submit_delay_ms
-            send -- "\r"
-            set timeout 2
-            expect {
-                eof {
-                    set exited 1
-                    break
-                }
-                timeout {}
-            }
-        }
-
-        if {!$exited} {
-            set timeout 60
-            expect {
-                eof {}
-                timeout {
-                    send -- "\003"
-                    exit 124
-                }
-            }
-        }
-
-        set wait_result [wait]
-        if {[lindex $wait_result 2] != 0} {
-            exit 1
-        }
-        exit [lindex $wait_result 3]
-    '
+        script -q -e -c 'exec "$AGENTBOX_DEMO_CONNECT_AGENTBOX_BIN" connect "$AGENTBOX_DEMO_CONNECT_WORKSPACE"' /dev/null
     status=$?
     set -e
 
@@ -529,7 +491,7 @@ main() {
     require_command asciinema
     require_command git
     if [ "$connect_exit" = 1 ]; then
-        require_command expect
+        require_command script
     fi
     if [ "$render_media" = 1 ]; then
         preflight_media_rendering
