@@ -53,3 +53,11 @@ agentbox restart /path/to/workspace
 agentbox stop /path/to/workspace
 agentbox clean
 ```
+
+## Demo Recording
+
+```sh
+scripts/record-demo.sh
+```
+
+The script records an automated `start`, `ls`, `health`, and `stop` flow with `asciinema` and writes the cast under `target/asciinema/` by default. Use `--connect` to also attach to the managed session and send `/exit` before stopping it; this mode requires `expect`. Use `--runtime opencode`, `--workspace PATH`, `--agentbox PATH`, or `--output PATH` to override the defaults.
