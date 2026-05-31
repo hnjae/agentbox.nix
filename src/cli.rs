@@ -12,7 +12,7 @@ pub use crate::commands::completion::{
 pub use crate::commands::connect::ConnectArgs;
 pub use crate::commands::exec::ExecArgs;
 pub use crate::commands::health::HealthArgs;
-pub use crate::commands::ls::LsArgs;
+pub use crate::commands::ps::PsArgs;
 pub use crate::commands::restart::RestartArgs;
 pub use crate::commands::run::RunArgs;
 pub use crate::commands::runtime::{RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs};
@@ -47,8 +47,8 @@ pub enum Command {
     Runtime(RuntimeArgs),
     /// Connect to a running managed session.
     Connect(ConnectArgs),
-    /// List managed sessions.
-    Ls(LsArgs),
+    /// Show agentbox container status.
+    Ps(PsArgs),
     /// Check running managed session runtime health.
     Health(HealthArgs),
     /// Stop a managed session.

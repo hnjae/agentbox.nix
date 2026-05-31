@@ -15,9 +15,9 @@ pub mod exec;
 mod exit_status;
 pub mod health;
 mod launch_policy;
-pub mod ls;
 mod managed_server;
 mod output;
+pub mod ps;
 pub mod restart;
 pub mod run;
 pub mod runtime;
@@ -42,7 +42,7 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
         Command::Restart(args) => restart::run(args, verbose),
         Command::Runtime(args) => runtime::run(args, verbose),
         Command::Connect(args) => connect::run(args),
-        Command::Ls(args) => ls::run(args),
+        Command::Ps(args) => ps::run(args),
         Command::Health(args) => health::run(args),
         Command::Stop(args) => stop::run(args),
         Command::Clean(args) => clean::run(args),

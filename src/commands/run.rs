@@ -22,10 +22,11 @@ pub struct RunArgs {
     pub dev_env: DevEnvMode,
 
     /// Workspace directory inside a git repository.
+    #[arg(value_name = "DIRECTORY", default_value = ".")]
     pub directory: std::path::PathBuf,
 
     /// Arguments passed to the runtime host client.
-    #[arg(value_name = "AGENT_ARG", last = true)]
+    #[arg(value_name = "CLIENT_ARG", last = true)]
     pub agent_args: Vec<String>,
 }
 

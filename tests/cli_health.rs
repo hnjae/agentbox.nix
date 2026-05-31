@@ -464,7 +464,7 @@ fn health_directory_target_fails_when_running_sessions_are_duplicated() {
         .agentbox_assert(&["health", fixture.target.to_str().unwrap()])
         .failure()
         .stderr(predicates::str::contains(
-            "workspace target matches multiple managed sessions",
+            "matches multiple managed sessions",
         ));
 }
 

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use agentbox::cli::{Cli, Command, PsArgs, OutputFormat};
+use agentbox::cli::{Cli, Command, OutputFormat, PsArgs};
 use agentbox::commands::ps::{render_json, render_table};
 use agentbox::metadata::{
     AgentboxContainerKind, LABEL_ATTACH_SCHEME, LABEL_CONTAINER_KIND,

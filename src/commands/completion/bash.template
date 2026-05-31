@@ -72,7 +72,7 @@ _agentbox() {
                 COMPREPLY=( $(compgen -W "--runtime --dev-env --connect -c" -- "$cur") )
             fi
             ;;
-        ls)
+        ps)
             if [[ "${COMP_WORDS[COMP_CWORD-1]}" == "--output" || "${COMP_WORDS[COMP_CWORD-1]}" == "-o" ]]; then
                 COMPREPLY=( $(compgen -W "@OUTPUT_VALUES@" -- "$cur") )
             elif [[ "$cur" == -* ]]; then

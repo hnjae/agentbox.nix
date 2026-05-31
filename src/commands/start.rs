@@ -36,10 +36,11 @@ pub struct StartArgs {
     pub connect: bool,
 
     /// Workspace directory inside a git repository.
+    #[arg(value_name = "DIRECTORY", default_value = ".")]
     pub directory: PathBuf,
 
     /// Arguments passed to the runtime server.
-    #[arg(value_name = "AGENT_ARG", last = true)]
+    #[arg(value_name = "SERVER_ARG", last = true)]
     pub agent_args: Vec<String>,
 }
 

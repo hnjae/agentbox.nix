@@ -288,7 +288,7 @@ demo_session_id() {
     workspace=$1
     runtime=$2
 
-    sessions_json=$("$AGENTBOX_DEMO_AGENTBOX_BIN" ls --output json)
+    sessions_json=$("$AGENTBOX_DEMO_AGENTBOX_BIN" ps --output json)
     session_ids=$(
         printf '%s\n' "$sessions_json" |
             sed 's/},{/}\
@@ -378,7 +378,7 @@ demo_main() {
 
     run_step 'agentbox --version' "$AGENTBOX_DEMO_AGENTBOX_BIN" --version
     run_step "agentbox start --runtime $AGENTBOX_DEMO_RUNTIME --dev-env none $workspace" "$AGENTBOX_DEMO_AGENTBOX_BIN" start --runtime "$AGENTBOX_DEMO_RUNTIME" --dev-env none "$workspace"
-    run_step 'agentbox ls' "$AGENTBOX_DEMO_AGENTBOX_BIN" ls
+    run_step 'agentbox ps' "$AGENTBOX_DEMO_AGENTBOX_BIN" ps
     session_id=$(demo_session_id "$workspace" "$AGENTBOX_DEMO_RUNTIME")
     run_step "agentbox health $session_id" "$AGENTBOX_DEMO_AGENTBOX_BIN" health "$session_id"
     if [ "$AGENTBOX_DEMO_CONNECT" = 1 ]; then

@@ -24,7 +24,7 @@ const STOP_NON_TTY_ERROR: &str =
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct StopArgs {
-    /// Stop every running managed session.
+    /// Stop all running agentbox containers.
     #[arg(long, conflicts_with = "targets")]
     pub all: bool,
 

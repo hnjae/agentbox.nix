@@ -56,7 +56,7 @@ _agentbox() {
         fi
 
         if [[ "$PREFIX" == -* ]]; then
-          _values 'option' '--force[clean up duplicate or failed exact matches]' '--all[stop every running managed session]'
+          _values 'option' '--force[clean up duplicate or failed exact matches]' '--all[stop all running agentbox containers]'
         else
           _agentbox_completion_roots stop
         fi
@@ -94,7 +94,7 @@ _agentbox() {
           '-c[connect after the new session is ready]'
       fi
       ;;
-    ls)
+    ps)
       if [[ $CURRENT -gt 2 && ( "$words[CURRENT-1]" == "--output" || "$words[CURRENT-1]" == "-o" ) ]]; then
         _values 'output' @OUTPUT_VALUES@
       else
@@ -113,8 +113,8 @@ _agentbox() {
       _values 'option' \
         '--dry-run[print cleanup candidates without deleting]' \
         '--yes[delete cleanup candidates without prompting]' \
-        '--images[consider default runtime images]' \
-        '--volumes[consider workspace cache volumes]'
+        '--images[limit cleanup to default runtime images]' \
+        '--volumes[limit cleanup to workspace cache volumes]'
       ;;
     runtime)
       if (( CURRENT == 3 )); then

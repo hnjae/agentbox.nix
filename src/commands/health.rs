@@ -91,7 +91,7 @@ fn selected_health_sessions<'a>(
     sessions: &'a [SessionRecord],
     target: Option<&str>,
 ) -> Result<Vec<&'a SessionRecord>> {
-    HealthSessionTargetPlan::from_target(target).select_sessions(sessions)
+    HealthSessionTargetPlan::from_target(target)?.select_sessions(sessions)
 }
 
 fn health_rows<'a>(

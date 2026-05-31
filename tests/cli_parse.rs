@@ -3,7 +3,7 @@
 
 use agentbox::cli::{
     CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, ExecArgs,
-    HealthArgs, PsArgs, OutputFormat, RestartArgs, RunArgs, RuntimeArgs, RuntimeCommand,
+    HealthArgs, OutputFormat, PsArgs, RestartArgs, RunArgs, RuntimeArgs, RuntimeCommand,
     RuntimeUpdateArgs, StartArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
@@ -491,18 +491,52 @@ fn directory_commands_default_to_current_directory() {
     let run = Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode"]).unwrap();
     let start = Cli::try_parse_from(["agentbox", "start", "--runtime", "opencode"]).unwrap();
     let exec = Cli::try_parse_from(["agentbox", "exec"]).unwrap();
+    let run_with_args = Cli::try_parse_from([
+        "agentbox",
+        "run",
+        "--runtime",
+        "codex",
+        "--",
+        "--no-alt-screen",
+    ])
+    .unwrap();
+    let start_with_args = Cli::try_parse_from([
+        "agentbox",
+        "start",
+        "--runtime",
+        "opencode",
+        "--",
+        "--server-flag",
+    ])
+    .unwrap();
+    let exec_with_args = Cli::try_parse_from(["agentbox", "exec", "--", "review"]).unwrap();
 
     assert!(matches!(
         run.command,
-        Command::Run(RunArgs { directory, .. }) if directory == ".".into()
+        Command::Run(RunArgs { directory, .. }) if directory == std::path::Path::new(".")
     ));
     assert!(matches!(
         start.command,
-        Command::Start(StartArgs { directory, .. }) if directory == ".".into()
+        Command::Start(StartArgs { directory, .. }) if directory == std::path::Path::new(".")
     ));
     assert!(matches!(
         exec.command,
-        Command::Exec(ExecArgs { directory, .. }) if directory == ".".into()
+        Command::Exec(ExecArgs { directory, .. }) if directory == std::path::Path::new(".")
+    ));
+    assert!(matches!(
+        run_with_args.command,
+        Command::Run(RunArgs { directory, agent_args, .. })
+            if directory == std::path::Path::new(".") && agent_args == ["--no-alt-screen"]
+    ));
+    assert!(matches!(
+        start_with_args.command,
+        Command::Start(StartArgs { directory, agent_args, .. })
+            if directory == std::path::Path::new(".") && agent_args == ["--server-flag"]
+    ));
+    assert!(matches!(
+        exec_with_args.command,
+        Command::Exec(ExecArgs { directory, codex_args, .. })
+            if directory == std::path::Path::new(".") && codex_args == ["review"]
     ));
 }
 

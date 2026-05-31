@@ -1,21 +1,31 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::path::Path;
+
+use camino::Utf8PathBuf;
+
 use crate::session::SessionRecord;
 use crate::session::selection::select_stable_id_prefix;
+use crate::workspace::resolve_workspace_identity;
 use crate::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum HealthSessionTargetPlan {
     RunningSessions,
     StableIdPrefix(String),
+    Workspace(Utf8PathBuf),
 }
 
 impl HealthSessionTargetPlan {
-    pub(crate) fn from_target(target: Option<&str>) -> Self {
+    pub(crate) fn from_target(target: Option<&str>) -> Result<Self> {
         match target {
-            Some(target) => Self::StableIdPrefix(target.to_string()),
-            None => Self::RunningSessions,
+            Some(target) if Path::new(target).exists() => {
+                let workspace = resolve_workspace_identity(target)?;
+                Ok(Self::Workspace(workspace.canonical_git_root))
+            }
+            Some(target) => Ok(Self::StableIdPrefix(target.to_string())),
+            None => Ok(Self::RunningSessions),
         }
     }
 
@@ -29,7 +39,46 @@ impl HealthSessionTargetPlan {
                 .filter(|session| session.is_running())
                 .collect()),
             Self::StableIdPrefix(prefix) => select_stable_id_health_session(sessions, prefix),
+            Self::Workspace(git_root) => select_workspace_health_session(sessions, git_root),
         }
+    }
+}
+
+fn select_workspace_health_session<'a>(
+    sessions: &'a [SessionRecord],
+    git_root: &camino::Utf8Path,
+) -> Result<Vec<&'a SessionRecord>> {
+    let matches = sessions
+        .iter()
+        .filter(|session| session.canonical_git_root() == Some(git_root))
+        .collect::<Vec<_>>();
+
+    let Some(session) = single_workspace_match(git_root, matches)? else {
+        return Err(Error::msg(format!(
+            "no running managed session matches target `{git_root}`"
+        )));
+    };
+    if !session.is_running() {
+        return Err(Error::msg(format!(
+            "managed session `{}` is `{}`; health only probes running sessions",
+            session.stable_id().unwrap_or(git_root.as_str()),
+            session.status().as_str()
+        )));
+    }
+
+    Ok(vec![session])
+}
+
+fn single_workspace_match<'a>(
+    git_root: &camino::Utf8Path,
+    matches: Vec<&'a SessionRecord>,
+) -> Result<Option<&'a SessionRecord>> {
+    match matches.as_slice() {
+        [] => Ok(None),
+        [session] => Ok(Some(*session)),
+        _ => Err(Error::msg(format!(
+            "workspace target `{git_root}` matches multiple managed sessions; health requires a single running session"
+        ))),
     }
 }
 
@@ -88,6 +137,7 @@ mod tests {
         ];
 
         let selected = HealthSessionTargetPlan::from_target(Some("abc"))
+            .unwrap()
             .select_sessions(&sessions)
             .unwrap();
 
@@ -103,6 +153,7 @@ mod tests {
         ];
 
         let error = HealthSessionTargetPlan::from_target(Some("abc"))
+            .unwrap()
             .select_sessions(&sessions)
             .unwrap_err();
 
@@ -122,6 +173,7 @@ mod tests {
         )];
 
         let error = HealthSessionTargetPlan::from_target(Some("abc"))
+            .unwrap()
             .select_sessions(&sessions)
             .unwrap_err();
 

@@ -16,13 +16,13 @@ use super::session_output::{
 };
 
 #[derive(Debug, Args, PartialEq, Eq)]
-pub struct LsArgs {
+pub struct PsArgs {
     /// Output format.
     #[arg(short = 'o', long = "output", value_enum, default_value_t = OutputFormat::Table)]
     pub output: OutputFormat,
 }
 
-pub fn run(args: LsArgs) -> Result<()> {
+pub fn run(args: PsArgs) -> Result<()> {
     let podman = Podman::new();
     let sessions = SessionDiscoveryQuery::agentbox_containers().discover(&podman)?;
     match args.output {
@@ -69,14 +69,14 @@ pub fn render_table(sessions: &[SessionRecord]) -> String {
 pub fn render_json(sessions: &[SessionRecord]) -> Result<String> {
     let rows = sorted_session_refs_by_identity(sessions)
         .into_iter()
-        .map(LsJsonRow::from)
+        .map(PsJsonRow::from)
         .collect::<Vec<_>>();
 
     output::render_json(&rows)
 }
 
 #[derive(Debug, Serialize)]
-struct LsJsonRow<'a> {
+struct PsJsonRow<'a> {
     #[serde(flatten)]
     id: SessionJsonIdField<'a>,
     #[serde(rename = "type")]
@@ -88,7 +88,7 @@ struct LsJsonRow<'a> {
     trailing: SessionJsonTrailingFields<'a>,
 }
 
-impl<'a> From<&'a SessionRecord> for LsJsonRow<'a> {
+impl<'a> From<&'a SessionRecord> for PsJsonRow<'a> {
     fn from(session: &'a SessionRecord) -> Self {
         let fields = SessionJsonFields::from_session(session);
 

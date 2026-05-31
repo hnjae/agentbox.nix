@@ -31,11 +31,11 @@ pub struct CleanArgs {
     #[arg(long)]
     pub yes: bool,
 
-    /// Consider unused default runtime images.
+    /// Limit cleanup to unused default runtime images.
     #[arg(long)]
     pub images: bool,
 
-    /// Consider unused workspace cache volumes.
+    /// Limit cleanup to unused workspace cache volumes.
     #[arg(long)]
     pub volumes: bool,
 }

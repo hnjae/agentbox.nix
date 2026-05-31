@@ -47,7 +47,7 @@ agentbox connect /path/to/workspace
 agentbox exec /path/to/workspace -- "review this change"
 
 # Manage resources
-agentbox ls
+agentbox ps
 agentbox health
 agentbox restart /path/to/workspace
 agentbox stop /path/to/workspace
@@ -60,4 +60,4 @@ agentbox clean
 scripts/record-demo.sh
 ```
 
-The script records an automated `start`, `ls`, `health`, `connect`, and `stop` flow with `asciinema` and writes the cast under `target/asciinema/` by default. The default Codex demo attaches to the managed session and sends `/exit` before stopping it; this mode requires `script(1)`. Use `--no-connect` to skip that step, `--connect` to enable it for another runtime, `--runtime opencode`, `--workspace PATH`, `--agentbox PATH`, or `--output PATH` to override the defaults. When `agg` and `ffmpeg` are available it also writes `@2x.gif` and `@2x.avif` media files next to the cast; use `--render-media` to require this step or `--no-render-media` to disable it.
+The script records an automated `start`, `ps`, `health`, `connect`, and `stop` flow with `asciinema` and writes the cast under `target/asciinema/` by default. The default Codex demo attaches to the managed session and sends `/exit` before stopping it; this mode requires `script(1)`. Use `--no-connect` to skip that step, `--connect` to enable it for another runtime, `--runtime opencode`, `--workspace PATH`, `--agentbox PATH`, or `--output PATH` to override the defaults. When `agg` and `ffmpeg` are available it also writes `@2x.gif` and `@2x.avif` media files next to the cast; use `--render-media` to require this step or `--no-render-media` to disable it.

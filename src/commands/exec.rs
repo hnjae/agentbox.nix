@@ -22,6 +22,7 @@ pub struct ExecArgs {
     pub dev_env: DevEnvMode,
 
     /// Workspace directory inside a git repository.
+    #[arg(value_name = "DIRECTORY", default_value = ".")]
     pub directory: PathBuf,
 
     /// Arguments passed to codex exec.
