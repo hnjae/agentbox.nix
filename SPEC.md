@@ -8,21 +8,21 @@ This document specifies user-visible CLI behavior and operator-visible runtime s
 
 The MVP is workspace-centric:
 
-- `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-client-args>...]`
-- `agentbox exec [--dev-env <auto|none>] <directory> [-- <codex-exec-args>...]`
-- `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-server-args>...]`
+- `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-client-args>...]`
+- `agentbox exec [--dev-env <auto|none>] [directory] [-- <codex-exec-args>...]`
+- `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-server-args>...]`
 - `agentbox runtime update <opencode|codex>`
 - `agentbox connect [directory] [-- <agent-client-args>...]`
-- `agentbox ls`
+- `agentbox ps`
 - `agentbox health`
 - `agentbox stop [target]...`
 - `agentbox clean`
 
-`agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-client-args>...]` resolves `<directory>` to its canonical git root, starts a transient runtime server container, and connects with the selected host client from the canonical target directory. The transient container is agentbox-owned and visible to `ls` and `stop`, but not a managed session for `connect` or `health`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. Interactive use prompts for `--runtime` when omitted. Agent client arguments must follow `--` and are appended to the host client command only.
+`agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-client-args>...]` resolves `[directory]` to its canonical git root, starts a transient runtime server container, and connects with the selected host client from the canonical target directory. If `[directory]` is omitted, it defaults to `.`. The transient container is agentbox-owned and visible to `ps` and `stop`, but not a managed session for `connect` or `health`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. Interactive use prompts for `--runtime` when omitted. Agent client arguments must follow `--` and are appended to the host client command only.
 
-`agentbox exec [--dev-env <auto|none>] <directory> [-- <codex-exec-args>...]` resolves `<directory>` to its canonical git root and runs `codex exec` once in a foreground Podman container. It is not managed and is not listed or selectable by lifecycle commands. `--dev-env auto` wraps `codex exec` in the applicable development environment; `--dev-env none` runs it directly. Codex arguments must follow `--`.
+`agentbox exec [--dev-env <auto|none>] [directory] [-- <codex-exec-args>...]` resolves `[directory]` to its canonical git root and runs `codex exec` once in a foreground Podman container. If `[directory]` is omitted, it defaults to `.`. It is not managed and is not listed or selectable by lifecycle commands. `--dev-env auto` wraps `codex exec` in the applicable development environment; `--dev-env none` runs it directly. Codex exec arguments must follow `--`.
 
-`agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-server-args>...]` resolves `<directory>` to its canonical git root and starts one managed detached runtime server session for that repository. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--connect` attaches with the host client after readiness. Agent server arguments must follow `--`, are appended to the runtime server command, and are preserved for `restart`.
+`agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-server-args>...]` resolves `[directory]` to its canonical git root and starts one managed detached runtime server session for that repository. If `[directory]` is omitted, it defaults to `.`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--connect` attaches with the host client after readiness. Agent server arguments must follow `--`, are appended to the runtime server command, and are preserved for `restart`; they are not passed to the host client launched by `--connect`.
 
 `agentbox restart [--connect|-c] [--dev-env <auto|none>] [target]` replaces one running managed session for the same repository. It recovers runtime, launch directory metadata, and stored agent server arguments, reuses the named cache volume, and re-evaluates development environment loading for the stored launch directory.
 
@@ -52,7 +52,7 @@ Conditionally required host tools:
 - the selected runtime host client command for `run`, and the running session's runtime host client command for `connect` and `start --connect`
 - `npm` when `agentbox` must resolve the latest runtime npm package version for initial default image creation, a default runtime image rebuild after the embedded image build context changes, or `agentbox runtime update <runtime>`
 
-For `run`, `exec`, `start`, and `connect`, `<directory>` must resolve to an existing directory inside a git repository. A non-git target fails clearly; the MVP does not create ad-hoc non-git sessions. `stop` normally follows the same resolution rules, but it may also accept an exact stored git-root absolute path string for a recoverable session whose stored path no longer exists.
+For `run`, `exec`, `start`, and `connect`, a provided directory must resolve to an existing directory inside a git repository. For `run`, `exec`, and `start`, omitting the directory is equivalent to passing `.`. A non-git target fails clearly; the MVP does not create ad-hoc non-git sessions. `stop` normally follows the same resolution rules, but it may also accept an exact stored git-root absolute path string for a recoverable session whose stored path no longer exists.
 
 Out of scope for the MVP:
 
@@ -132,7 +132,7 @@ Managed containers are visible through Podman while they are running. They carry
 
 `agentbox` discovers sessions from live Podman state. It does not require a separate host-side session database.
 
-Transient `run` containers are not managed containers. They use the workspace's deterministic runtime cache volume name and publish a local-only attach endpoint for the matching host client. They omit the managed-session marker label, but carry `io.agentbox.container_kind=transient-run` plus canonical git root, stable git-root identity token, selected runtime, default runtime image reference, launch directory, logical name, attach endpoint scheme, and runtime server port/listen address. `run` client arguments are not recorded on transient containers. `ls` and `stop` discover transient `run` containers; `connect` and `health` do not.
+Transient `run` containers are not managed containers. They use the workspace's deterministic runtime cache volume name and publish a local-only attach endpoint for the matching host client. They omit the managed-session marker label, but carry `io.agentbox.container_kind=transient-run` plus canonical git root, stable git-root identity token, selected runtime, default runtime image reference, launch directory, logical name, attach endpoint scheme, and runtime server port/listen address. `run` client arguments are not recorded on transient containers. `ps` and `stop` discover transient `run` containers; `connect` and `health` do not.
 
 `agentbox` treats a live container as agentbox-owned only when it carries either `io.agentbox.managed=true` or `io.agentbox.container_kind=transient-run`. Image labels, image references, and container name patterns alone do not prove ownership.
 
@@ -150,7 +150,7 @@ Global flags:
 
 Global output rules:
 
-- stdout is reserved for user-requested data output: `ls`, `health`, shell completion output, hidden completion root output, `--help`, and `--version`. Status messages, progress, success summaries, cancellation notices, verbose traces, forwarded external command output, and application errors are written to stderr.
+- stdout is reserved for user-requested data output: `ps`, `health`, shell completion output, hidden completion root output, `--help`, and `--version`. Status messages, progress, success summaries, cancellation notices, verbose traces, forwarded external command output, and application errors are written to stderr.
 - Application stderr logs use one line per message with this shape: `[2026-05-06T22:15:56+09:00] INFO: message`.
 - Log timestamps use the local UTC offset. If the local offset cannot be determined, timestamps use UTC with `+00:00`.
 - Log severities are `ERR`, `WARNING`, `INFO`, and `DEBUG`.
@@ -158,7 +158,7 @@ Global output rules:
 - Clap parse errors and usage text keep Clap's native stderr format. `--help` and `--version` keep Clap's native stdout format.
 - Interactive prompt UI is rendered on stderr without being wrapped as log lines. `connect` runs the runtime host client with inherited stdio and does not wrap the client output as logs.
 
-### `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-client-args>...]`
+### `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-client-args>...]`
 
 `run` launches a transient selected-runtime server container, waits until its local-only attach endpoint is ready, and connects with the selected runtime host client.
 
@@ -166,13 +166,13 @@ Optional flags:
 
 - `--runtime <opencode|codex>`
 - `--dev-env <auto|none>`: controls automatic development environment wrapping for the transient runtime server. The default is `auto`.
-- `<agent-client-args>...`: arguments passed to the selected runtime host client. They must appear after a `--` delimiter so `agentbox` flags and agent flags are unambiguous.
+- `<agent-client-args>...`: arguments passed to the selected runtime host client. They must appear after a `--` delimiter so `agentbox` flags and client flags are unambiguous.
 
 Expected behavior:
 
 1. If `--runtime` is omitted and stdin and stderr are terminals, prompt on stderr with a fuzzy single-select list of supported runtimes sorted by runtime name. Use the selected runtime exactly as if the user had passed `--runtime`.
 2. If `--runtime` is omitted and either stdin or stderr is not a terminal, fail before workspace or runtime validation with a clear error that `--runtime` is required in non-interactive use.
-3. Validate Git availability and resolve `<directory>` to a canonical git root and canonical target directory.
+3. Validate Git availability and resolve `[directory]` to a canonical git root and canonical target directory. If `[directory]` is omitted, resolve `.`.
 4. Validate Podman, the selected runtime, the selected runtime host client command, and the host-attached Nix prerequisites.
 5. Ensure concurrent lifecycle operations for the same git root do not leave duplicate sessions or ambiguous lifecycle state.
 6. Discover existing managed sessions and transient `run` containers for that canonical git root.
@@ -203,7 +203,7 @@ Runtime rules:
 - `run` does not accept `--connect` or `-c`; clap rejects those options.
 - Runtime client passthrough options such as `--no-alt-screen` are accepted only after the `--` delimiter. Without the delimiter, clap rejects them as `agentbox run` options.
 - `run` does not pass `<agent-client-args>` to the transient runtime server command.
-- Transient `run` is not a managed session. It is listed by `ls`, can be selected by `stop`, cannot be selected by `connect` or `health`, and does not create live managed metadata.
+- Transient `run` is not a managed session. It is listed by `ps`, can be selected by `stop`, cannot be selected by `connect` or `health`, and does not create live managed metadata.
 - If a managed session or transient `run` already exists for the resolved git root, `run` fails before reusing or comparing any stored runtime value.
 - If the selected runtime host client command is missing, `run` fails before starting a container.
 - If the selected runtime host client exits unsuccessfully, `run` stops the transient container and preserves the client exit code when available.
@@ -213,18 +213,18 @@ Runtime rules:
 - Canceling the runtime prompt with Escape exits non-zero with `selection canceled`.
 - Interrupting the runtime prompt with Ctrl-C exits non-zero with `selection interrupted`.
 
-### `agentbox exec [--dev-env <auto|none>] <directory> [-- <codex-exec-args>...]`
+### `agentbox exec [--dev-env <auto|none>] [directory] [-- <codex-exec-args>...]`
 
 `exec` launches Codex exec in a foreground Podman container for one-shot, non-server Codex tasks.
 
 Optional flags and arguments:
 
 - `--dev-env <auto|none>`: controls automatic development environment wrapping for `codex exec`. The default is `auto`.
-- `<codex-exec-args>...`: arguments passed to `codex exec`. They must appear after a `--` delimiter so `agentbox` flags and Codex flags are unambiguous.
+- `<codex-exec-args>...`: arguments passed to `codex exec`. They must appear after a `--` delimiter so `agentbox` flags and Codex exec flags are unambiguous.
 
 Expected behavior:
 
-1. Validate Git availability and resolve `<directory>` to a canonical git root and canonical target directory.
+1. Validate Git availability and resolve `[directory]` to a canonical git root and canonical target directory. If `[directory]` is omitted, resolve `.`.
 2. Validate Podman, Codex, and the host-attached Nix prerequisites.
 3. Ensure concurrent lifecycle operations for the same git root do not leave duplicate sessions or ambiguous lifecycle state.
 4. Discover existing managed containers for that canonical git root.
@@ -250,12 +250,12 @@ Runtime rules:
 - `--dev-env auto` is the default and enables automatic development environment loading for the Codex exec command.
 - `--dev-env none` disables automatic development environment loading for the Codex exec command.
 - `exec` does not accept `--connect` or `-c`; clap rejects those options.
-- Foreground `exec` is not a managed session. It is not listed by `ls`, cannot be selected by `connect`, `health`, or `stop`, and does not create live managed metadata.
+- Foreground `exec` is not a managed session. It is not listed by `ps`, cannot be selected by `connect`, `health`, or `stop`, and does not create live managed metadata.
 - If a managed session already exists for the resolved git root, `exec` fails before starting a foreground Codex container.
-- `agentbox exec <directory>` with no Codex arguments is valid; Codex owns the resulting no-argument `codex exec` behavior.
+- `agentbox exec [directory]` with no Codex arguments is valid; Codex owns the resulting no-argument `codex exec` behavior.
 - Codex passthrough options such as `--model` are accepted only after the `--` delimiter. Without the delimiter, clap rejects them as `agentbox exec` options.
 
-### `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] <directory> [-- <agent-server-args>...]`
+### `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-server-args>...]`
 
 `start` launches a new workspace session as a detached runtime server.
 
@@ -264,13 +264,13 @@ Optional flags:
 - `--connect`, `-c`: connect with the runtime host-side client after the new session is ready
 - `--runtime <opencode|codex>`
 - `--dev-env <auto|none>`: controls automatic development environment wrapping for the runtime server. The default is `auto`.
-- `<agent-server-args>...`: arguments passed to the selected runtime server command. They must appear after a `--` delimiter so `agentbox` flags and agent flags are unambiguous.
+- `<agent-server-args>...`: arguments passed to the selected runtime server command. They must appear after a `--` delimiter so `agentbox` flags and server flags are unambiguous. With `--connect`, these arguments remain server arguments and are not passed to the host client.
 
 Expected behavior:
 
 1. If `--runtime` is omitted and stdin and stderr are terminals, prompt on stderr with a fuzzy single-select list of supported runtimes sorted by runtime name. Use the selected runtime exactly as if the user had passed `--runtime`.
 2. If `--runtime` is omitted and either stdin or stderr is not a terminal, fail before workspace or runtime validation with a clear error that `--runtime` is required in non-interactive use.
-3. Validate Git availability and resolve `<directory>` to a canonical git root and canonical target directory.
+3. Validate Git availability and resolve `[directory]` to a canonical git root and canonical target directory. If `[directory]` is omitted, resolve `.`.
 4. Validate Podman, the selected runtime, and the host-attached Nix prerequisites.
 5. Ensure concurrent lifecycle operations for the same git root do not leave duplicate sessions or ambiguous lifecycle state.
 6. Discover existing managed sessions and transient `run` containers for that canonical git root.
@@ -493,9 +493,9 @@ Rules:
 - A different requested directory under the same git root does not change the running server or host client working directory for that `connect`.
 - If the runtime client cannot be found on the host, `connect` fails clearly with the required command name.
 
-### `agentbox ls`
+### `agentbox ps`
 
-`ls` lists managed workspace sessions and transient `run` containers from live Podman discovery.
+`ps` lists agentbox-owned managed workspace sessions and transient `run` containers from live Podman discovery.
 
 Expected output fields:
 
@@ -523,9 +523,9 @@ Rules:
 - Containers not marked as managed sessions or transient `run` containers by `agentbox` are ignored, even if their names resemble `agentbox` names.
 - The public session id is the stable 12-character value from the `io.agentbox.git_root_hash` label. It is not the Podman container id.
 - For `failed` sessions, fields that cannot be recovered from live Podman state are shown as `unknown`.
-- By default, `ls` prints a compact borderless human-readable table.
-- `ls --output table` and `ls -o table` explicitly select the same table output.
-- `ls --output json`, `ls --output=json`, and `ls -o json` print a compact single-line JSON array followed by a newline.
+- By default, `ps` prints a compact borderless human-readable table.
+- `ps --output table` and `ps -o table` explicitly select the same table output.
+- `ps --output json`, `ps --output=json`, and `ps -o json` print a compact single-line JSON array followed by a newline.
 - JSON rows contain stable keys: `id`, `type`, `canonical_git_root`, `runtime`, `status`, `endpoint`, and `container_name`.
 - JSON keeps `container_name` for automation even though the table omits it.
 - JSON uses `null` for unrecoverable `id`, `canonical_git_root`, `runtime`, or `endpoint` values instead of the table's `unknown` placeholder.
@@ -534,7 +534,7 @@ Rules:
 
 ### `agentbox health [target]`
 
-`health` reports runtime health for currently running managed workspace sessions from live Podman discovery. Without a target, it probes every running session. With a target, it probes one running session selected by stable id prefix.
+`health` reports runtime health for currently running managed workspace sessions from live Podman discovery. Without a target, it probes every running session. With a target, it probes one running session selected by stable id prefix or workspace directory.
 
 Expected output fields:
 
@@ -561,9 +561,10 @@ Rules:
 - Failed, stopped, orphaned, and duplicate sessions are not included.
 - Transient `run` containers are not included or probed.
 - `health` probes each running session once and does not wait for recovery.
-- `health <target>` treats `<target>` as a stable id prefix. Prefix matching is case-insensitive.
-- If no session id matches the target prefix, `health <target>` fails clearly.
-- If the prefix matches more than one distinct id, `health <target>` fails and asks for a longer prefix.
+- `health <target>` treats an existing path as a workspace directory and resolves it to a canonical git root.
+- `health <target>` treats a missing relative path or other non-path target as a stable id prefix. Prefix matching is case-insensitive.
+- If no running managed session matches the target, `health <target>` fails clearly.
+- If the target matches more than one distinct id or workspace session, `health <target>` fails and asks for a more specific target.
 - If the selected session is not `running`, `health <target>` fails clearly instead of probing it.
 - By default, `health` prints a compact borderless human-readable table.
 - `health --output table` and `health -o table` explicitly select the same table output.
@@ -634,7 +635,7 @@ Shell completion for `connect`, `restart`, `stop`, and `health` is dynamic.
 Required behavior:
 
 - Completion candidates come from live agentbox containers, not from a static file.
-- `connect` candidate values are canonical or stored git root paths when known. Sessions with no recoverable git-root path are not connect completion candidates, but remain visible through `agentbox ls`.
+- `connect` candidate values are canonical or stored git root paths when known. Sessions with no recoverable git-root path are not connect completion candidates, but remain visible through `agentbox ps`.
 - `connect` completion includes only connectable `running` managed sessions with valid endpoint metadata.
 - `restart` candidate values are stable ids.
 - `restart` completion includes only running managed sessions with recoverable runtime and launch-directory metadata.
@@ -654,7 +655,7 @@ Required package output paths:
 - `share/bash-completion/completions/agentbox`
 - `share/zsh/site-functions/_agentbox`
 - `share/fish/vendor_completions.d/agentbox.fish`
-- `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`, `share/man/man1/agentbox-start.1`, `share/man/man1/agentbox-restart.1`, `share/man/man1/agentbox-connect.1`, `share/man/man1/agentbox-ls.1`, `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`, `share/man/man1/agentbox-clean.1`, `share/man/man1/agentbox-runtime.1`, and `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the Nix fixup phase compresses manual pages
+- `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`, `share/man/man1/agentbox-start.1`, `share/man/man1/agentbox-restart.1`, `share/man/man1/agentbox-connect.1`, `share/man/man1/agentbox-ps.1`, `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`, `share/man/man1/agentbox-clean.1`, `share/man/man1/agentbox-runtime.1`, and `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the Nix fixup phase compresses manual pages
 
 `nix build '.#default'` must produce those files in its result path.
 
@@ -935,7 +936,7 @@ Valid lifecycle behavior:
 - `start` creates the workspace session as a detached runtime server container.
 - `restart` stops one running managed session and creates its replacement as a detached runtime server container for the same runtime and launch directory.
 - `connect` discovers an existing running workspace session and runs the runtime host client against its published endpoint.
-- `ls` derives agentbox container status from live Podman state and host path checks.
+- `ps` derives agentbox container status from live Podman state and host path checks.
 - `stop` stops the container and relies on the container's `--rm` run option for container cleanup.
 - Concurrent lifecycle operations for the same canonical git root do not leave more than one valid agentbox runtime-server container or ambiguous cleanup outcome.
 
@@ -956,7 +957,7 @@ Required drift behavior:
 - Stop failure: report exactly which managed containers are still running or still inspectable.
 - Restart stop failure: report the old managed container that is still inspectable and do not start a replacement container.
 - Restart replacement failure after the old container is stopped: report that the previous managed session may already be gone and include replacement container logs when available.
-- A `failed` session is not connectable. If enough metadata remains to identify it by git root or exact stored git-root path, `agentbox stop --force <directory>` may stop it. If the session cannot be matched safely, `ls` reports the concrete container name and the user must remove that container with Podman before starting a new session for the affected workspace.
+- A `failed` session is not connectable. If enough metadata remains to identify it by git root or exact stored git-root path, `agentbox stop --force <directory>` may stop it. If the session cannot be matched safely, `ps` reports the concrete container name and the user must remove that container with Podman before starting a new session for the affected workspace.
 
 ## Error Handling
 
