@@ -8,7 +8,7 @@
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
-    crane.url = "https://flakehub.com/f/ipetkov/crane/0.23.3";
+    crane.url = "github:ipetkov/crane";
   };
 
   outputs =
