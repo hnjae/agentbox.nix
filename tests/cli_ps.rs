@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use agentbox::cli::{Cli, Command, LsArgs, OutputFormat};
-use agentbox::commands::ls::{render_json, render_table};
+use agentbox::cli::{Cli, Command, PsArgs, OutputFormat};
+use agentbox::commands::ps::{render_json, render_table};
 use agentbox::metadata::{
     AgentboxContainerKind, LABEL_ATTACH_SCHEME, LABEL_CONTAINER_KIND,
     LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT,
@@ -16,7 +16,7 @@ use agentbox::session::{SessionMetadata, SessionRecord, SessionRecordInput, Sess
 use clap::Parser;
 
 #[test]
-fn ls_renders_all_status_rows_in_stable_order() {
+fn ps_renders_all_status_rows_in_stable_order() {
     let sessions = vec![
         session("/workspace/b", "beta", SessionStatus::failed_unknown()),
         session("/workspace/a", "alpha-one", SessionStatus::Running),
@@ -61,7 +61,7 @@ fn ls_renders_all_status_rows_in_stable_order() {
 }
 
 #[test]
-fn ls_renders_unknown_for_unrecoverable_failed_fields() {
+fn ps_renders_unknown_for_unrecoverable_failed_fields() {
     let session = session(
         "/workspace/broken",
         "broken",
@@ -77,7 +77,7 @@ fn ls_renders_unknown_for_unrecoverable_failed_fields() {
 }
 
 #[test]
-fn ls_renders_json_rows_in_stable_order() {
+fn ps_renders_json_rows_in_stable_order() {
     let sessions = vec![
         session("/workspace/b", "beta", SessionStatus::failed_unknown()),
         session("/workspace/a", "alpha-one", SessionStatus::Running),
@@ -103,7 +103,7 @@ fn ls_renders_json_rows_in_stable_order() {
 }
 
 #[test]
-fn ls_renders_null_for_unrecoverable_json_fields() {
+fn ps_renders_null_for_unrecoverable_json_fields() {
     let session = session(
         "/workspace/broken",
         "broken",
@@ -132,18 +132,18 @@ fn ls_renders_null_for_unrecoverable_json_fields() {
 }
 
 #[test]
-fn ls_rejects_legacy_json_flag() {
-    let error = Cli::try_parse_from(["agentbox", "ls", "--json"]).unwrap_err();
+fn ps_rejects_legacy_json_flag() {
+    let error = Cli::try_parse_from(["agentbox", "ps", "--json"]).unwrap_err();
 
     assert_eq!(error.exit_code(), 2);
     assert!(error.to_string().contains("unexpected argument '--json'"));
 }
 
 #[test]
-fn ls_defaults_to_table_output() {
+fn ps_defaults_to_table_output() {
     assert_eq!(
-        Cli::try_parse_from(["agentbox", "ls"]).unwrap().command,
-        Command::Ls(LsArgs {
+        Cli::try_parse_from(["agentbox", "ps"]).unwrap().command,
+        Command::Ps(PsArgs {
             output: OutputFormat::Table,
         })
     );
@@ -166,7 +166,7 @@ fn session(root: &str, name: &str, status: SessionStatus) -> SessionRecord {
 }
 
 #[test]
-fn ls_renders_transient_run_type_in_table_and_json() {
+fn ps_renders_transient_run_type_in_table_and_json() {
     let run = session("/workspace/run", "run-container", SessionStatus::Running)
         .with_container_kind(AgentboxContainerKind::Run)
         .with_metadata(transient_run_metadata("/workspace/run", "run-container"));

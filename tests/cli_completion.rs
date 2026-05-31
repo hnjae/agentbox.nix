@@ -186,9 +186,10 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     assert!(script.contains("_agentbox()"));
     assert!(
         script.contains(
-            "run exec start restart runtime connect ls health stop clean completion help"
+            "run exec start restart runtime connect ps health stop clean completion help"
         )
     );
+    assert!(!script.contains("connect ls health"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -197,24 +198,27 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
 }
 
 #[test]
-fn completion_scripts_offer_ls_and_health_output_formats() {
+fn completion_scripts_offer_ps_and_health_output_formats() {
     let output_values = OutputFormat::supported_values().join(" ");
 
     let bash = capture_completion_script_shell("bash");
-    assert!(bash.contains("ls)"));
+    assert!(bash.contains("ps)"));
+    assert!(!bash.contains("ls)"));
     assert!(bash.contains("health)"));
     assert!(bash.contains("--output -o"));
     assert!(bash.contains(&output_values));
 
     let zsh = capture_completion_script_shell("zsh");
-    assert!(zsh.contains("ls)"));
+    assert!(zsh.contains("ps)"));
+    assert!(!zsh.contains("ls)"));
     assert!(zsh.contains("health)"));
     assert!(zsh.contains("--output[select output format]"));
     assert!(zsh.contains("-o[select output format]"));
     assert!(zsh.contains(&output_values));
 
     let fish = capture_completion_script_shell("fish");
-    assert!(fish.contains("__fish_seen_subcommand_from ls"));
+    assert!(fish.contains("__fish_seen_subcommand_from ps"));
+    assert!(!fish.contains("__fish_seen_subcommand_from ls"));
     assert!(fish.contains("__fish_seen_subcommand_from health"));
     assert!(fish.contains("-s o -l output"));
     assert!(fish.contains(&output_values));
@@ -295,7 +299,7 @@ fn completion_scripts_offer_stop_all() {
     assert!(bash.contains("--force --all"));
 
     let zsh = capture_completion_script_shell("zsh");
-    assert!(zsh.contains("--all[stop every running managed session]"));
+    assert!(zsh.contains("--all[stop all running agentbox containers]"));
 
     let fish = capture_completion_script_shell("fish");
     assert!(fish.contains("__fish_seen_subcommand_from stop"));
@@ -328,7 +332,8 @@ fn completion_scripts_offer_clean_flags() {
     let zsh = capture_completion_script_shell("zsh");
     assert!(zsh.contains("clean)"));
     assert!(zsh.contains("--dry-run[print cleanup candidates without deleting]"));
-    assert!(zsh.contains("--volumes[consider workspace cache volumes]"));
+    assert!(zsh.contains("--images[limit cleanup to default runtime images]"));
+    assert!(zsh.contains("--volumes[limit cleanup to workspace cache volumes]"));
 
     let fish = capture_completion_script_shell("fish");
     assert!(fish.contains("__fish_seen_subcommand_from clean"));
@@ -376,8 +381,10 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
     assert!(manpage.contains("agentbox\\-exec(1)"));
     assert!(manpage.contains("agentbox\\-start(1)"));
     assert!(manpage.contains("agentbox\\-restart(1)"));
+    assert!(manpage.contains("agentbox\\-ps(1)"));
     assert!(manpage.contains("agentbox\\-health(1)"));
     assert!(manpage.contains("agentbox\\-clean(1)"));
+    assert!(!manpage.contains("agentbox\\-ls(1)"));
     assert!(!manpage.contains("agentbox\\-help(1)"));
     assert!(manpage.contains("Shell completion helpers"));
     assert!(!manpage.contains("__completion-roots"));
@@ -409,7 +416,7 @@ fn installed_manpages_include_referenced_subcommands() {
         "agentbox-restart.1",
         "agentbox-runtime.1",
         "agentbox-connect.1",
-        "agentbox-ls.1",
+        "agentbox-ps.1",
         "agentbox-health.1",
         "agentbox-stop.1",
         "agentbox-clean.1",
@@ -427,8 +434,10 @@ fn installed_manpages_include_referenced_subcommands() {
     assert!(agentbox.contains("agentbox\\-exec(1)"));
     assert!(agentbox.contains("agentbox\\-start(1)"));
     assert!(agentbox.contains("agentbox\\-restart(1)"));
+    assert!(agentbox.contains("agentbox\\-ps(1)"));
     assert!(agentbox.contains("agentbox\\-health(1)"));
     assert!(agentbox.contains("agentbox\\-clean(1)"));
+    assert!(!agentbox.contains("agentbox\\-ls(1)"));
     assert!(!agentbox.contains("agentbox\\-help(1)"));
 
     let run = fs::read_to_string(directory.path().join("agentbox-run.1")).unwrap();

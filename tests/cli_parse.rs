@@ -3,12 +3,12 @@
 
 use agentbox::cli::{
     CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, ExecArgs,
-    HealthArgs, LsArgs, OutputFormat, RestartArgs, RunArgs, RuntimeArgs, RuntimeCommand,
+    HealthArgs, PsArgs, OutputFormat, RestartArgs, RunArgs, RuntimeArgs, RuntimeCommand,
     RuntimeUpdateArgs, StartArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use predicates::prelude::*;
 
 #[test]
@@ -25,7 +25,7 @@ fn help_lists_core_commands() {
             .and(predicate::str::contains("runtime"))
             .and(predicate::str::contains("connect"))
             .and(predicate::str::contains("attach").not())
-            .and(predicate::str::contains("ls"))
+            .and(predicate::str::contains("ps"))
             .and(predicate::str::contains("health"))
             .and(predicate::str::contains("stop"))
             .and(predicate::str::contains("clean"))
@@ -45,6 +45,14 @@ fn unknown_subcommand_fails() {
         .failure()
         .code(2)
         .stderr(predicate::str::contains("unrecognized subcommand 'bogus'"));
+}
+
+#[test]
+fn legacy_ls_subcommand_is_not_supported() {
+    let error = Cli::try_parse_from(["agentbox", "ls"]).unwrap_err();
+
+    assert_eq!(error.exit_code(), 2);
+    assert!(error.to_string().contains("unrecognized subcommand 'ls'"));
 }
 
 #[test]
@@ -81,7 +89,7 @@ fn core_commands_parse_into_expected_variants() {
     ])
     .unwrap();
     let connect = Cli::try_parse_from(["agentbox", "connect", "/tmp/workspace"]).unwrap();
-    let ls = Cli::try_parse_from(["agentbox", "ls"]).unwrap();
+    let ps = Cli::try_parse_from(["agentbox", "ps"]).unwrap();
     let health = Cli::try_parse_from(["agentbox", "health"]).unwrap();
     let stop = Cli::try_parse_from(["agentbox", "stop", "/tmp/workspace"]).unwrap();
     let clean = Cli::try_parse_from(["agentbox", "clean"]).unwrap();
@@ -131,8 +139,8 @@ fn core_commands_parse_into_expected_variants() {
         })
     );
     assert_eq!(
-        ls.command,
-        Command::Ls(LsArgs {
+        ps.command,
+        Command::Ps(PsArgs {
             output: OutputFormat::Table,
         })
     );
@@ -394,27 +402,27 @@ fn stop_rejects_all_with_target() {
 }
 
 #[test]
-fn ls_accepts_output_format_selection() {
+fn ps_accepts_output_format_selection() {
     for args in [
-        vec!["agentbox", "ls", "--output", "json"],
-        vec!["agentbox", "ls", "--output=json"],
-        vec!["agentbox", "ls", "-o", "json"],
+        vec!["agentbox", "ps", "--output", "json"],
+        vec!["agentbox", "ps", "--output=json"],
+        vec!["agentbox", "ps", "-o", "json"],
     ] {
         let cli = Cli::try_parse_from(args).unwrap();
 
         assert_eq!(
             cli.command,
-            Command::Ls(LsArgs {
+            Command::Ps(PsArgs {
                 output: OutputFormat::Json,
             })
         );
     }
 
-    let cli = Cli::try_parse_from(["agentbox", "ls", "--output", "table"]).unwrap();
+    let cli = Cli::try_parse_from(["agentbox", "ps", "--output", "table"]).unwrap();
 
     assert_eq!(
         cli.command,
-        Command::Ls(LsArgs {
+        Command::Ps(PsArgs {
             output: OutputFormat::Table,
         })
     );
@@ -465,7 +473,7 @@ fn health_accepts_stable_id_target_with_output_selection() {
 #[test]
 fn output_format_rejects_unknown_values() {
     for args in [
-        vec!["agentbox", "ls", "--output", "yaml"],
+        vec!["agentbox", "ps", "--output", "yaml"],
         vec!["agentbox", "health", "-o", "yaml"],
     ] {
         let error = Cli::try_parse_from(args).unwrap_err();
@@ -479,14 +487,48 @@ fn output_format_rejects_unknown_values() {
 }
 
 #[test]
-fn directory_commands_require_a_path_argument() {
-    let error = Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode"]).unwrap_err();
+fn directory_commands_default_to_current_directory() {
+    let run = Cli::try_parse_from(["agentbox", "run", "--runtime", "opencode"]).unwrap();
+    let start = Cli::try_parse_from(["agentbox", "start", "--runtime", "opencode"]).unwrap();
+    let exec = Cli::try_parse_from(["agentbox", "exec"]).unwrap();
 
-    assert_eq!(error.exit_code(), 2);
-    assert!(
-        error.to_string().contains("<DIRECTORY>"),
-        "expected clap to mention the missing directory argument"
-    );
+    assert!(matches!(
+        run.command,
+        Command::Run(RunArgs { directory, .. }) if directory == ".".into()
+    ));
+    assert!(matches!(
+        start.command,
+        Command::Start(StartArgs { directory, .. }) if directory == ".".into()
+    ));
+    assert!(matches!(
+        exec.command,
+        Command::Exec(ExecArgs { directory, .. }) if directory == ".".into()
+    ));
+}
+
+#[test]
+fn passthrough_help_uses_command_specific_argument_names() {
+    let mut command = Cli::command();
+
+    let run = command
+        .find_subcommand_mut("run")
+        .unwrap()
+        .render_help()
+        .to_string();
+    let start = command
+        .find_subcommand_mut("start")
+        .unwrap()
+        .render_help()
+        .to_string();
+    let exec = command
+        .find_subcommand_mut("exec")
+        .unwrap()
+        .render_help()
+        .to_string();
+
+    assert!(run.contains("[CLIENT_ARG]"));
+    assert!(start.contains("[SERVER_ARG]"));
+    assert!(exec.contains("[CODEX_EXEC_ARG]"));
 }
 
 #[test]

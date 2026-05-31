@@ -301,6 +301,49 @@ fn health_target_probes_only_matching_stable_id_prefix() {
 }
 
 #[test]
+fn health_target_probes_matching_workspace_directory() {
+    let selected_fixture = support::temp_workspace("selected");
+    let other_fixture = support::temp_workspace("other");
+    let selected = &selected_fixture.workspace;
+    let other = &other_fixture.workspace;
+    let endpoint = ReadyEndpoint::opencode_healthy();
+    let selected_port = endpoint.port();
+    let other_port = unused_port();
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![
+        workspace_ps_entry("selected-id", selected),
+        workspace_ps_entry("other-id", other),
+    ]));
+    harness.write_inspect(
+        "selected-id",
+        &running_workspace_inspect_fixture_with_host_port(
+            selected,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            selected_port,
+        ),
+    );
+    harness.write_inspect(
+        "other-id",
+        &running_workspace_inspect_fixture_with_host_port(
+            other,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            other_port,
+        ),
+    );
+
+    let target = selected_fixture.target.to_str().unwrap();
+    let stdout = harness.agentbox_success_stdout(&["health", target]);
+    endpoint.wait();
+
+    assert!(stdout.contains(&selected.hash12));
+    assert!(stdout.contains(selected.canonical_git_root.as_str()));
+    assert!(!stdout.contains(&other.hash12));
+    assert!(!stdout.contains(other.canonical_git_root.as_str()));
+}
+
+#[test]
 fn health_target_fails_for_non_running_session() {
     let fixture = support::temp_workspace("stopped");
     let workspace = &fixture.workspace;
@@ -321,6 +364,108 @@ fn health_target_fails_for_non_running_session() {
             "health only probes running sessions",
         ))
         .stderr(predicates::str::contains(&workspace.hash12));
+}
+
+#[test]
+fn health_directory_target_fails_for_non_running_session() {
+    let fixture = support::temp_workspace("stopped");
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "stopped-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "stopped-id",
+        &opencode_workspace_inspect_fixture(workspace, false, true),
+    );
+
+    harness
+        .agentbox_assert(&["health", fixture.target.to_str().unwrap()])
+        .failure()
+        .stderr(predicates::str::contains(
+            "health only probes running sessions",
+        ))
+        .stderr(predicates::str::contains(&workspace.hash12));
+}
+
+#[test]
+fn health_directory_target_excludes_transient_run_containers() {
+    let fixture = support::temp_workspace("run");
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![transient_run_ps_entry(
+        "run-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "run-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            opencode_transient_run_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                &workspace.container_name,
+            ),
+        ),
+    );
+
+    harness
+        .agentbox_assert(&["health", fixture.target.to_str().unwrap()])
+        .failure()
+        .stderr(predicates::str::contains(
+            "no running managed session matches target",
+        ));
+}
+
+#[test]
+fn health_directory_target_fails_when_running_sessions_are_duplicated() {
+    let fixture = support::temp_workspace("duplicate");
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![
+        managed_ps_entry("first-id", "first-session", &workspace.hash12),
+        managed_ps_entry("second-id", "second-session", &workspace.hash12),
+    ]));
+    harness.write_inspect(
+        "first-id",
+        &managed_inspect_fixture(
+            "first-session",
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            opencode_managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "first-session",
+            ),
+        ),
+    );
+    harness.write_inspect(
+        "second-id",
+        &managed_inspect_fixture(
+            "second-session",
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            opencode_managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                "second-session",
+            ),
+        ),
+    );
+
+    harness
+        .agentbox_assert(&["health", fixture.target.to_str().unwrap()])
+        .failure()
+        .stderr(predicates::str::contains(
+            "workspace target matches multiple managed sessions",
+        ));
 }
 
 #[test]
