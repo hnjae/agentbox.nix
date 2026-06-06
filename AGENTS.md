@@ -10,11 +10,11 @@
 ## Build, Test, and Development Commands
 
 - `cargo build`: compile the Rust crate with Cargo.
-- `cargo test`: run the Rust test suite.
-- `just static-checks`: run formatting checks and linters.
-- `nix flake check`: validate the Nix flake.
+- `devenv tasks run ci`: run the full CI entrypoint, with tests before lint.
+- `devenv tasks run --mode single ci:test`: run the Rust test suite.
+- `devenv tasks run --mode single ci:lint`: run Clippy and repository static checks.
 - `nix build '.#default'`: build the default Nix package.
-- `nix fmt`: apply repository formatting.
+- `devenv shell -- treefmt`: apply repository formatting.
 
 ## Compatibility Policy
 

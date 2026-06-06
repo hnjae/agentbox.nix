@@ -9,42 +9,24 @@ _:
 
 [group('ci')]
 format:
-    nix --no-warn-dirty fmt
+    devenv shell -- treefmt
 
 [group('ci')]
 lint-fix:
     cargo clippy --fix --allow-dirty
     deadnix --edit
 
-alias lint := static-checks
-
 [group('ci')]
-static-checks:
-    # Rust
-    cargo fmt --check
-    cargo clippy --all-targets --all-features
-
-    # Shellfiles
-    find . -type f \( -name '*.sh' -o -name '*.bash' -o -name '.envrc' -o -name '.envrc.*' -o -name '.env' -o -name '.env.*' \) -exec shellcheck -e SC2034,SC1091,SC2154 {} +
-    shellharden --check
-
-    # nix
-    statix check
-    deadnix --fail
-
-    # Markdown
-    rumdl check --exclude .sisyphus/plans/agentbox-mvp.md
-
-    # Misc
-    typos
-    # Repo-wide editorconfig debt remains in sacred/generated files.
+lint:
+    devenv tasks run --mode single ci:lint --no-tui
 
 [group('ci')]
 test:
-    cargo test
+    devenv tasks run --mode single ci:test --no-tui
 
 [group('ci')]
-check: static-checks test
+check:
+    devenv tasks run ci
 
 [group('build')]
 build:
@@ -72,10 +54,6 @@ install:
 build-rs:
     cargo build --quiet
 
-[group('ci')]
-flake-check:
-    nix --no-warn-dirty flake check
-
 [group('nix')]
 flake-show:
     nix --no-warn-dirty flake show
@@ -83,7 +61,7 @@ flake-show:
 [group('nix')]
 flake-update:
     nix flake update
-    nix flake update --flake ./nix/partitions/dev
+    devenv update
 
 [group('tools')]
 clean:

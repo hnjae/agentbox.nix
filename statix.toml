@@ -3,3 +3,7 @@ disabled = [
   "manual_inherit_from", # W04
   "repeated_keys",       # W20
 ]
+
+ignore = [
+  ".devenv",
+]

@@ -35,6 +35,9 @@ indent_style = space
 indent_size = 2
 indent_style = space
 
+[biome.json]
+indent_style = tab
+
 [*.rs]
 indent_size = unset
 indent_style = space

@@ -11,18 +11,45 @@
       ...
     }:
     let
-      project = import ../lib/cargo-project.nix {
-        inherit pkgs;
-        inherit (inputs) crane;
+      cargo = fromTOML (builtins.readFile ../../Cargo.toml);
+      projectName = cargo.package.name;
+
+      craneLib = inputs.crane.mkLib pkgs;
+      src =
+        let
+          repoRoot = toString ../..;
+          assetsRoot = "${repoRoot}/assets";
+          imageRoot = "${assetsRoot}/image";
+          completionRoot = "${repoRoot}/src/commands/completion";
+          testFixturesRoot = "${repoRoot}/tests/fixtures";
+        in
+        pkgs.lib.cleanSourceWith {
+          src = ../..;
+          filter =
+            path: type:
+            let
+              pathString = toString path;
+              isEmbeddedImageAsset =
+                pathString == assetsRoot
+                || pathString == imageRoot
+                || pkgs.lib.hasPrefix "${imageRoot}/" pathString;
+              isTestFixture =
+                pathString == testFixturesRoot || pkgs.lib.hasPrefix "${testFixturesRoot}/" pathString;
+              isCompletionTemplate =
+                pathString == completionRoot || pkgs.lib.hasPrefix "${completionRoot}/" pathString;
+            in
+            craneLib.filterCargoSources path type
+            || isEmbeddedImageAsset
+            || isTestFixture
+            || isCompletionTemplate;
+        };
+
+      commonArgs = {
+        inherit src;
+        strictDeps = true;
       };
 
-      inherit (project)
-        cargo
-        craneLib
-        commonArgs
-        cargoArtifacts
-        projectName
-        ;
+      cargoArtifacts = craneLib.buildDepsOnly commonArgs;
     in
     {
       config = {

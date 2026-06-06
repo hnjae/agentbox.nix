@@ -4,6 +4,7 @@
 
 set -eu
 
+# shellcheck source=assets/image/tests/_runtime-contract-helpers.sh
 . "$(dirname "$0")/_runtime-contract-helpers.sh"
 
 repo_root=$(runtime_contract_repo_root "$0")

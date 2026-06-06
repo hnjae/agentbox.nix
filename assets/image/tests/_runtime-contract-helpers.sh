@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 KIM Hyunjae
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# shellcheck disable=SC2154
+# shellcheck disable=SC2034,SC2154
 
 # Runtime contract matrix (frozen from README + current test behavior):
 # - Required host mounts: /nix, host nix in PATH, /etc/nix

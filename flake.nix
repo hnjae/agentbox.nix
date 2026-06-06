@@ -18,10 +18,6 @@
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
-        inputs.flake-parts.flakeModules.partitions
-
-        ./nix/modules/checks.nix
-        ./nix/modules/devshell.nix
         ./nix/modules/package.nix
       ];
 
@@ -29,20 +25,5 @@
         "x86_64-linux"
         "aarch64-linux"
       ];
-
-      partitionedAttrs = {
-        checks = "dev";
-        devShells = "dev";
-        formatter = "dev";
-      };
-
-      partitions.dev.extraInputsFlake = ./nix/partitions/dev;
-      partitions.dev.module =
-        { inputs, ... }:
-        {
-          imports = [
-            inputs.git-hooks.flakeModule
-          ];
-        };
     };
 }
