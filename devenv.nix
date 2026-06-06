@@ -9,9 +9,21 @@
 }:
 {
   # https://devenv.sh/languages/
-  languages.rust.enable = true;
+  languages.rust = {
+    enable = true;
+    channel = "nixpkgs";
+    components = [
+      "rustc"
+      "cargo"
+      "clippy"
+      "rustfmt"
+      "rust-analyzer"
+    ];
+  };
 
   packages = with pkgs; [
+    cargo-nextest
+
     # Configured in treefmt:
     just
     nixfmt
@@ -41,6 +53,8 @@
         excludes = [
           "*.lock"
         ];
+
+        formatter.shellcheck.options = [ "-x" ];
 
         formatter.shellharden = {
           command = lib.getExe pkgs.shellharden;
@@ -110,7 +124,10 @@
 
   tasks = {
     "ci:test" = {
-      exec = "cargo test";
+      exec = ''
+        cargo nextest run
+        cargo test --doc
+      '';
     };
 
     "ci:lint" = {
