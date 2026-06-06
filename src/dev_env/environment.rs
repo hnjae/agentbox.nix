@@ -129,4 +129,27 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn diagnostic_display_styles_only_the_selected_provider_name() {
+        assert_eq!(
+            DevEnvironment::None.display_with_provider_style(|provider| format!("<{provider}>")),
+            "<none>"
+        );
+        assert_eq!(
+            DevEnvironment::Devenv {
+                root: "/repo".into(),
+            }
+            .display_with_provider_style(|provider| format!("<{provider}>")),
+            "<devenv> at `/repo`"
+        );
+        assert_eq!(
+            DevEnvironment::NixDevelop {
+                flake_root: "/repo".into(),
+                attr: "default".to_string(),
+            }
+            .display_with_provider_style(|provider| format!("<{provider}>")),
+            "<nix develop> `path:/repo`#default"
+        );
+    }
 }

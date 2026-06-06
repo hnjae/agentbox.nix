@@ -218,6 +218,12 @@ mod tests {
     }
 
     #[test]
+    fn bold_bright_cyan_styles_selected_identifiers_when_color_enabled() {
+        assert_eq!(bold_bright_cyan("devenv", true), "\x1b[1;96mdevenv\x1b[0m");
+        assert_eq!(bold_bright_cyan("devenv", false), "devenv");
+    }
+
+    #[test]
     fn emits_each_input_line_as_a_log_line() {
         let mut output = Vec::new();
 
