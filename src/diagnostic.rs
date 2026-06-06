@@ -22,6 +22,7 @@ const ANSI_BRIGHT_BLACK: &str = "\x1b[90m";
 const ANSI_RED: &str = "\x1b[31m";
 const ANSI_YELLOW: &str = "\x1b[33m";
 const ANSI_BLUE: &str = "\x1b[34m";
+const ANSI_BOLD_BRIGHT_CYAN: &str = "\x1b[1;96m";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -77,8 +78,20 @@ pub fn info(message: impl AsRef<str>) {
     emit(Severity::Info, message);
 }
 
+pub(crate) fn info_rendered(render_message: impl FnOnce(bool) -> String) {
+    emit_rendered(Severity::Info, render_message);
+}
+
 pub fn debug(message: impl AsRef<str>) {
     emit(Severity::Debug, message);
+}
+
+pub(crate) fn bold_bright_cyan(text: &str, color: bool) -> String {
+    if color {
+        format!("{ANSI_BOLD_BRIGHT_CYAN}{text}{ANSI_RESET}")
+    } else {
+        text.to_string()
+    }
 }
 
 pub fn emit(severity: Severity, message: impl AsRef<str>) {
@@ -88,6 +101,18 @@ pub fn emit(severity: Severity, message: impl AsRef<str>) {
         severity,
         message.as_ref(),
         stderr_supports_color(),
+    );
+}
+
+fn emit_rendered(severity: Severity, render_message: impl FnOnce(bool) -> String) {
+    let color = stderr_supports_color();
+    let message = render_message(color);
+    emit_with(
+        &mut io::stderr().lock(),
+        timestamp_now(),
+        severity,
+        &message,
+        color,
     );
 }
 

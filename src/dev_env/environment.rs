@@ -71,6 +71,24 @@ impl DevEnvironment {
         }
     }
 
+    pub(crate) fn display_with_provider_style(
+        &self,
+        mut style_provider: impl FnMut(&str) -> String,
+    ) -> String {
+        match self {
+            Self::None => style_provider("none"),
+            Self::Direnv => style_provider("direnv"),
+            Self::Devenv { root } => format!("{} at `{root}`", style_provider("devenv")),
+            Self::NixDevelop { flake_root, attr } => {
+                format!(
+                    "{} `{}`#{attr}",
+                    style_provider("nix develop"),
+                    path_flake_ref(flake_root)
+                )
+            }
+        }
+    }
+
     fn resolve_auto(target_directory: &Utf8Path, git_root: &Utf8Path) -> Result<Self> {
         DevEnvironmentDiscovery::detect(target_directory, git_root).resolve(target_directory)
     }

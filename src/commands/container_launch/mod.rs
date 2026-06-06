@@ -113,7 +113,11 @@ fn prepare_container_launch_for_workspace(
         workspace.canonical_target.as_ref(),
         workspace.canonical_git_root.as_ref(),
     )?;
-    diagnostic::info(format!("selected development environment: {dev_env}"));
+    diagnostic::info_rendered(|color| {
+        let dev_env = dev_env
+            .display_with_provider_style(|provider| diagnostic::bold_bright_cyan(provider, color));
+        format!("selected development environment: {dev_env}")
+    });
 
     if host_client == HostClientRequirement::Required {
         ensure_host_runtime_client_available(runtime)?;
