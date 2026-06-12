@@ -100,13 +100,6 @@ _agentbox() {
                 COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
             fi
             ;;
-        config)
-            if [[ "$COMP_CWORD" -eq 2 ]]; then
-                COMPREPLY=( $(compgen -W "init" -- "$cur") )
-            elif [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[2]}" == "init" && "$cur" == --* ]]; then
-                COMPREPLY=( $(compgen -W "--force" -- "$cur") )
-            fi
-            ;;
         completion)
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "@SHELL_VALUES@" -- "$cur") )

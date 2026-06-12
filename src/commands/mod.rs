@@ -7,7 +7,6 @@ use crate::error::Result;
 pub mod clean;
 mod codex_attach_auth;
 pub mod completion;
-pub mod config;
 pub mod connect;
 mod container_cleanup;
 mod container_launch;
@@ -42,7 +41,6 @@ pub fn dispatch(command: Command, verbose: bool) -> Result<()> {
         Command::Start(args) => start::run(args, verbose),
         Command::Restart(args) => restart::run(args, verbose),
         Command::Runtime(args) => runtime::run(args, verbose),
-        Command::Config(args) => config::run(args),
         Command::Connect(args) => connect::run(args),
         Command::Ps(args) => ps::run(args),
         Command::Health(args) => health::run(args),

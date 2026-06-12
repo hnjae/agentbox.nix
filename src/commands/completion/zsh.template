@@ -123,13 +123,6 @@ _agentbox() {
         _values 'runtime' @RUNTIME_VALUES@
       fi
       ;;
-    config)
-      if (( CURRENT == 3 )); then
-        _values 'config command' 'init[Write the default config file]'
-      elif (( CURRENT == 4 && "$words[3]" == "init" )); then
-        _values 'option' '--force[overwrite an existing config file]'
-      fi
-      ;;
     completion)
       (( CURRENT == 3 )) && _values 'shell' @SHELL_VALUES@
       ;;

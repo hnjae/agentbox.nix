@@ -9,7 +9,6 @@ pub use crate::commands::completion::{
     CompletionArgs, CompletionRootCommand, CompletionRootsArgs, CompletionShell,
     GenerateManpagesArgs,
 };
-pub use crate::commands::config::{ConfigArgs, ConfigCommand, ConfigInitArgs};
 pub use crate::commands::connect::ConnectArgs;
 pub use crate::commands::exec::ExecArgs;
 pub use crate::commands::health::HealthArgs;
@@ -47,8 +46,6 @@ pub enum Command {
     Restart(RestartArgs),
     /// Manage default runtime images.
     Runtime(RuntimeArgs),
-    /// Manage agentbox configuration.
-    Config(ConfigArgs),
     /// Connect to a running managed session.
     Connect(ConnectArgs),
     /// Show agentbox container status.

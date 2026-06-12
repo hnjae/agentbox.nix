@@ -45,6 +45,4 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from start" -l dev-env -r -a 
 complete -c agentbox -f -n "__fish_seen_subcommand_from start" -s c -l connect -d "Connect after the new session is ready"
 complete -c agentbox -f -n "__fish_seen_subcommand_from runtime" -a "update"
 complete -c agentbox -f -n "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update" -a "@RUNTIME_VALUES@"
-complete -c agentbox -f -n "__fish_seen_subcommand_from config" -a "init"
-complete -c agentbox -f -n "__fish_seen_subcommand_from config; and __fish_seen_subcommand_from init" -l force -d "Overwrite an existing config file"
 complete -c agentbox -f -n "__fish_seen_subcommand_from completion" -a "@SHELL_VALUES@"

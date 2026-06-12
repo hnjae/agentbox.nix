@@ -21,6 +21,7 @@
           assetsRoot = "${repoRoot}/assets";
           imageRoot = "${assetsRoot}/image";
           completionRoot = "${repoRoot}/src/commands/completion";
+          sampleConfig = "${repoRoot}/config.sample.json";
           testFixturesRoot = "${repoRoot}/tests/fixtures";
         in
         pkgs.lib.cleanSourceWith {
@@ -41,7 +42,8 @@
             craneLib.filterCargoSources path type
             || isEmbeddedImageAsset
             || isTestFixture
-            || isCompletionTemplate;
+            || isCompletionTemplate
+            || pathString == sampleConfig;
         };
 
       commonArgs = {
@@ -66,7 +68,8 @@
                 "$out/share/bash-completion/completions" \
                 "$out/share/zsh/site-functions" \
                 "$out/share/fish/vendor_completions.d" \
-                "$out/share/man/man1"
+                "$out/share/man/man1" \
+                "$out/share/doc/${projectName}"
 
               "$out/bin/${projectName}" __generate-completion bash \
                 > "$out/share/bash-completion/completions/${projectName}"
@@ -76,6 +79,7 @@
                 > "$out/share/fish/vendor_completions.d/${projectName}.fish"
               "$out/bin/${projectName}" __generate-manpages \
                 "$out/share/man/man1"
+              install -m 0644 config.sample.json "$out/share/doc/${projectName}/config.sample.json"
             '';
             meta = {
               mainProgram = projectName;

@@ -1,0 +1,10 @@
+{
+	"knownHosts": [
+		"git.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleHostKey",
+		"[git.example.net]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPortQualifiedExampleHostKey"
+	],
+	"defaultResourceLimits": {
+		"cpus": 2,
+		"memory": "8g"
+	}
+}
