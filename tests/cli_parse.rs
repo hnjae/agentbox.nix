@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use agentbox::cli::{
-    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConfigArgs, ConfigCommand,
-    ConfigInitArgs, ConnectArgs, DevEnvMode, ExecArgs, HealthArgs, OutputFormat, PsArgs,
-    RestartArgs, RunArgs, RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs, StartArgs, StopArgs,
+    CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, ExecArgs,
+    HealthArgs, OutputFormat, PsArgs, RestartArgs, RunArgs, RuntimeArgs, RuntimeCommand,
+    RuntimeUpdateArgs, StartArgs, StopArgs,
 };
 use agentbox::runtime::RuntimeKind;
 use assert_cmd::Command as AssertCommand;
@@ -23,7 +23,7 @@ fn help_lists_core_commands() {
             .and(predicate::str::contains("start"))
             .and(predicate::str::contains("restart"))
             .and(predicate::str::contains("runtime"))
-            .and(predicate::str::contains("config"))
+            .and(predicate::str::contains("config").not())
             .and(predicate::str::contains("connect"))
             .and(predicate::str::contains("attach").not())
             .and(predicate::str::contains("ps"))
@@ -54,6 +54,25 @@ fn legacy_ls_subcommand_is_not_supported() {
 
     assert_eq!(error.exit_code(), 2);
     assert!(error.to_string().contains("unrecognized subcommand 'ls'"));
+}
+
+#[test]
+fn config_subcommand_is_not_supported() {
+    let bare_error = Cli::try_parse_from(["agentbox", "config"]).unwrap_err();
+    let init_error = Cli::try_parse_from(["agentbox", "config", "init"]).unwrap_err();
+
+    assert_eq!(bare_error.exit_code(), 2);
+    assert_eq!(init_error.exit_code(), 2);
+    assert!(
+        bare_error
+            .to_string()
+            .contains("unrecognized subcommand 'config'")
+    );
+    assert!(
+        init_error
+            .to_string()
+            .contains("unrecognized subcommand 'config'")
+    );
 }
 
 #[test]
@@ -95,7 +114,6 @@ fn core_commands_parse_into_expected_variants() {
     let stop = Cli::try_parse_from(["agentbox", "stop", "/tmp/workspace"]).unwrap();
     let clean = Cli::try_parse_from(["agentbox", "clean"]).unwrap();
     let runtime = Cli::try_parse_from(["agentbox", "runtime", "update", "codex"]).unwrap();
-    let config = Cli::try_parse_from(["agentbox", "config", "init", "--force"]).unwrap();
     let completion = Cli::try_parse_from(["agentbox", "completion", "bash"]).unwrap();
 
     assert_eq!(
@@ -182,12 +200,6 @@ fn core_commands_parse_into_expected_variants() {
             command: RuntimeCommand::Update(RuntimeUpdateArgs {
                 runtime: RuntimeKind::Codex,
             }),
-        })
-    );
-    assert_eq!(
-        config.command,
-        Command::Config(ConfigArgs {
-            command: ConfigCommand::Init(ConfigInitArgs { force: true }),
         })
     );
     assert_eq!(

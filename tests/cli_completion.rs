@@ -184,9 +184,11 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(script.contains(
-        "run exec start restart runtime config connect ps health stop clean completion help"
-    ));
+    assert!(
+        script.contains(
+            "run exec start restart runtime connect ps health stop clean completion help"
+        )
+    );
     assert!(!script.contains("connect ls health"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));

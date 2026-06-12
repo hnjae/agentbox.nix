@@ -489,6 +489,21 @@ mod tests {
         assert!(parse_config("{\"knownHosts\":[\"github.com ssh-ed25519 AAAA\\nnext\"]}").is_err());
     }
 
+    #[test]
+    fn checked_in_sample_config_loads() {
+        let config = parse_config(include_str!("../config.sample.json")).unwrap();
+
+        assert_eq!(config.known_hosts.len(), 2);
+        assert_eq!(
+            config.default_resource_limits.cpus.unwrap().to_string(),
+            "2"
+        );
+        assert_eq!(
+            config.default_resource_limits.memory.unwrap().to_string(),
+            "8g"
+        );
+    }
+
     fn test_config_env(name: &str, config_home: &Path) -> Option<OsString> {
         match name {
             "XDG_CONFIG_HOME" => Some(config_home.as_os_str().to_os_string()),
