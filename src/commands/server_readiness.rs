@@ -16,7 +16,7 @@ mod waiter;
 pub(super) use endpoint::ServerEndpointContext;
 use waiter::ServerEndpointWaiter;
 
-const SERVER_READINESS_TIMEOUT: Duration = Duration::from_secs(30);
+const SERVER_READINESS_TIMEOUT: Duration = Duration::from_secs(90);
 const SERVER_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 pub(super) fn wait_for_server_endpoint(
@@ -33,4 +33,14 @@ pub(super) fn wait_for_server_endpoint(
 pub(super) enum ServerEndpointWait {
     Ready(AttachEndpoint),
     Interrupted,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn production_readiness_timeout_is_90_seconds() {
+        assert_eq!(SERVER_READINESS_TIMEOUT, Duration::from_secs(90));
+    }
 }

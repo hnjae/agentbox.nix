@@ -46,6 +46,7 @@ Required error cases:
 - Git not installed
 - unsupported or malformed runtime metadata on an existing managed session
 - container failed to start
+- container failed to become reachable within the 90-second readiness timeout
 - runtime server command not found
 - runtime host client command not found
 - connect failed

@@ -47,7 +47,7 @@ Expected behavior:
 
 Progress and diagnostics:
 
-- `run` prints short `INFO` log progress to stderr while checking prerequisites, resolving session state, ensuring the runtime image, starting the transient server container, waiting for readiness, connecting, and stopping the transient container.
+- `run` prints short `INFO` log progress to stderr while checking prerequisites, resolving session state, ensuring the runtime image, starting the transient server container, waiting up to 90 seconds for readiness, connecting, and stopping the transient container.
 - Successful `run` does not write its own data to stdout. Runtime stdout and stderr come directly from the host client through inherited stdio.
 - With `--verbose`, `run` also prints the external commands it executes.
 - `run` does not print a connect suggestion and does not leave a managed session available for later `connect`.
@@ -147,7 +147,7 @@ Progress and diagnostics:
 - `start` prints short `INFO` log progress to stderr while checking prerequisites, resolving session state, ensuring the runtime image, starting the detached container, and waiting for the runtime server endpoint.
 - `start` prints its final success message as an `INFO` log on stderr. Successful `start` does not write to stdout.
 - With `--verbose`, `start` also prints the external commands it executes and forwards non-JSON Podman command output as `DEBUG` logs on stderr.
-- If the runtime container fails to start, exits before readiness, or times out before becoming reachable, `start` includes a short `podman logs --tail` excerpt for the managed container when Podman can provide one.
+- If the runtime container fails to start, exits before readiness, or times out after the 90-second readiness deadline before becoming reachable, `start` includes a short `podman logs --tail` excerpt for the managed container when Podman can provide one.
 
 Runtime image wrapper output:
 
@@ -209,7 +209,7 @@ Expected behavior:
 
 Progress and diagnostics:
 
-- `restart` prints short `INFO` log progress to stderr while checking prerequisites, resolving the target, ensuring the runtime image, stopping the old container, starting the replacement container, and waiting for the runtime server endpoint.
+- `restart` prints short `INFO` log progress to stderr while checking prerequisites, resolving the target, ensuring the runtime image, stopping the old container, starting the replacement container, and waiting up to 90 seconds for the runtime server endpoint.
 - `restart` prints its final success message as an `INFO` log on stderr. Successful `restart` does not write to stdout.
 - With `--verbose`, `restart` also prints the external commands it executes and forwards non-JSON Podman command output as `DEBUG` logs on stderr.
 - If replacement container startup or readiness fails after the old container was stopped, `restart` reports that the previous session may already be gone and includes a short `podman logs --tail` excerpt for the replacement managed container when Podman can provide one.
