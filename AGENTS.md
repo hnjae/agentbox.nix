@@ -2,7 +2,7 @@
 
 ## Documentation
 
-- Keep user-facing product and behavior specifications in `SPEC.md`, not internal implementation details.
+- Keep user-facing product and behavior specifications as per-subject files in `docs/spec/`, not internal implementation details. `docs/spec/README.md` is an index, not an aggregate specification.
 - Write all documentation in a concise, technical style.
 - Do not hard-wrap prose in Markdown files. Keep ordinary paragraphs and list items on a single source line unless Markdown syntax or structured blocks require line breaks.
 - Use Mermaid for diagrams when diagrams are needed.
@@ -26,9 +26,9 @@ Follow standard Rust formatting with `cargo fmt`; Use 4-space indentation.
 
 ## Spec-Driven Development
 
-For user-visible behavior changes, update `SPEC.md` before changing implementation code. The spec update must describe the intended behavior from the user's perspective and should be committed first unless the user explicitly asks not to commit or asks to pause.
+For user-visible behavior changes, update the relevant files under `docs/spec/` before changing implementation code. The spec update must describe the intended behavior from the user's perspective and should be committed first unless the user explicitly asks not to commit or asks to pause.
 
-Do not update `SPEC.md` for changes that do not affect user-visible behavior, including build tooling, formatter/linter/test configuration, CI wiring, dependency metadata, and repository maintenance.
+Do not update `docs/spec/` for changes that do not affect user-visible behavior, including build tooling, formatter/linter/test configuration, CI wiring, dependency metadata, and repository maintenance.
 
 ## Commit Guidelines
 
