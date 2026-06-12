@@ -119,14 +119,18 @@ Rules:
 
 When `run`, `start`, `restart`, or `exec` launches a container with a usable host SSH agent socket, `agentbox` also prepares SSH host-key verification for Git SSH remotes in the current repository. This supports SSH remote authentication without mounting the host user's SSH directory, private keys, full Git configuration, or complete known_hosts files into the container.
 
-The user may provide additional trusted host-key lines in strict JSON at `${XDG_CONFIG_HOME}/agentbox/config.json`, or at `${HOME}/.config/agentbox/config.json` when `XDG_CONFIG_HOME` is unset:
+The user may provide additional trusted host-key lines in strict JSON at `${XDG_CONFIG_HOME}/agentbox/config.json`, or at `${HOME}/.config/agentbox/config.json` when `XDG_CONFIG_HOME` is unset. The repository root `config.sample.json`, also installed at `share/doc/agentbox/config.sample.json`, shows the supported configuration fields.
 
 ``` json
 {
   "knownHosts": [
     "github.com ssh-ed25519 AAAA...",
     "[git.example.com]:2222 ssh-ed25519 AAAA..."
-  ]
+  ],
+  "defaultResourceLimits": {
+    "cpus": 2,
+    "memory": "8g"
+  }
 }
 ```
 
@@ -134,7 +138,7 @@ Rules:
 
 - If the config file is missing, it is treated as an empty config.
 - If the config path cannot be determined, `agentbox` prints a warning and continues with an empty config.
-- Config JSON is strict. Parse errors, unknown top-level fields, a non-`knownHosts` schema, non-string entries, blank entries, or multiline entries make the config incompatible.
+- Config JSON is strict. Parse errors, unknown top-level fields, a non-`knownHosts` or non-`defaultResourceLimits` schema, non-string `knownHosts` entries, blank entries, multiline entries, or invalid resource limits make the config incompatible.
 - When config is incompatible, `agentbox` renames it to `config.json.bak.YYYYMMDDTHHMMSSZ` using UTC. If that backup path already exists, `agentbox` appends `.1`, `.2`, and so on until it finds an unused name. The incompatible config is then ignored for the launch.
 - `agentbox` detects SSH Git remote hosts from the current repository's configured remotes. SCP-like URLs such as `git@github.com:owner/repo.git`, `ssh://` URLs, and `git+ssh://` URLs are considered SSH remotes. HTTPS remotes and local paths are ignored.
 - For each detected SSH remote host, `agentbox` runs `ssh -G <host>` to resolve the host's OpenSSH configuration. Host known_hosts lookup uses the resolved `hostname`, `port`, `hostkeyalias`, `userknownhostsfile`, and `globalknownhostsfile` values.

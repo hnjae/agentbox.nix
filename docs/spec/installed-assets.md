@@ -27,6 +27,7 @@ Required package output paths:
 - `share/bash-completion/completions/agentbox`
 - `share/zsh/site-functions/_agentbox`
 - `share/fish/vendor_completions.d/agentbox.fish`
+- `share/doc/agentbox/config.sample.json`
 - `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`, `share/man/man1/agentbox-start.1`, `share/man/man1/agentbox-restart.1`, `share/man/man1/agentbox-connect.1`, `share/man/man1/agentbox-ps.1`, `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`, `share/man/man1/agentbox-clean.1`, `share/man/man1/agentbox-runtime.1`, and `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the Nix fixup phase compresses manual pages
 
 `nix build '.#default'` must produce those files in its result path.

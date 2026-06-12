@@ -12,7 +12,6 @@ The MVP is workspace-centric:
 - `agentbox exec [--dev-env <auto|none>] [directory] [-- <codex-exec-args>...]`
 - `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-server-args>...]`
 - `agentbox runtime update <opencode|codex>`
-- `agentbox config init [--force]`
 - `agentbox connect [directory] [-- <agent-client-args>...]`
 - `agentbox ps`
 - `agentbox health`
@@ -26,8 +25,6 @@ The MVP is workspace-centric:
 `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-server-args>...]` resolves `[directory]` to its canonical git root and starts one managed detached runtime server session for that repository. If `[directory]` is omitted, it defaults to `.`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--cpus` and `--memory` set optional container resource limits for the server container. `--connect` attaches with the host client after readiness. Agent server arguments must follow `--`, are appended to the runtime server command, and are preserved for `restart`; they are not passed to the host client launched by `--connect`.
 
 `agentbox restart [--connect|-c] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [target]` replaces one running managed session for the same repository. It recovers runtime, launch directory metadata, stored agent server arguments, and stored resource limits, reuses the named cache volume, and re-evaluates development environment loading for the stored launch directory.
-
-`agentbox config init [--force]` writes the default configuration file to `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json`, creating parent directories as needed. The generated file contains `knownHosts: []` and `defaultResourceLimits: {}`. If the file already exists, the command fails without modifying it unless `--force` is passed. Successful writes and refusal to overwrite are reported on stderr; stdout is unused.
 
 `agentbox connect [directory] [-- <agent-client-args>...]` discovers the running server endpoint for the resolved repository or selected session and runs the matching host client from the stored launch directory. A provided directory selects the workspace only; it does not change the running session's working directory. Interactive use prompts when the directory is omitted. Agent client arguments must follow `--` and are appended to the host client command only.
 
@@ -55,7 +52,7 @@ Conditionally required host tools:
 - the selected runtime host client command for `run`, and the running session's runtime host client command for `connect` and `start --connect`
 - `npm` when `agentbox` must resolve the latest runtime npm package version for initial default image creation, a default runtime image rebuild after the embedded image build context changes, or `agentbox runtime update <runtime>`
 
-User configuration is read from `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json` as strict JSON. Supported top-level fields are `knownHosts` and `defaultResourceLimits`; both fields are optional and unknown fields are incompatible. `knownHosts` is an array of single-line SSH known-host entries. `defaultResourceLimits` may contain `cpus` and `memory` defaults for server containers launched by `run`, `start`, and `restart`. Invalid config is warned about, moved aside to a timestamped `config.json.bak...` path when possible, and ignored for the current invocation.
+User configuration is read from `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json` as strict JSON. Supported top-level fields are `knownHosts` and `defaultResourceLimits`; both fields are optional and unknown fields are incompatible. The repository root `config.sample.json`, also installed at `share/doc/agentbox/config.sample.json`, is the reference sample for supported fields. `knownHosts` is an array of single-line SSH known-host entries. `defaultResourceLimits` may contain `cpus` and `memory` defaults for server containers launched by `run`, `start`, and `restart`. Invalid config is warned about, moved aside to a timestamped `config.json.bak...` path when possible, and ignored for the current invocation.
 
 Server container CPU and memory limits use Podman's `--cpus` and `--memory` options. `cpus` is a non-negative decimal CPU count, and `0` means unlimited. `memory` uses Podman's `<number>[b|k|m|g]` memory format, and `0` means unlimited. Limits resolve independently. For `run` and `start`, each CLI limit overrides the corresponding config default, then falls back to unlimited. For `restart`, each CLI limit overrides the corresponding stored managed-session limit, then the config default for older unlabeled sessions, then unlimited.
 
