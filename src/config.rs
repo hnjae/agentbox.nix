@@ -3,6 +3,7 @@
 
 use std::ffi::OsString;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -155,6 +156,42 @@ where
         OffsetDateTime::now_utc(),
         warning,
     )
+}
+
+pub fn default_config_contents() -> &'static str {
+    "{\n  \"knownHosts\": [],\n  \"defaultResourceLimits\": {}\n}\n"
+}
+
+pub fn config_file_path() -> Option<PathBuf> {
+    config_path(&mut |name| std::env::var_os(name))
+}
+
+pub fn write_default_config(force: bool) -> std::io::Result<PathBuf> {
+    let path = config_file_path().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "cannot determine agentbox config path because neither XDG_CONFIG_HOME nor HOME is set",
+        )
+    })?;
+    write_default_config_to_path(&path, force)?;
+    Ok(path)
+}
+
+fn write_default_config_to_path(path: &Path, force: bool) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut options = fs::OpenOptions::new();
+    options.write(true);
+    if force {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+
+    let mut file = options.open(path)?;
+    file.write_all(default_config_contents().as_bytes())
 }
 
 pub fn load_config_with<E, W>(

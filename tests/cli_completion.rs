@@ -184,11 +184,9 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(
-        script.contains(
-            "run exec start restart runtime connect ps health stop clean completion help"
-        )
-    );
+    assert!(script.contains(
+        "run exec start restart runtime config connect ps health stop clean completion help"
+    ));
     assert!(!script.contains("connect ls health"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
@@ -381,6 +379,7 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
     assert!(manpage.contains("agentbox\\-exec(1)"));
     assert!(manpage.contains("agentbox\\-start(1)"));
     assert!(manpage.contains("agentbox\\-restart(1)"));
+    assert!(manpage.contains("agentbox\\-config(1)"));
     assert!(manpage.contains("agentbox\\-ps(1)"));
     assert!(manpage.contains("agentbox\\-health(1)"));
     assert!(manpage.contains("agentbox\\-clean(1)"));
@@ -415,6 +414,7 @@ fn installed_manpages_include_referenced_subcommands() {
         "agentbox-start.1",
         "agentbox-restart.1",
         "agentbox-runtime.1",
+        "agentbox-config.1",
         "agentbox-connect.1",
         "agentbox-ps.1",
         "agentbox-health.1",
