@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::env;
+use std::net::IpAddr;
 use std::process::{ExitStatus, Stdio};
 
 use camino::Utf8Path;
@@ -102,8 +104,9 @@ pub(crate) fn run_host_runtime_client_status(
     let process_runner = ProcessRunner::new();
     let client = host_client_runtime_command(runtime, endpoint, launch_directory, client_args);
     let codex_attach_token = required_codex_client_token(runtime, codex_attach_token)?;
+    let no_proxy = loopback_no_proxy_value_from_env(endpoint);
 
-    run_host_client(&process_runner, &client, codex_attach_token)
+    run_host_client(&process_runner, &client, codex_attach_token, no_proxy)
 }
 
 pub(crate) fn ensure_host_runtime_client_available(runtime: RuntimeKind) -> Result<()> {
@@ -142,6 +145,7 @@ fn run_host_client(
     process_runner: &ProcessRunner,
     client: &RuntimeInvocation,
     codex_attach_token: Option<&CodexAttachToken>,
+    no_proxy: Option<String>,
 ) -> Result<ExitStatus> {
     let argv = client.argv();
     let Some((program, args)) = argv.split_first() else {
@@ -154,6 +158,10 @@ fn run_host_client(
             command.current_dir(client.workdir().as_std_path());
             if let Some(token) = codex_attach_token {
                 command.env(CODEX_REMOTE_TOKEN_ENV, token.value());
+            }
+            if let Some(no_proxy) = no_proxy.as_deref() {
+                command.env("NO_PROXY", no_proxy);
+                command.env("no_proxy", no_proxy);
             }
             command.stdin(Stdio::inherit());
             command.stdout(Stdio::inherit());
@@ -177,4 +185,109 @@ fn required_codex_client_token(
 
 fn host_client_not_found_message(program: &str) -> String {
     format!("`{program}` was not found on PATH; install `{program}` or add it to PATH")
+}
+
+fn loopback_no_proxy_value_from_env(endpoint: &AttachEndpoint) -> Option<String> {
+    merge_loopback_no_proxy(
+        env::var("NO_PROXY").ok().as_deref(),
+        env::var("no_proxy").ok().as_deref(),
+        endpoint.host_ip.as_str(),
+    )
+}
+
+fn merge_loopback_no_proxy(
+    upper: Option<&str>,
+    lower: Option<&str>,
+    endpoint_host: &str,
+) -> Option<String> {
+    if !is_loopback_host(endpoint_host) {
+        return None;
+    }
+
+    let mut entries = Vec::new();
+    for value in upper.into_iter().chain(lower) {
+        for entry in value
+            .split(',')
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+        {
+            push_unique(&mut entries, entry);
+        }
+    }
+
+    for entry in ["127.0.0.1", "localhost", "::1", endpoint_host] {
+        push_unique(&mut entries, entry);
+    }
+
+    Some(entries.join(","))
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+
+    host.parse::<IpAddr>()
+        .map(|address| address.is_loopback())
+        .unwrap_or(false)
+}
+
+fn push_unique(entries: &mut Vec<String>, entry: &str) {
+    if !entries.iter().any(|existing| existing == entry) {
+        entries.push(entry.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_loopback_no_proxy;
+
+    #[test]
+    fn loopback_no_proxy_defaults_cover_standard_loopback_hosts() {
+        assert_eq!(
+            merge_loopback_no_proxy(None, None, "127.0.0.1").as_deref(),
+            Some("127.0.0.1,localhost,::1")
+        );
+    }
+
+    #[test]
+    fn loopback_no_proxy_includes_distinct_endpoint_host() {
+        assert_eq!(
+            merge_loopback_no_proxy(None, None, "127.0.0.2").as_deref(),
+            Some("127.0.0.1,localhost,::1,127.0.0.2")
+        );
+    }
+
+    #[test]
+    fn loopback_no_proxy_preserves_existing_entries_without_exact_duplicates() {
+        assert_eq!(
+            merge_loopback_no_proxy(
+                Some("example.test, localhost ,127.0.0.1"),
+                Some("internal.test,example.test"),
+                "localhost",
+            )
+            .as_deref(),
+            Some("example.test,localhost,127.0.0.1,internal.test,::1")
+        );
+    }
+
+    #[test]
+    fn loopback_no_proxy_detects_localhost_and_loopback_ips() {
+        assert_eq!(
+            merge_loopback_no_proxy(None, None, "LOCALHOST").as_deref(),
+            Some("127.0.0.1,localhost,::1,LOCALHOST")
+        );
+        assert_eq!(
+            merge_loopback_no_proxy(None, None, "::1").as_deref(),
+            Some("127.0.0.1,localhost,::1")
+        );
+    }
+
+    #[test]
+    fn non_loopback_no_proxy_is_unchanged() {
+        assert_eq!(
+            merge_loopback_no_proxy(Some("example.test"), Some("internal.test"), "192.0.2.10"),
+            None
+        );
+    }
 }
