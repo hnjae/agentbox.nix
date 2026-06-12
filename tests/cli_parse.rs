@@ -101,6 +101,8 @@ fn core_commands_parse_into_expected_variants() {
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Opencode),
             dev_env: DevEnvMode::Auto,
+            cpus: None,
+            memory: None,
             directory: "/tmp/workspace".into(),
             agent_args: Vec::new(),
         })
@@ -126,6 +128,8 @@ fn core_commands_parse_into_expected_variants() {
             runtime: Some(RuntimeKind::Opencode),
             dev_env: DevEnvMode::Auto,
             connect: true,
+            cpus: None,
+            memory: None,
             directory: "/tmp/workspace".into(),
             agent_args: Vec::new(),
         })
@@ -135,6 +139,8 @@ fn core_commands_parse_into_expected_variants() {
         Command::Restart(RestartArgs {
             dev_env: DevEnvMode::None,
             connect: true,
+            cpus: None,
+            memory: None,
             target: Some("abc123".into()),
         })
     );
@@ -182,6 +188,83 @@ fn core_commands_parse_into_expected_variants() {
             shell: CompletionShell::Bash,
         })
     );
+}
+
+#[test]
+fn server_commands_accept_resource_limit_flags() {
+    let run = Cli::try_parse_from([
+        "agentbox",
+        "run",
+        "--runtime",
+        "opencode",
+        "--cpus",
+        "1.5",
+        "--memory",
+        "512m",
+        "/tmp/workspace",
+    ])
+    .unwrap();
+    let start = Cli::try_parse_from([
+        "agentbox",
+        "start",
+        "--runtime",
+        "codex",
+        "--cpus",
+        "0",
+        "--memory",
+        "8g",
+        "/tmp/workspace",
+    ])
+    .unwrap();
+    let restart = Cli::try_parse_from([
+        "agentbox", "restart", "--cpus", "2", "--memory", "0", "abc123",
+    ])
+    .unwrap();
+
+    assert_eq!(
+        run.command,
+        Command::Run(RunArgs {
+            runtime: Some(RuntimeKind::Opencode),
+            dev_env: DevEnvMode::Auto,
+            cpus: Some("1.5".parse().unwrap()),
+            memory: Some("512m".parse().unwrap()),
+            directory: "/tmp/workspace".into(),
+            agent_args: Vec::new(),
+        })
+    );
+    assert_eq!(
+        start.command,
+        Command::Start(StartArgs {
+            runtime: Some(RuntimeKind::Codex),
+            dev_env: DevEnvMode::Auto,
+            connect: false,
+            cpus: Some("0".parse().unwrap()),
+            memory: Some("8g".parse().unwrap()),
+            directory: "/tmp/workspace".into(),
+            agent_args: Vec::new(),
+        })
+    );
+    assert_eq!(
+        restart.command,
+        Command::Restart(RestartArgs {
+            dev_env: DevEnvMode::Auto,
+            connect: false,
+            cpus: Some("2".parse().unwrap()),
+            memory: Some("0".parse().unwrap()),
+            target: Some("abc123".into()),
+        })
+    );
+}
+
+#[test]
+fn exec_rejects_resource_limit_flags() {
+    let cpus =
+        Cli::try_parse_from(["agentbox", "exec", "--cpus", "2", "/tmp/workspace"]).unwrap_err();
+    let memory =
+        Cli::try_parse_from(["agentbox", "exec", "--memory", "1g", "/tmp/workspace"]).unwrap_err();
+
+    assert_eq!(cpus.exit_code(), 2);
+    assert_eq!(memory.exit_code(), 2);
 }
 
 #[test]
