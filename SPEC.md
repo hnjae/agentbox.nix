@@ -12,6 +12,7 @@ The MVP is workspace-centric:
 - `agentbox exec [--dev-env <auto|none>] [directory] [-- <codex-exec-args>...]`
 - `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-server-args>...]`
 - `agentbox runtime update <opencode|codex>`
+- `agentbox config init [--force]`
 - `agentbox connect [directory] [-- <agent-client-args>...]`
 - `agentbox ps`
 - `agentbox health`
@@ -25,6 +26,8 @@ The MVP is workspace-centric:
 `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-server-args>...]` resolves `[directory]` to its canonical git root and starts one managed detached runtime server session for that repository. If `[directory]` is omitted, it defaults to `.`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--cpus` and `--memory` set optional container resource limits for the server container. `--connect` attaches with the host client after readiness. Agent server arguments must follow `--`, are appended to the runtime server command, and are preserved for `restart`; they are not passed to the host client launched by `--connect`.
 
 `agentbox restart [--connect|-c] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [target]` replaces one running managed session for the same repository. It recovers runtime, launch directory metadata, stored agent server arguments, and stored resource limits, reuses the named cache volume, and re-evaluates development environment loading for the stored launch directory.
+
+`agentbox config init [--force]` writes the default configuration file to `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json`, creating parent directories as needed. The generated file contains `knownHosts: []` and `defaultResourceLimits: {}`. If the file already exists, the command fails without modifying it unless `--force` is passed. Successful writes and refusal to overwrite are reported on stderr; stdout is unused.
 
 `agentbox connect [directory] [-- <agent-client-args>...]` discovers the running server endpoint for the resolved repository or selected session and runs the matching host client from the stored launch directory. A provided directory selects the workspace only; it does not change the running session's working directory. Interactive use prompts when the directory is omitted. Agent client arguments must follow `--` and are appended to the host client command only.
 
