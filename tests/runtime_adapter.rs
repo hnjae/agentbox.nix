@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use agentbox::config::ResourceLimits;
 use agentbox::metadata::{
     LABEL_ATTACH_SCHEME, LABEL_CONTAINER_KIND, LABEL_CONTAINER_KIND_MANAGED_SESSION_VALUE,
     LABEL_CONTAINER_KIND_TRANSIENT_RUN_VALUE, LABEL_CONTAINER_LISTEN_IP, LABEL_CONTAINER_PORT,
@@ -52,6 +53,7 @@ fn opencode_create_spec_matches_mvp_contract() {
             workspace.canonical_target.clone(),
         ),
         &[],
+        ResourceLimits::default(),
     );
     let spec = run_spec.create();
 
@@ -359,6 +361,7 @@ fn codex_create_spec_includes_host_codex_config_mount() {
             workspace.canonical_target.clone(),
         ),
         &[],
+        ResourceLimits::default(),
     );
     let spec = run_spec.create();
     let codex_mount = spec
@@ -527,6 +530,7 @@ fn create_spec_for_mode(
                 workspace.canonical_target.clone(),
             ),
             &[],
+            ResourceLimits::default(),
         )
         .create()
         .clone()

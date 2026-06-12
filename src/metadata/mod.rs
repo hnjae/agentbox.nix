@@ -26,6 +26,8 @@ pub const LABEL_ATTACH_SCHEME: &str = "io.agentbox.attach_scheme";
 pub const LABEL_CONTAINER_PORT: &str = "io.agentbox.container_port";
 pub const LABEL_CONTAINER_LISTEN_IP: &str = "io.agentbox.container_listen_ip";
 pub const LABEL_SERVER_ARGS: &str = "io.agentbox.server_args";
+pub const LABEL_RESOURCE_LIMIT_CPUS: &str = "io.agentbox.resource_limits.cpus";
+pub const LABEL_RESOURCE_LIMIT_MEMORY: &str = "io.agentbox.resource_limits.memory";
 pub const LABEL_DEFAULT_RUNTIME_IMAGE: &str = "io.agentbox.default_runtime_image";
 pub const LABEL_IMAGE_CONTEXT_HASH: &str = "io.agentbox.image_context_hash";
 

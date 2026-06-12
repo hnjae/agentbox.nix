@@ -4,6 +4,7 @@
 use crate::commands::codex_attach_auth::CodexAttachToken;
 use crate::commands::runtime_command::server_runtime_command;
 use crate::commands::workspace_flow::LockedWorkspace;
+use crate::config::ResourceLimits;
 use crate::dev_env::{DevEnvMode, DevEnvironment};
 use crate::podman::Podman;
 use crate::runtime::{RuntimeInvocation, RuntimeKind};
@@ -23,6 +24,7 @@ pub(in crate::commands) struct RuntimeLaunchRequest<'a> {
     pub(super) git_identity: GitIdentityPassthrough,
     pub(super) invocation: RuntimeLaunchInvocation<'a>,
     pub(super) server_args: Vec<String>,
+    pub(super) resource_limits: ResourceLimits,
 }
 
 pub(super) enum RuntimeLaunchInvocation<'a> {
@@ -36,6 +38,7 @@ pub(in crate::commands) fn managed_server_launch_request<'a>(
     dev_env_mode: DevEnvMode,
     connect_after_start: bool,
     server_args: Vec<String>,
+    resource_limits: ResourceLimits,
 ) -> RuntimeLaunchRequest<'a> {
     server_launch_request(
         locked,
@@ -43,6 +46,7 @@ pub(in crate::commands) fn managed_server_launch_request<'a>(
         dev_env_mode,
         RuntimeLaunchPolicy::managed_server(connect_after_start),
         server_args,
+        resource_limits,
     )
 }
 
@@ -50,6 +54,7 @@ pub(in crate::commands) fn transient_server_launch_request<'a>(
     locked: &'a LockedWorkspace<'_>,
     runtime: RuntimeKind,
     dev_env_mode: DevEnvMode,
+    resource_limits: ResourceLimits,
 ) -> RuntimeLaunchRequest<'a> {
     server_launch_request(
         locked,
@@ -57,6 +62,7 @@ pub(in crate::commands) fn transient_server_launch_request<'a>(
         dev_env_mode,
         RuntimeLaunchPolicy::transient_server(),
         Vec::new(),
+        resource_limits,
     )
 }
 
@@ -66,6 +72,7 @@ fn server_launch_request<'a>(
     dev_env_mode: DevEnvMode,
     policy: RuntimeLaunchPolicy,
     server_args: Vec<String>,
+    resource_limits: ResourceLimits,
 ) -> RuntimeLaunchRequest<'a> {
     RuntimeLaunchRequest {
         podman: locked.podman(),
@@ -76,6 +83,7 @@ fn server_launch_request<'a>(
         git_identity: GitIdentityPassthrough::Host,
         invocation: RuntimeLaunchInvocation::Server,
         server_args,
+        resource_limits,
     }
 }
 
@@ -94,6 +102,7 @@ pub(in crate::commands) fn foreground_launch_request<'a>(
         git_identity: GitIdentityPassthrough::CodexExec,
         invocation: RuntimeLaunchInvocation::Custom(Box::new(invocation)),
         server_args: Vec::new(),
+        resource_limits: ResourceLimits::default(),
     }
 }
 
@@ -104,6 +113,7 @@ pub(in crate::commands) fn replacement_server_launch_request<'a>(
     dev_env_mode: DevEnvMode,
     connect_after_start: bool,
     server_args: Vec<String>,
+    resource_limits: ResourceLimits,
 ) -> RuntimeLaunchRequest<'a> {
     RuntimeLaunchRequest {
         podman,
@@ -114,6 +124,7 @@ pub(in crate::commands) fn replacement_server_launch_request<'a>(
         git_identity: GitIdentityPassthrough::Host,
         invocation: RuntimeLaunchInvocation::Server,
         server_args,
+        resource_limits,
     }
 }
 

@@ -3,7 +3,9 @@
 
 use std::fs;
 
-use agentbox::metadata::LABEL_SERVER_ARGS;
+use agentbox::metadata::{
+    LABEL_RESOURCE_LIMIT_CPUS, LABEL_RESOURCE_LIMIT_MEMORY, LABEL_SERVER_ARGS,
+};
 use agentbox::runtime::RuntimeKind;
 use agentbox::workspace::resolve_workspace_identity;
 use predicates::prelude::*;
@@ -163,6 +165,58 @@ fn restart_reuses_stored_server_args() {
     run.assert_args_contain(&format!(
         "--label {LABEL_SERVER_ARGS}=[\"--server-flag\",\"value\"]"
     ));
+}
+
+#[test]
+fn restart_preserves_stored_resource_limits_over_changed_config() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Opencode.default_image();
+    let harness = Harness::new();
+    harness.write_agentbox_config(r#"{"defaultResourceLimits":{"cpus":8,"memory":"16g"}}"#);
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    let mut labels = opencode_workspace_labels(workspace);
+    labels.insert(LABEL_RESOURCE_LIMIT_CPUS.to_string(), "1.5".to_string());
+    labels.insert(LABEL_RESOURCE_LIMIT_MEMORY.to_string(), "512m".to_string());
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        "running-id",
+        &workspace.container_name,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &managed_inspect_fixture(
+            &workspace.container_name,
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            labels,
+        ),
+    );
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command.arg("restart").arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let run = harness.command_log().first("run").clone();
+    run.assert_args_contain("--cpus 1.5");
+    run.assert_args_contain("--memory 512m");
+    run.assert_args_contain(&format!("--label {LABEL_RESOURCE_LIMIT_CPUS}=1.5"));
+    run.assert_args_contain(&format!("--label {LABEL_RESOURCE_LIMIT_MEMORY}=512m"));
+    run.assert_args_do_not_contain("--cpus 8");
+    run.assert_args_do_not_contain("--memory 16g");
 }
 
 #[test]

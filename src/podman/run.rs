@@ -61,6 +61,18 @@ fn append_common_run_args(
         args.key_value_option("--env", name, value);
     }
 
+    if let Some(cpus) = &create.resource_limits().cpus
+        && !cpus.is_unlimited()
+    {
+        args.option("--cpus", cpus.to_string());
+    }
+
+    if let Some(memory) = &create.resource_limits().memory
+        && !memory.is_unlimited()
+    {
+        args.option("--memory", memory.to_string());
+    }
+
     if !create.network_enabled() {
         args.flag("--network=none");
     }
@@ -100,6 +112,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::config::ResourceLimits;
     use crate::podman::args::strings;
     use crate::runtime::{RuntimeCreateSpec, RuntimeMount};
 
@@ -127,6 +140,10 @@ mod tests {
                     "NIX_CONFIG".to_string(),
                     "sandbox = false".to_string(),
                 )]))
+                .resource_limits(ResourceLimits {
+                    cpus: Some("1.5".parse().unwrap()),
+                    memory: Some("512m".parse().unwrap()),
+                })
                 .network_enabled(false)
                 .published_ports(vec!["127.0.0.1::4096".to_string()])
                 .build(),
@@ -159,6 +176,10 @@ mod tests {
                 "type=volume,src=agentbox-cache,dst=/home/user,U",
                 "--env",
                 "NIX_CONFIG=sandbox = false",
+                "--cpus",
+                "1.5",
+                "--memory",
+                "512m",
                 "--network=none",
                 "--publish",
                 "127.0.0.1::4096",
@@ -217,5 +238,24 @@ mod tests {
                 "opencode",
             ])
         );
+    }
+
+    #[test]
+    fn zero_resource_limits_are_not_rendered() {
+        let spec = RuntimeRunSpec::new(
+            RuntimeCreateSpec::builder("localhost/agentbox-opencode:ctx-0123456789abcdef")
+                .resource_limits(ResourceLimits {
+                    cpus: Some("0".parse().unwrap()),
+                    memory: Some("0".parse().unwrap()),
+                })
+                .command(strings(["opencode"]))
+                .build(),
+            "/workspace",
+        );
+
+        let args = run_detached_args("agentbox-demo", &spec, 1234);
+
+        assert!(!args.contains(&"--cpus".to_string()));
+        assert!(!args.contains(&"--memory".to_string()));
     }
 }

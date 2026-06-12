@@ -678,6 +678,8 @@ fn run_accepts_runtime_selection() {
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Codex),
             dev_env: DevEnvMode::Auto,
+            cpus: None,
+            memory: None,
             directory: "/tmp/workspace".into(),
             agent_args: Vec::new(),
         })
@@ -702,6 +704,8 @@ fn run_accepts_agent_client_args_after_double_dash() {
         Command::Run(RunArgs {
             runtime: Some(RuntimeKind::Codex),
             dev_env: DevEnvMode::Auto,
+            cpus: None,
+            memory: None,
             directory: "/tmp/workspace".into(),
             agent_args: vec!["--no-alt-screen".to_string()],
         })
@@ -727,6 +731,8 @@ fn start_accepts_connect_flag() {
                 runtime: Some(RuntimeKind::Codex),
                 dev_env: DevEnvMode::Auto,
                 connect: true,
+                cpus: None,
+                memory: None,
                 directory: "/tmp/workspace".into(),
                 agent_args: Vec::new(),
             })
@@ -754,6 +760,8 @@ fn start_accepts_agent_server_args_after_double_dash() {
             runtime: Some(RuntimeKind::Opencode),
             dev_env: DevEnvMode::Auto,
             connect: false,
+            cpus: None,
+            memory: None,
             directory: "/tmp/workspace".into(),
             agent_args: vec!["--server-flag".to_string(), "value".to_string()],
         })
@@ -768,6 +776,8 @@ fn restart_accepts_optional_target_connect_and_dev_env() {
         Command::Restart(RestartArgs {
             dev_env: DevEnvMode::Auto,
             connect: false,
+            cpus: None,
+            memory: None,
             target: None,
         })
     );
@@ -788,6 +798,8 @@ fn restart_accepts_optional_target_connect_and_dev_env() {
             Command::Restart(RestartArgs {
                 dev_env: DevEnvMode::None,
                 connect: true,
+                cpus: None,
+                memory: None,
                 target: Some("/tmp/workspace".into()),
             })
         );
@@ -872,6 +884,8 @@ fn run_accepts_missing_runtime_for_prompting() {
         Command::Run(RunArgs {
             runtime: None,
             dev_env: DevEnvMode::Auto,
+            cpus: None,
+            memory: None,
             directory: "/tmp/workspace".into(),
             agent_args: Vec::new(),
         })

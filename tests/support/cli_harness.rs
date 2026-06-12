@@ -192,6 +192,12 @@ impl CliHarness {
         write_executable(self.fake_bin.path().join(name), content);
     }
 
+    pub fn write_agentbox_config(&self, contents: &str) {
+        let path = self.home.path().join(".config/agentbox/config.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
+    }
+
     pub fn captured_known_hosts(&self) -> Option<String> {
         match fs::read_to_string(self.fixtures.path().join("known-hosts-captured")) {
             Ok(contents) => Some(contents),

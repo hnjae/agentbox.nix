@@ -11,14 +11,13 @@ use tempfile::NamedTempFile;
 use time::OffsetDateTime;
 
 use crate::Result;
+use crate::config::load_config_with;
 use crate::git::Git;
 use crate::runtime::RuntimeMount;
 
-mod config;
 mod lookup;
 mod remote;
 
-use config::load_config_with;
 use lookup::{
     KnownHostsLookup, SshConfigLookup, host_known_hosts_lines, ssh_config_lookup, ssh_keygen_lookup,
 };

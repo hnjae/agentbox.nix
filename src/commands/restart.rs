@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use camino::Utf8Path;
 use clap::Args;
 
+use crate::config::{CpuLimit, MemoryLimit, ResourceLimitOverrides, ResourceLimits, load_config};
 use crate::dev_env::DevEnvMode;
 use crate::diagnostic;
 use crate::podman::Podman;
@@ -41,6 +42,14 @@ pub struct RestartArgs {
     #[arg(short = 'c', long = "connect")]
     pub connect: bool,
 
+    /// CPU limit for the replacement server container.
+    #[arg(long)]
+    pub cpus: Option<CpuLimit>,
+
+    /// Memory limit for the replacement server container.
+    #[arg(long)]
+    pub memory: Option<MemoryLimit>,
+
     /// Workspace directory, exact orphan path, or stable session id prefix.
     #[arg(value_name = "TARGET")]
     pub target: Option<PathBuf>,
@@ -48,7 +57,16 @@ pub struct RestartArgs {
 
 pub fn run(args: RestartArgs, verbose: bool) -> Result<()> {
     let target = selected_restart_target(args.target)?;
-    restart_target(&target, args.dev_env, args.connect, verbose)
+    restart_target(
+        &target,
+        args.dev_env,
+        args.connect,
+        ResourceLimitOverrides {
+            cpus: args.cpus,
+            memory: args.memory,
+        },
+        verbose,
+    )
 }
 
 fn selected_restart_target(target: Option<PathBuf>) -> Result<SessionTargetInput> {
@@ -74,6 +92,7 @@ fn restart_target(
     target: &SessionTargetInput,
     dev_env: DevEnvMode,
     connect: bool,
+    resource_limit_overrides: ResourceLimitOverrides,
     verbose: bool,
 ) -> Result<()> {
     diagnostic::info(format!("resolving restart target `{}`", target.display()));
@@ -95,6 +114,8 @@ fn restart_target(
             restart_session.launch_directory(),
         )?;
         let runtime = restart_session.runtime();
+        let resource_limits =
+            restart_resource_limits(restart_session.session(), resource_limit_overrides.clone())?;
         let preparation = prepare_runtime_launch(replacement_server_launch_request(
             locked.podman(),
             &launch_workspace,
@@ -102,6 +123,7 @@ fn restart_target(
             dev_env,
             connect,
             restart_session.server_args().to_vec(),
+            resource_limits,
         ))?;
 
         stop_existing_session(locked.podman(), restart_session.session())?;
@@ -126,6 +148,24 @@ fn restart_target(
     })?;
 
     Ok(())
+}
+
+fn restart_resource_limits(
+    session: &SessionRecord,
+    overrides: ResourceLimitOverrides,
+) -> Result<ResourceLimits> {
+    let config = load_config(&mut diagnostic::warning);
+    let stored = session.stored_resource_limits()?;
+    Ok(ResourceLimits {
+        cpus: overrides
+            .cpus
+            .or(stored.cpus)
+            .or(config.default_resource_limits.cpus),
+        memory: overrides
+            .memory
+            .or(stored.memory)
+            .or(config.default_resource_limits.memory),
+    })
 }
 
 fn restart_launch_workspace(

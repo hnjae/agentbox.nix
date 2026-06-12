@@ -5,7 +5,9 @@ use crate::Result;
 use crate::dev_env::DevEnvMode;
 use crate::dev_env::DevEnvironment;
 use crate::diagnostic;
-use crate::metadata::runtime_package_version_label;
+use crate::metadata::{
+    LABEL_RESOURCE_LIMIT_CPUS, LABEL_RESOURCE_LIMIT_MEMORY, runtime_package_version_label,
+};
 use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime_mode};
 use crate::runtime::{RuntimeKind, RuntimeRunSpec};
 use crate::ssh_signing::{SshPassthroughGuard, apply_git_and_ssh_passthrough};
@@ -53,6 +55,7 @@ pub(super) fn prepare_runtime_launch(
         git_identity,
         invocation,
         server_args,
+        resource_limits,
     } = request;
     let preparation = prepare_container_launch_for_workspace(
         podman,
@@ -78,6 +81,7 @@ pub(super) fn prepare_runtime_launch(
             &server_args,
         )?,
         &server_args,
+        resource_limits.clone(),
     );
     run_spec.extend_create_default_env(preparation.preflight.runtime_environment.clone());
     let ssh_passthrough = apply_git_and_ssh_passthrough(
@@ -86,12 +90,23 @@ pub(super) fn prepare_runtime_launch(
         git_identity,
     );
     record_runtime_image_version(runtime, &preparation, &mut run_spec, policy);
+    record_managed_resource_limits(&mut run_spec, policy);
 
     Ok(RuntimeLaunchPreparation {
         run_spec,
         codex_attach_token,
         _ssh_passthrough: ssh_passthrough,
     })
+}
+
+fn record_managed_resource_limits(run_spec: &mut RuntimeRunSpec, policy: RuntimeLaunchPolicy) {
+    if policy.run_mode != crate::runtime::RuntimeRunMode::ManagedSession {
+        return;
+    }
+
+    let labels = run_spec.create().resource_limits().stored_or_zero();
+    run_spec.insert_create_label(LABEL_RESOURCE_LIMIT_CPUS, labels.cpus);
+    run_spec.insert_create_label(LABEL_RESOURCE_LIMIT_MEMORY, labels.memory);
 }
 
 fn prepare_container_launch_for_workspace(

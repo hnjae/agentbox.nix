@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use crate::config::ResourceLimits;
 use crate::metadata::{
     AgentboxContainerKind, LABEL_GIT_ROOT, LABEL_GIT_ROOT_HASH, LABEL_LAUNCH_DIRECTORY,
-    LABEL_LOGICAL_NAME, LABEL_RUNTIME, LABEL_SERVER_ARGS, agentbox_container_kind_from_labels,
-    required_label_value,
+    LABEL_LOGICAL_NAME, LABEL_RESOURCE_LIMIT_CPUS, LABEL_RESOURCE_LIMIT_MEMORY, LABEL_RUNTIME,
+    LABEL_SERVER_ARGS, agentbox_container_kind_from_labels, required_label_value,
 };
 use crate::runtime::{AttachEndpoint, RuntimeKind};
 
@@ -109,6 +110,10 @@ impl SessionRecord {
         self.metadata.server_args()
     }
 
+    pub(crate) fn stored_resource_limits(&self) -> crate::Result<ResourceLimits> {
+        self.metadata.stored_resource_limits()
+    }
+
     pub fn with_container_kind(mut self, container_kind: AgentboxContainerKind) -> Self {
         self.container_kind = container_kind;
         self
@@ -200,6 +205,21 @@ impl SessionMetadata {
 
         serde_json::from_str(value).map_err(|error| {
             crate::Error::msg(format!("malformed `{LABEL_SERVER_ARGS}` label: {error}"))
+        })
+    }
+
+    pub(crate) fn stored_resource_limits(&self) -> crate::Result<ResourceLimits> {
+        Ok(ResourceLimits {
+            cpus: self
+                .label(LABEL_RESOURCE_LIMIT_CPUS)
+                .map(str::parse)
+                .transpose()
+                .map_err(crate::Error::msg)?,
+            memory: self
+                .label(LABEL_RESOURCE_LIMIT_MEMORY)
+                .map(str::parse)
+                .transpose()
+                .map_err(crate::Error::msg)?,
         })
     }
 

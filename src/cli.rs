@@ -18,6 +18,7 @@ pub use crate::commands::run::RunArgs;
 pub use crate::commands::runtime::{RuntimeArgs, RuntimeCommand, RuntimeUpdateArgs};
 pub use crate::commands::start::StartArgs;
 pub use crate::commands::stop::StopArgs;
+pub use crate::config::{CpuLimit, MemoryLimit};
 pub use crate::dev_env::DevEnvMode;
 
 #[derive(Debug, Parser)]

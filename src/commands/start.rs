@@ -6,7 +6,9 @@ use std::path::PathBuf;
 use clap::Args;
 
 use crate::Result;
+use crate::config::{CpuLimit, MemoryLimit, ResourceLimitOverrides, load_config};
 use crate::dev_env::DevEnvMode;
+use crate::diagnostic;
 use crate::runtime::RuntimeKind;
 
 use super::container_launch::{managed_server_launch_request, prepare_runtime_launch};
@@ -35,6 +37,14 @@ pub struct StartArgs {
     #[arg(short = 'c', long = "connect")]
     pub connect: bool,
 
+    /// CPU limit for the managed server container.
+    #[arg(long)]
+    pub cpus: Option<CpuLimit>,
+
+    /// Memory limit for the managed server container.
+    #[arg(long)]
+    pub memory: Option<MemoryLimit>,
+
     /// Workspace directory inside a git repository.
     #[arg(value_name = "DIRECTORY", default_value = ".")]
     pub directory: PathBuf,
@@ -49,6 +59,13 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
         args.runtime,
         "agentbox start requires --runtime when stdin or stderr is not a TTY",
     )?;
+    let config = load_config(&mut diagnostic::warning);
+    let resource_limits = config
+        .default_resource_limits
+        .overlay(ResourceLimitOverrides {
+            cpus: args.cpus,
+            memory: args.memory,
+        });
 
     with_locked_workspace(&args.directory, verbose, |locked| {
         let workspace = locked.workspace();
@@ -59,6 +76,7 @@ pub fn run(args: StartArgs, verbose: bool) -> Result<()> {
             args.dev_env,
             args.connect,
             args.agent_args,
+            resource_limits,
         ))?;
 
         let cache_volume_existed_before = podman.volume_exists(&workspace.container_name)?;

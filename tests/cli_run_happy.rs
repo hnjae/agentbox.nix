@@ -136,6 +136,70 @@ fn run_launches_opencode_transient_server_and_host_client() {
 }
 
 #[test]
+fn run_applies_configured_resource_limits_and_cli_overrides() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Opencode.default_image();
+    let harness = Harness::new();
+    harness.write_agentbox_config(r#"{"defaultResourceLimits":{"cpus":2,"memory":"8g"}}"#);
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .args(["run", "--runtime", "opencode", "--cpus", "1.5"])
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let run = harness.command_log().first("run").clone();
+    run.assert_args_contain("--cpus 1.5");
+    run.assert_args_contain("--memory 8g");
+}
+
+#[test]
+fn run_zero_resource_limit_disables_that_configured_limit_only() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Opencode.default_image();
+    let harness = Harness::new();
+    harness.write_agentbox_config(r#"{"defaultResourceLimits":{"cpus":2,"memory":"8g"}}"#);
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &image,
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .args(["run", "--runtime", "opencode", "--cpus", "0"])
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let run = harness.command_log().first("run").clone();
+    run.assert_args_do_not_contain("--cpus");
+    run.assert_args_contain("--memory 8g");
+}
+
+#[test]
 fn run_launches_codex_transient_server_and_host_client_in_yolo_mode() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
@@ -1234,7 +1298,17 @@ fn start_launches_codex_server_in_yolo_mode() {
     );
 
     let mut command = harness.locked_agentbox_command(workspace);
-    command.args(["start", "--runtime", "codex"]).arg(target);
+    command
+        .args([
+            "start",
+            "--runtime",
+            "codex",
+            "--cpus",
+            "2",
+            "--memory",
+            "8g",
+        ])
+        .arg(target);
 
     let expected_endpoint = format!("ws://127.0.0.1:{}", endpoint.port());
     command
@@ -1271,6 +1345,10 @@ fn start_launches_codex_server_in_yolo_mode() {
     let run = commands.first("run");
     run.assert_args_contain("--label io.agentbox.runtime=codex");
     run.assert_args_contain("--label io.agentbox.container_kind=managed-session");
+    run.assert_args_contain("--label io.agentbox.resource_limits.cpus=2");
+    run.assert_args_contain("--label io.agentbox.resource_limits.memory=8g");
+    run.assert_args_contain("--cpus 2");
+    run.assert_args_contain("--memory 8g");
     assert_runtime_user_args(run.raw());
     run.assert_args_contain("--label io.agentbox.codex.version=0.99.0");
     run.assert_args_contain(&format!("--label io.agentbox.image={image}"));

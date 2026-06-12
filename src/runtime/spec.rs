@@ -6,6 +6,7 @@ use std::fmt;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use crate::config::ResourceLimits;
 use crate::metadata::{ManagedSessionLabelInput, managed_session_labels, transient_run_labels};
 use crate::preflight::NIX_CACHE_DESTINATION;
 use crate::workspace::WorkspaceIdentity;
@@ -123,6 +124,7 @@ pub struct RuntimeCreateSpec {
     default_env: BTreeMap<String, String>,
     network_enabled: bool,
     published_ports: Vec<String>,
+    resource_limits: ResourceLimits,
 }
 
 impl RuntimeCreateSpec {
@@ -158,6 +160,10 @@ impl RuntimeCreateSpec {
         &self.published_ports
     }
 
+    pub fn resource_limits(&self) -> &ResourceLimits {
+        &self.resource_limits
+    }
+
     pub(crate) fn logical_name(&self) -> Option<&str> {
         crate::metadata::required_label_value(&self.labels, crate::metadata::LABEL_LOGICAL_NAME)
     }
@@ -184,6 +190,7 @@ pub struct RuntimeCreateSpecBuilder {
     default_env: BTreeMap<String, String>,
     network_enabled: bool,
     published_ports: Vec<String>,
+    resource_limits: ResourceLimits,
 }
 
 impl RuntimeCreateSpecBuilder {
@@ -196,6 +203,7 @@ impl RuntimeCreateSpecBuilder {
             default_env: BTreeMap::new(),
             network_enabled: true,
             published_ports: Vec::new(),
+            resource_limits: ResourceLimits::default(),
         }
     }
 
@@ -229,6 +237,11 @@ impl RuntimeCreateSpecBuilder {
         self
     }
 
+    pub fn resource_limits(mut self, resource_limits: ResourceLimits) -> Self {
+        self.resource_limits = resource_limits;
+        self
+    }
+
     pub fn build(self) -> RuntimeCreateSpec {
         RuntimeCreateSpec {
             image: self.image,
@@ -238,6 +251,7 @@ impl RuntimeCreateSpecBuilder {
             default_env: self.default_env,
             network_enabled: self.network_enabled,
             published_ports: self.published_ports,
+            resource_limits: self.resource_limits,
         }
     }
 }
@@ -359,6 +373,7 @@ impl RuntimeKind {
         runtime_mounts: &[RuntimeMount],
         invocation: RuntimeInvocation,
         server_args: &[String],
+        resource_limits: ResourceLimits,
     ) -> RuntimeRunSpec {
         let (command, workdir) = invocation.into_parts();
         RuntimeRunSpec::new(
@@ -369,6 +384,7 @@ impl RuntimeKind {
                 runtime_mounts,
                 command,
                 server_args,
+                resource_limits,
             ),
             workdir,
         )
@@ -382,6 +398,7 @@ impl RuntimeKind {
         runtime_mounts: &[RuntimeMount],
         command: impl Into<Vec<String>>,
         server_args: &[String],
+        resource_limits: ResourceLimits,
     ) -> RuntimeCreateSpec {
         let image = self.default_image();
         let label_input =
@@ -407,6 +424,7 @@ impl RuntimeKind {
             .command(command)
             .default_env(self.default_env())
             .published_ports(published_ports)
+            .resource_limits(resource_limits)
             .build()
     }
 

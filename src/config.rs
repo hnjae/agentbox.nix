@@ -4,6 +4,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use serde::Deserialize;
 use time::format_description::FormatItem;
@@ -14,18 +15,149 @@ const BACKUP_TIMESTAMP_FORMAT: &[FormatItem<'_>] =
     format_description!("[year][month][day]T[hour][minute][second]Z");
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct AgentboxConfig {
-    pub(super) known_hosts: Vec<String>,
+pub struct AgentboxConfig {
+    pub known_hosts: Vec<String>,
+    pub default_resource_limits: ResourceLimits,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResourceLimits {
+    pub cpus: Option<CpuLimit>,
+    pub memory: Option<MemoryLimit>,
+}
+
+impl ResourceLimits {
+    pub fn overlay(self, overrides: ResourceLimitOverrides) -> Self {
+        Self {
+            cpus: overrides.cpus.or(self.cpus),
+            memory: overrides.memory.or(self.memory),
+        }
+    }
+
+    pub fn stored_or_zero(&self) -> StoredResourceLimitLabels {
+        StoredResourceLimitLabels {
+            cpus: self
+                .cpus
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "0".to_string()),
+            memory: self
+                .memory
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "0".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResourceLimitOverrides {
+    pub cpus: Option<CpuLimit>,
+    pub memory: Option<MemoryLimit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredResourceLimitLabels {
+    pub cpus: String,
+    pub memory: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CpuLimit(String);
+
+impl CpuLimit {
+    pub fn is_unlimited(&self) -> bool {
+        self.0 == "0"
+    }
+}
+
+impl std::fmt::Display for CpuLimit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl FromStr for CpuLimit {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        let trimmed = value.trim();
+        if trimmed != value || trimmed.is_empty() {
+            return Err("CPU limit must be a non-negative decimal number".to_string());
+        }
+        let parsed: f64 = trimmed
+            .parse()
+            .map_err(|_| "CPU limit must be a non-negative decimal number".to_string())?;
+        if !parsed.is_finite() || parsed < 0.0 {
+            return Err("CPU limit must be a non-negative decimal number".to_string());
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryLimit(String);
+
+impl MemoryLimit {
+    pub fn is_unlimited(&self) -> bool {
+        self.0 == "0"
+    }
+}
+
+impl std::fmt::Display for MemoryLimit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl FromStr for MemoryLimit {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        let trimmed = value.trim();
+        if trimmed != value || trimmed.is_empty() {
+            return Err("memory limit must use Podman format <number>[b|k|m|g]".to_string());
+        }
+        let number = trimmed
+            .strip_suffix(['b', 'k', 'm', 'g'])
+            .unwrap_or(trimmed);
+        if number.is_empty() || !number.chars().all(|ch| ch.is_ascii_digit()) {
+            return Err("memory limit must use Podman format <number>[b|k|m|g]".to_string());
+        }
+        Ok(Self(trimmed.to_string()))
+    }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawAgentboxConfig {
+    #[serde(default)]
     #[serde(rename = "knownHosts")]
     known_hosts: Vec<String>,
+    #[serde(default)]
+    #[serde(rename = "defaultResourceLimits")]
+    default_resource_limits: RawResourceLimits,
 }
 
-pub(super) fn load_config_with<E, W>(
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawResourceLimits {
+    cpus: Option<serde_json::Value>,
+    memory: Option<String>,
+}
+
+pub fn load_config<W>(warning: &mut W) -> AgentboxConfig
+where
+    W: FnMut(String) + ?Sized,
+{
+    load_config_with(
+        &mut |name| std::env::var_os(name),
+        OffsetDateTime::now_utc(),
+        warning,
+    )
+}
+
+pub fn load_config_with<E, W>(
     environment: &mut E,
     now: OffsetDateTime,
     warning: &mut W,
@@ -103,7 +235,26 @@ fn parse_config(contents: &str) -> std::result::Result<AgentboxConfig, String> {
     }
     Ok(AgentboxConfig {
         known_hosts: raw.known_hosts,
+        default_resource_limits: parse_resource_limits(raw.default_resource_limits)?,
     })
+}
+
+fn parse_resource_limits(raw: RawResourceLimits) -> std::result::Result<ResourceLimits, String> {
+    Ok(ResourceLimits {
+        cpus: raw.cpus.map(parse_cpu_value).transpose()?,
+        memory: raw
+            .memory
+            .map(|value| value.parse::<MemoryLimit>())
+            .transpose()?,
+    })
+}
+
+fn parse_cpu_value(value: serde_json::Value) -> std::result::Result<CpuLimit, String> {
+    match value {
+        serde_json::Value::Number(number) => number.to_string().parse(),
+        serde_json::Value::String(value) => value.parse(),
+        _ => Err("CPU limit must be a non-negative decimal number".to_string()),
+    }
 }
 
 fn backup_incompatible_config(path: &Path, now: OffsetDateTime) -> std::io::Result<PathBuf> {
@@ -186,6 +337,61 @@ mod tests {
                 "[git.example.com]:2222 ssh-ed25519 BBBB"
             ]
         );
+    }
+
+    #[test]
+    fn valid_resource_limit_only_config_loads() {
+        let config = parse_config(r#"{"defaultResourceLimits":{"cpus":2,"memory":"8g"}}"#).unwrap();
+
+        assert!(config.known_hosts.is_empty());
+        assert_eq!(
+            config.default_resource_limits.cpus.unwrap().to_string(),
+            "2"
+        );
+        assert_eq!(
+            config.default_resource_limits.memory.unwrap().to_string(),
+            "8g"
+        );
+    }
+
+    #[test]
+    fn valid_combined_config_loads() {
+        let config = parse_config(
+            r#"{"knownHosts":["github.com ssh-ed25519 AAAA"],"defaultResourceLimits":{"cpus":1.5,"memory":"512m"}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.known_hosts, ["github.com ssh-ed25519 AAAA"]);
+        assert_eq!(
+            config.default_resource_limits.cpus.unwrap().to_string(),
+            "1.5"
+        );
+        assert_eq!(
+            config.default_resource_limits.memory.unwrap().to_string(),
+            "512m"
+        );
+    }
+
+    #[test]
+    fn zero_resource_limits_are_valid() {
+        let config = parse_config(r#"{"defaultResourceLimits":{"cpus":0,"memory":"0"}}"#).unwrap();
+
+        assert!(config.default_resource_limits.cpus.unwrap().is_unlimited());
+        assert!(
+            config
+                .default_resource_limits
+                .memory
+                .unwrap()
+                .is_unlimited()
+        );
+    }
+
+    #[test]
+    fn invalid_resource_limits_are_rejected() {
+        assert!(parse_config(r#"{"defaultResourceLimits":{"cpus":-1}}"#).is_err());
+        assert!(parse_config(r#"{"defaultResourceLimits":{"cpus":"nan"}}"#).is_err());
+        assert!(parse_config(r#"{"defaultResourceLimits":{"memory":"1t"}}"#).is_err());
+        assert!(parse_config(r#"{"defaultResourceLimits":{"memory":"1.5g"}}"#).is_err());
     }
 
     #[test]

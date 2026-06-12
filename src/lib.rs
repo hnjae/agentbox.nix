@@ -10,6 +10,7 @@ use clap::Parser;
 
 pub mod cli;
 pub mod commands;
+pub mod config;
 pub mod dev_env;
 pub mod diagnostic;
 mod digest;
