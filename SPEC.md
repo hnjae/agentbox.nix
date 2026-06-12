@@ -8,9 +8,9 @@ This document specifies user-visible CLI behavior and operator-visible runtime s
 
 The MVP is workspace-centric:
 
-- `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-client-args>...]`
+- `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-client-args>...]`
 - `agentbox exec [--dev-env <auto|none>] [directory] [-- <codex-exec-args>...]`
-- `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-server-args>...]`
+- `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-server-args>...]`
 - `agentbox runtime update <opencode|codex>`
 - `agentbox connect [directory] [-- <agent-client-args>...]`
 - `agentbox ps`
@@ -18,13 +18,13 @@ The MVP is workspace-centric:
 - `agentbox stop [target]...`
 - `agentbox clean`
 
-`agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-client-args>...]` resolves `[directory]` to its canonical git root, starts a transient runtime server container, and connects with the selected host client from the canonical target directory. If `[directory]` is omitted, it defaults to `.`. The transient container is agentbox-owned and visible to `ps` and `stop`, but not a managed session for `connect` or `health`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. Interactive use prompts for `--runtime` when omitted. Agent client arguments must follow `--` and are appended to the host client command only.
+`agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-client-args>...]` resolves `[directory]` to its canonical git root, starts a transient runtime server container, and connects with the selected host client from the canonical target directory. If `[directory]` is omitted, it defaults to `.`. The transient container is agentbox-owned and visible to `ps` and `stop`, but not a managed session for `connect` or `health`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--cpus` and `--memory` set optional container resource limits for the server container. Interactive use prompts for `--runtime` when omitted. Agent client arguments must follow `--` and are appended to the host client command only.
 
 `agentbox exec [--dev-env <auto|none>] [directory] [-- <codex-exec-args>...]` resolves `[directory]` to its canonical git root and runs `codex exec` once in a foreground Podman container. If `[directory]` is omitted, it defaults to `.`. It is not managed and is not listed or selectable by lifecycle commands. `--dev-env auto` wraps `codex exec` in the applicable development environment; `--dev-env none` runs it directly. Codex exec arguments must follow `--`.
 
-`agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-server-args>...]` resolves `[directory]` to its canonical git root and starts one managed detached runtime server session for that repository. If `[directory]` is omitted, it defaults to `.`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--connect` attaches with the host client after readiness. Agent server arguments must follow `--`, are appended to the runtime server command, and are preserved for `restart`; they are not passed to the host client launched by `--connect`.
+`agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-server-args>...]` resolves `[directory]` to its canonical git root and starts one managed detached runtime server session for that repository. If `[directory]` is omitted, it defaults to `.`. `--dev-env auto` wraps the server command in the applicable development environment; `--dev-env none` runs it directly. `--cpus` and `--memory` set optional container resource limits for the server container. `--connect` attaches with the host client after readiness. Agent server arguments must follow `--`, are appended to the runtime server command, and are preserved for `restart`; they are not passed to the host client launched by `--connect`.
 
-`agentbox restart [--connect|-c] [--dev-env <auto|none>] [target]` replaces one running managed session for the same repository. It recovers runtime, launch directory metadata, and stored agent server arguments, reuses the named cache volume, and re-evaluates development environment loading for the stored launch directory.
+`agentbox restart [--connect|-c] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [target]` replaces one running managed session for the same repository. It recovers runtime, launch directory metadata, stored agent server arguments, and stored resource limits, reuses the named cache volume, and re-evaluates development environment loading for the stored launch directory.
 
 `agentbox connect [directory] [-- <agent-client-args>...]` discovers the running server endpoint for the resolved repository or selected session and runs the matching host client from the stored launch directory. A provided directory selects the workspace only; it does not change the running session's working directory. Interactive use prompts when the directory is omitted. Agent client arguments must follow `--` and are appended to the host client command only.
 
@@ -51,6 +51,10 @@ Conditionally required host tools:
 
 - the selected runtime host client command for `run`, and the running session's runtime host client command for `connect` and `start --connect`
 - `npm` when `agentbox` must resolve the latest runtime npm package version for initial default image creation, a default runtime image rebuild after the embedded image build context changes, or `agentbox runtime update <runtime>`
+
+User configuration is read from `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json` as strict JSON. Supported top-level fields are `knownHosts` and `defaultResourceLimits`; both fields are optional and unknown fields are incompatible. `knownHosts` is an array of single-line SSH known-host entries. `defaultResourceLimits` may contain `cpus` and `memory` defaults for server containers launched by `run`, `start`, and `restart`. Invalid config is warned about, moved aside to a timestamped `config.json.bak...` path when possible, and ignored for the current invocation.
+
+Server container CPU and memory limits use Podman's `--cpus` and `--memory` options. `cpus` is a non-negative decimal CPU count, and `0` means unlimited. `memory` uses Podman's `<number>[b|k|m|g]` memory format, and `0` means unlimited. Limits resolve independently. For `run` and `start`, each CLI limit overrides the corresponding config default, then falls back to unlimited. For `restart`, each CLI limit overrides the corresponding stored managed-session limit, then the config default for older unlabeled sessions, then unlimited.
 
 For `run`, `exec`, `start`, and `connect`, a provided directory must resolve to an existing directory inside a git repository. For `run`, `exec`, and `start`, omitting the directory is equivalent to passing `.`. A non-git target fails clearly; the MVP does not create ad-hoc non-git sessions. `stop` normally follows the same resolution rules, but it may also accept an exact stored git-root absolute path string for a recoverable session whose stored path no longer exists.
 
@@ -129,6 +133,8 @@ Managed containers are visible through Podman while they are running. They carry
 - the attach endpoint scheme
 - the runtime server container port and listen address
 - the stored agent server arguments in `io.agentbox.server_args`, when any were supplied at `start`
+- the resolved CPU resource limit in `io.agentbox.resource_limits.cpus`, with `0` stored explicitly for unlimited
+- the resolved memory resource limit in `io.agentbox.resource_limits.memory`, with `0` stored explicitly for unlimited
 
 `agentbox` discovers sessions from live Podman state. It does not require a separate host-side session database.
 
@@ -166,6 +172,8 @@ Optional flags:
 
 - `--runtime <opencode|codex>`
 - `--dev-env <auto|none>`: controls automatic development environment wrapping for the transient runtime server. The default is `auto`.
+- `--cpus <cpus>`: sets a non-negative decimal CPU limit for the transient server container. `0` disables the CPU limit.
+- `--memory <memory>`: sets a Podman memory limit for the transient server container. `0` disables the memory limit.
 - `<agent-client-args>...`: arguments passed to the selected runtime host client. They must appear after a `--` delimiter so `agentbox` flags and client flags are unambiguous.
 
 Expected behavior:
@@ -264,6 +272,8 @@ Optional flags:
 - `--connect`, `-c`: connect with the runtime host-side client after the new session is ready
 - `--runtime <opencode|codex>`
 - `--dev-env <auto|none>`: controls automatic development environment wrapping for the runtime server. The default is `auto`.
+- `--cpus <cpus>`: sets a non-negative decimal CPU limit for the managed server container. `0` disables the CPU limit and is preserved for later `restart`.
+- `--memory <memory>`: sets a Podman memory limit for the managed server container. `0` disables the memory limit and is preserved for later `restart`.
 - `<agent-server-args>...`: arguments passed to the selected runtime server command. They must appear after a `--` delimiter so `agentbox` flags and server flags are unambiguous. With `--connect`, these arguments remain server arguments and are not passed to the host client.
 
 Expected behavior:
@@ -323,6 +333,8 @@ Optional flags and arguments:
 
 - `--connect`, `-c`: connect with the runtime host-side client after the new session is ready
 - `--dev-env <auto|none>`: controls automatic development environment wrapping for the replacement runtime server. The default is `auto`.
+- `--cpus <cpus>`: sets a non-negative decimal CPU limit for the replacement server container. `0` disables the CPU limit and replaces the stored value.
+- `--memory <memory>`: sets a Podman memory limit for the replacement server container. `0` disables the memory limit and replaces the stored value.
 - `[target]`: workspace directory, exact stored git-root absolute path, or stable session id prefix
 
 Expected behavior:
