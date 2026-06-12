@@ -574,7 +574,7 @@ lock_state() {{
 }}
 
 if [ -n "$log_path" ]; then
-  printf '{name} lock=%s args=%s cwd=%s\n' "$(lock_state)" "$*" "$(pwd)" >> "$log_path"
+  printf '{name} lock=%s args=%s cwd=%s env=NO_PROXY=%s no_proxy=%s http_proxy=%s HTTPS_PROXY=%s all_proxy=%s\n' "$(lock_state)" "$*" "$(pwd)" "${{NO_PROXY-}}" "${{no_proxy-}}" "${{http_proxy-}}" "${{HTTPS_PROXY-}}" "${{all_proxy-}}" >> "$log_path"
 fi
 
 if [ -n "$fixtures" ] && [ -f "$fixtures/{name}.exit" ]; then

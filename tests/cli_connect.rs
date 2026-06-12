@@ -238,6 +238,44 @@ fn connect_to_codex_session_passes_yolo_flag_to_remote_client() {
 }
 
 #[test]
+fn connect_to_codex_loopback_session_augments_no_proxy_and_preserves_proxy_env() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let image = RuntimeKind::Codex.default_image();
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![workspace_ps_entry(
+        "running-id",
+        workspace,
+    )]));
+    harness.write_inspect(
+        "running-id",
+        &running_workspace_inspect_fixture(workspace, &image, RuntimeKind::Codex),
+    );
+    harness.write_codex_attach_token(workspace, "test-codex-token");
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .arg("connect")
+        .arg(target)
+        .env("NO_PROXY", "example.test,localhost")
+        .env("http_proxy", "http://proxy.test:8080")
+        .env("HTTPS_PROXY", "http://secure-proxy.test:8080")
+        .env("all_proxy", "socks5://proxy.test:1080")
+        .env_remove("no_proxy");
+
+    command.assert().success().stderr("");
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["ps", "inspect", "codex"]);
+    assert!(log[2].contains("env=NO_PROXY=example.test,localhost,127.0.0.1,::1"));
+    assert!(log[2].contains(" no_proxy=example.test,localhost,127.0.0.1,::1"));
+    assert!(log[2].contains(" http_proxy=http://proxy.test:8080"));
+    assert!(log[2].contains(" HTTPS_PROXY=http://secure-proxy.test:8080"));
+    assert!(log[2].contains(" all_proxy=socks5://proxy.test:1080"));
+}
+
+#[test]
 fn connect_to_codex_session_requires_stored_attach_token() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
