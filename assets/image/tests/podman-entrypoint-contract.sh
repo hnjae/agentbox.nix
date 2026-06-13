@@ -43,6 +43,8 @@ set -- \
     -e XDG_CONFIG_HOME="$container_home"/.config \
     -e XDG_DATA_HOME="$container_home"/.local/share \
     -e ZDOTDIR="$container_home"/.config/zsh \
+    -e AGENTBOX_GIT_IDENTITY_NAME="Alice Agent" \
+    -e AGENTBOX_GIT_IDENTITY_EMAIL="alice@example.test" \
     --mount "$cache_mount" \
     -v "$repo_root:/workspace" \
     -v /nix:/nix:ro \
@@ -118,6 +120,57 @@ podman exec "$container_name" /entrypoint /bin/sh -ceu "
     esac
 
     command -v gh >/dev/null 2>&1
+"
+
+podman exec "$container_name" /bin/sh -ceu "
+    main_config='$container_home/.config/git/config'
+    managed_config='$container_home/.config/git/agentbox-identity.config'
+
+    test -r \"\$main_config\"
+    test -r \"\$managed_config\"
+    test \"\$(git config --global --get-all include.path | grep -Fxc \"\$managed_config\")\" = 1
+    test \"\$(git config --global --get user.name)\" = 'Alice Agent'
+    test \"\$(git config --global --get user.email)\" = 'alice@example.test'
+"
+
+podman exec "$container_name" env \
+    AGENTBOX_GIT_IDENTITY_NAME="Bob Builder" \
+    AGENTBOX_GIT_IDENTITY_EMAIL="bob@example.test" \
+    /entrypoint /bin/sh -ceu "
+        main_config='$container_home/.config/git/config'
+        managed_config='$container_home/.config/git/agentbox-identity.config'
+
+        git config --global color.ui auto
+        test \"\$(git config --global --get user.name)\" = 'Bob Builder'
+        test \"\$(git config --global --get user.email)\" = 'bob@example.test'
+        test \"\$(git config --global --get color.ui)\" = auto
+        test \"\$(git config --global --get-all include.path | grep -Fxc \"\$managed_config\")\" = 1
+
+        /entrypoint /bin/sh -ceu '
+            main_config='$container_home/.config/git/config'
+            managed_config='$container_home/.config/git/agentbox-identity.config'
+
+            test \"\$(git config --global --get user.name)\" = \"Bob Builder\"
+            test \"\$(git config --global --get user.email)\" = \"bob@example.test\"
+            test \"\$(git config --global --get color.ui)\" = auto
+            test \"\$(git config --global --get-all include.path | grep -Fxc \"\$managed_config\")\" = 1
+            . /etc/profile.d/agentbox-runtime.sh
+            . /etc/profile.d/agentbox-runtime.sh
+            test \"\$(git config --global --get-all include.path | grep -Fxc \"\$managed_config\")\" = 1
+            test -r \"\$main_config\"
+        '
+"
+
+podman exec "$container_name" env \
+    -u AGENTBOX_GIT_IDENTITY_NAME \
+    -u AGENTBOX_GIT_IDENTITY_EMAIL \
+    /entrypoint /bin/sh -ceu "
+        main_config='$container_home/.config/git/config'
+        managed_config='$container_home/.config/git/agentbox-identity.config'
+
+        test ! -e \"\$managed_config\"
+        test \"\$(git config --global --get color.ui)\" = auto
+        test -r \"\$main_config\"
 "
 
 podman exec "$container_name" env -u USER -u LOGNAME -u HOME /entrypoint /bin/sh -ceu "

@@ -424,9 +424,24 @@ fn exec_uses_codex_git_identity_without_ssh_agent() {
     assert!(run.contains("--env GIT_CONFIG_VALUE_0=Codex"));
     assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_1=noreply@openai.com"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_NAME=Codex"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_EMAIL=noreply@openai.com"));
     assert!(!run.contains("Alice Agent"));
     assert!(!run.contains("alice@example.test"));
     assert!(!run.contains("/run/agentbox/ssh-agent.sock"));
+}
+
+#[test]
+fn run_without_host_git_identity_does_not_set_identity_env() {
+    let fixture = support::temp_workspace("nested");
+    let harness = Harness::new();
+
+    let log = run_opencode_success(&fixture, &harness, &[]);
+    let run = podman_run_command(&log);
+
+    assert!(!run.contains("--env GIT_CONFIG_COUNT="));
+    assert!(!run.contains("--env AGENTBOX_GIT_IDENTITY_NAME="));
+    assert!(!run.contains("--env AGENTBOX_GIT_IDENTITY_EMAIL="));
 }
 
 #[test]
@@ -451,6 +466,8 @@ fn run_mounts_host_git_excludes_file_and_injects_config() {
     assert!(run.contains("--env GIT_CONFIG_VALUE_0=Alice Agent"));
     assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_1=alice@example.test"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_NAME=Alice Agent"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_EMAIL=alice@example.test"));
     assert!(run.contains("--env GIT_CONFIG_KEY_2=core.excludesFile"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_2=/run/agentbox/git-ignore"));
 }
@@ -475,6 +492,8 @@ fn exec_mounts_host_git_excludes_file_with_codex_identity() {
     assert!(run.contains("--env GIT_CONFIG_VALUE_0=Codex"));
     assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_1=noreply@openai.com"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_NAME=Codex"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_EMAIL=noreply@openai.com"));
     assert!(run.contains("--env GIT_CONFIG_KEY_2=core.excludesFile"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_2=/run/agentbox/git-ignore"));
 }
@@ -544,6 +563,8 @@ fn run_mounts_ssh_agent_socket_git_excludes_and_minimal_git_signing_config() {
     assert!(run.contains("--env GIT_CONFIG_VALUE_0=Alice Agent"));
     assert!(run.contains("--env GIT_CONFIG_KEY_1=user.email"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_1=alice@example.test"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_NAME=Alice Agent"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_EMAIL=alice@example.test"));
     assert!(run.contains("--env GIT_CONFIG_KEY_2=core.excludesFile"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_2=/run/agentbox/git-ignore"));
     assert!(run.contains("--env GIT_CONFIG_KEY_3=gpg.format"));
@@ -788,6 +809,8 @@ fn exec_warns_and_skips_invalid_ssh_auth_sock() {
     assert!(run.contains("--env GIT_CONFIG_COUNT=2"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_0=Codex"));
     assert!(run.contains("--env GIT_CONFIG_VALUE_1=noreply@openai.com"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_NAME=Codex"));
+    assert!(run.contains("--env AGENTBOX_GIT_IDENTITY_EMAIL=noreply@openai.com"));
 }
 
 #[test]

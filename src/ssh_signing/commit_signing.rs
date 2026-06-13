@@ -153,6 +153,11 @@ mod tests {
             "user.email",
             "alice@example.test",
         );
+        assert_identity_env(
+            &detection.passthrough.env,
+            "Alice Agent",
+            "alice@example.test",
+        );
     }
 
     #[test]
@@ -183,6 +188,7 @@ mod tests {
             "user.email",
             "noreply@openai.com",
         );
+        assert_identity_env(&detection.passthrough.env, "Codex", "noreply@openai.com");
     }
 
     #[cfg(unix)]
@@ -216,6 +222,7 @@ mod tests {
             Some(CONTAINER_SSH_AUTH_SOCK)
         );
         assert!(!detection.passthrough.env.contains_key(GIT_CONFIG_COUNT_ENV));
+        assert_no_identity_env(&detection.passthrough.env);
     }
 
     #[test]
@@ -236,6 +243,7 @@ mod tests {
         assert!(!detection.host_agent_available);
         assert!(detection.passthrough.mounts.is_empty());
         assert!(detection.passthrough.env.is_empty());
+        assert_no_identity_env(&detection.passthrough.env);
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("SSH_AUTH_SOCK does not reference a usable Unix socket"));
     }
@@ -286,6 +294,11 @@ mod tests {
             &detection.passthrough.env,
             1,
             "user.email",
+            "alice@example.test",
+        );
+        assert_identity_env(
+            &detection.passthrough.env,
+            "Alice Agent",
             "alice@example.test",
         );
         assert_git_config_env(&detection.passthrough.env, 2, "gpg.format", "ssh");
@@ -342,6 +355,11 @@ mod tests {
             &detection.passthrough.env,
             1,
             "user.email",
+            "alice@example.test",
+        );
+        assert_identity_env(
+            &detection.passthrough.env,
+            "Alice Agent",
             "alice@example.test",
         );
         assert!(
@@ -409,6 +427,22 @@ mod tests {
                 .map(String::as_str),
             Some(value)
         );
+    }
+
+    fn assert_identity_env(env: &BTreeMap<String, String>, name: &str, email: &str) {
+        assert_eq!(
+            env.get("AGENTBOX_GIT_IDENTITY_NAME").map(String::as_str),
+            Some(name)
+        );
+        assert_eq!(
+            env.get("AGENTBOX_GIT_IDENTITY_EMAIL").map(String::as_str),
+            Some(email)
+        );
+    }
+
+    fn assert_no_identity_env(env: &BTreeMap<String, String>) {
+        assert!(!env.contains_key("AGENTBOX_GIT_IDENTITY_NAME"));
+        assert!(!env.contains_key("AGENTBOX_GIT_IDENTITY_EMAIL"));
     }
 
     fn test_env(name: &str, socket_path: &Utf8Path, home: Option<&Utf8Path>) -> Option<OsString> {
