@@ -141,4 +141,34 @@ podman exec "$container_name" env -u USER -u LOGNAME -u HOME /entrypoint /bin/sh
     command -v gh >/dev/null 2>&1
 "
 
+podman exec "$container_name" /entrypoint bash -c 'command -v devenv >/dev/null 2>&1'
+podman exec "$container_name" /entrypoint sh -c 'command -v devenv >/dev/null 2>&1'
+podman exec "$container_name" bash -lc 'command -v devenv >/dev/null 2>&1'
+podman exec "$container_name" sh -lc 'command -v devenv >/dev/null 2>&1'
+podman exec "$container_name" zsh -lc 'command -v devenv >/dev/null 2>&1'
+
+podman exec "$container_name" /bin/sh -ceu "
+    count_path_entry() {
+        needle=\$1
+        count=0
+        old_ifs=\$IFS
+        IFS=:
+        set -- \$PATH
+        IFS=\$old_ifs
+
+        for entry do
+            if [ \"\$entry\" = \"\$needle\" ]; then
+                count=\$((count + 1))
+            fi
+        done
+
+        printf '%s\n' \"\$count\"
+    }
+
+    . /etc/profile.d/agentbox-runtime.sh
+    . /etc/profile.d/agentbox-runtime.sh
+
+    test \"\$(count_path_entry '$profile_path/bin')\" = 1
+"
+
 printf 'podman entrypoint contract OK\n'
