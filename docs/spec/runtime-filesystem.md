@@ -81,6 +81,10 @@ Rules:
 - For `run`, `start`, and `restart`, if reading either value fails unexpectedly, `agentbox` prints a warning and continues launching without that value.
 - For `exec`, `agentbox` injects `user.name=Codex` and `user.email=noreply@openai.com` instead of reading those values from the host repository.
 - Present values are injected with Git's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment variables.
+- For `run`, `start`, `restart`, and `exec`, present Git identity values are also materialized during runtime startup into the runtime home's Git config at `$XDG_CONFIG_HOME/git/config`, falling back to `$HOME/.config/git/config` when `XDG_CONFIG_HOME` is unset or empty.
+- Runtime Git identity materialization uses an `agentbox`-managed include file under the runtime Git config directory. `agentbox` refreshes the managed identity file when an identity is present and removes it when no identity is present, so persisted runtime home volumes do not retain stale managed identity values.
+- Runtime Git identity materialization preserves unrelated runtime Git config settings and ensures the managed identity include is not duplicated.
+- `agentbox` does not modify the workspace repository's `.git/config`.
 - Git identity passthrough does not depend on `SSH_AUTH_SOCK`.
 - `agentbox` does not mount the host Git config files, credential helpers, or other Git configuration for identity passthrough.
 
