@@ -12,8 +12,8 @@ use crate::runtime::{RuntimeMount, RuntimeRunSpec};
 use super::CONTAINER_SSH_AUTH_SOCK;
 use super::agent_socket::{HOST_SSH_AUTH_SOCK_ENV, detect_host_agent_socket, utf8_path};
 use super::git_config::{
-    append_git_config_env, codex_exec_identity_entries, read_git_identity_entries,
-    read_ssh_signing_config_entries,
+    append_agentbox_git_identity_env, append_git_config_env, codex_exec_identity_entries,
+    read_git_identity_entries, read_ssh_signing_config_entries,
 };
 use super::git_excludes;
 
@@ -55,6 +55,7 @@ pub(super) fn detect_with(
     let mut env = BTreeMap::new();
     let mut mounts = Vec::new();
     let mut git_entries = git_identity_entries(git_root, git_identity, git_config, warning);
+    append_agentbox_git_identity_env(&mut env, &git_entries);
     let git_excludes = git_excludes::detect_with(git_root, environment, git_config_path, warning);
 
     if let Some(mount) = git_excludes.mount {

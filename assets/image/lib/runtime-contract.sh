@@ -184,6 +184,45 @@ prepare_runtime_home() {
     fi
 }
 
+materialize_git_identity_config() {
+    git_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/git"
+    git_main_config="$git_config_dir/config"
+    git_managed_config="$git_config_dir/agentbox-identity.config"
+
+    if [ "${AGENTBOX_GIT_IDENTITY_NAME+x}" ] || [ "${AGENTBOX_GIT_IDENTITY_EMAIL+x}" ]; then
+        if ! mkdir -p "$git_config_dir" >/dev/null 2>&1; then
+            die "Unusable Git configuration directory: $git_config_dir. Ensure XDG_CONFIG_HOME or HOME points to a writable location."
+        fi
+
+        git_tmp_config=$(mktemp "$git_config_dir/agentbox-identity.config.XXXXXX") ||
+            die "Failed to create temporary Git identity config in: $git_config_dir."
+
+        if [ "${AGENTBOX_GIT_IDENTITY_NAME+x}" ]; then
+            git config --file "$git_tmp_config" user.name "$AGENTBOX_GIT_IDENTITY_NAME" ||
+                die "Failed to write managed Git identity name: $git_managed_config."
+        fi
+
+        if [ "${AGENTBOX_GIT_IDENTITY_EMAIL+x}" ]; then
+            git config --file "$git_tmp_config" user.email "$AGENTBOX_GIT_IDENTITY_EMAIL" ||
+                die "Failed to write managed Git identity email: $git_managed_config."
+        fi
+
+        if ! mv "$git_tmp_config" "$git_managed_config"; then
+            rm -f "$git_tmp_config"
+            die "Failed to update managed Git identity config: $git_managed_config."
+        fi
+
+        git config --file "$git_main_config" --fixed-value --unset-all include.path "$git_managed_config" >/dev/null 2>&1 || true
+        git config --file "$git_main_config" --add include.path "$git_managed_config" ||
+            die "Failed to include managed Git identity config from: $git_main_config."
+    else
+        rm -f "$git_managed_config" ||
+            die "Failed to remove managed Git identity config: $git_managed_config."
+    fi
+
+    unset git_config_dir git_main_config git_managed_config git_tmp_config
+}
+
 resolve_runtime_manifest_path() {
     NIX_RUNTIME_PACKAGES_FILE="$(_script_dir)/runtime-packages.nix"
     export NIX_RUNTIME_PACKAGES_FILE
@@ -256,6 +295,7 @@ activate_runtime_base_env() {
 runtime_entrypoint_main() {
     activate_runtime_base_env
     activate_profile_env
+    materialize_git_identity_config
 
     exec "$@"
 }

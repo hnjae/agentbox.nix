@@ -10,6 +10,8 @@ use crate::Result;
 use super::signing_key::normalize_signing_key_value;
 
 pub(super) const GIT_CONFIG_COUNT_ENV: &str = "GIT_CONFIG_COUNT";
+pub(super) const AGENTBOX_GIT_IDENTITY_NAME_ENV: &str = "AGENTBOX_GIT_IDENTITY_NAME";
+pub(super) const AGENTBOX_GIT_IDENTITY_EMAIL_ENV: &str = "AGENTBOX_GIT_IDENTITY_EMAIL";
 pub(super) const GIT_IDENTITY_KEYS: &[&str] = &["user.name", "user.email"];
 pub(super) const GIT_SIGNING_KEYS: &[&str] = &["gpg.format", "user.signingkey", "commit.gpgsign"];
 
@@ -111,6 +113,23 @@ pub(super) fn append_git_config_env(
     for (index, (key, value)) in entries.iter().enumerate() {
         env.insert(format!("GIT_CONFIG_KEY_{index}"), key.clone());
         env.insert(format!("GIT_CONFIG_VALUE_{index}"), value.clone());
+    }
+}
+
+pub(super) fn append_agentbox_git_identity_env(
+    env: &mut BTreeMap<String, String>,
+    entries: &[(String, String)],
+) {
+    for (key, value) in entries {
+        match key.as_str() {
+            "user.name" => {
+                env.insert(AGENTBOX_GIT_IDENTITY_NAME_ENV.to_string(), value.clone());
+            }
+            "user.email" => {
+                env.insert(AGENTBOX_GIT_IDENTITY_EMAIL_ENV.to_string(), value.clone());
+            }
+            _ => {}
+        }
     }
 }
 
