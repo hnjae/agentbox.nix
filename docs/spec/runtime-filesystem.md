@@ -60,6 +60,10 @@ Rules:
 - The runtime profile default path is `$XDG_STATE_HOME/nix/profile`.
 - If `XDG_STATE_HOME` is unset and `HOME` is set, the runtime falls back to `$HOME/.local/state/nix/profile`.
 - If both `XDG_STATE_HOME` and `HOME` are unavailable, the runtime falls back to `/home/user/.local/state/nix/profile`.
+- The runtime profile environment is active for the container entrypoint and for login shells launched inside the runtime, including `sh`, `bash`, and `zsh`.
+- Login shells restore the active runtime profile environment without materializing the profile or performing bootstrap validation.
+- After runtime profile activation, `PATH` includes `$XDG_STATE_HOME/nix/profile/bin` and `/nix/var/nix/profiles/default/bin`, `NIX_PROFILES` includes `/nix/var/nix/profiles/default` and `$XDG_STATE_HOME/nix/profile`, and `XDG_DATA_DIRS` includes the matching `share` directories while preserving `/usr/local/share:/usr/share`.
+- Runtime profile activation is idempotent. Re-entering `/entrypoint` or repeatedly sourcing login-shell startup files does not duplicate runtime profile entries in `PATH`, `NIX_PROFILES`, or `XDG_DATA_DIRS`.
 - No other subpath under `/home/user` is required to persist in the MVP unless it is named by a runtime-specific passthrough rule.
 - `agentbox stop <directory>` does not explicitly delete the runtime cache volume.
 - `agentbox restart <target>` preserves and reuses the named runtime cache volume for the selected managed session.
