@@ -47,6 +47,13 @@ const EMBEDDED_DEFAULT_IMAGE_FILES: &[EmbeddedDefaultImageFile] = &[
         )),
     },
     EmbeddedDefaultImageFile {
+        relative_path: "profile.d/agentbox-runtime.sh",
+        contents: include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/assets/image/profile.d/agentbox-runtime.sh"
+        )),
+    },
+    EmbeddedDefaultImageFile {
         relative_path: "runtime-packages.nix",
         contents: include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -206,6 +213,7 @@ mod tests {
                 "bootstrap",
                 "entrypoint",
                 "lib/runtime-contract.sh",
+                "profile.d/agentbox-runtime.sh",
                 "runtime-packages.nix",
             ]
         );

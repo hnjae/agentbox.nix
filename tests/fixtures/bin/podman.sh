@@ -116,6 +116,7 @@ validate_build_context() {
         bootstrap \
         entrypoint \
         lib/runtime-contract.sh \
+        profile.d/agentbox-runtime.sh \
         runtime-packages.nix; do
         [ -r "$context_dir/$relative_path" ] || {
             printf 'missing embedded build file: %s\n' "$relative_path" >&2

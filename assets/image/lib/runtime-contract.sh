@@ -117,6 +117,52 @@ resolve_runtime_paths() {
     export HOME XDG_CACHE_HOME XDG_STATE_HOME NIX_PROFILE_PATH
 }
 
+_colon_list_contains() {
+    list=$1
+    entry=$2
+
+    case ":$list:" in
+    *:"$entry":*) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+_space_list_contains() {
+    list=$1
+    entry=$2
+
+    case " $list " in
+    *" $entry "*) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+_prepend_colon_list_entry() {
+    list=$1
+    entry=$2
+
+    if _colon_list_contains "$list" "$entry"; then
+        printf '%s\n' "$list"
+    elif [ "$list" = "" ]; then
+        printf '%s\n' "$entry"
+    else
+        printf '%s:%s\n' "$entry" "$list"
+    fi
+}
+
+_prepend_space_list_entry() {
+    list=$1
+    entry=$2
+
+    if _space_list_contains "$list" "$entry"; then
+        printf '%s\n' "$list"
+    elif [ "$list" = "" ]; then
+        printf '%s\n' "$entry"
+    else
+        printf '%s %s\n' "$entry" "$list"
+    fi
+}
+
 prepare_runtime_home() {
     if ! mkdir -p \
         "$HOME/.cache/nix" \
@@ -180,17 +226,21 @@ activate_profile_env() {
     default_profile_path=/nix/var/nix/profiles/default
     profile_link=$NIX_PROFILE_PATH
 
-    export NIX_PROFILES="$default_profile_path $profile_link"
+    NIX_PROFILES=$(_prepend_space_list_entry "${NIX_PROFILES-}" "$default_profile_path")
+    NIX_PROFILES=$(_prepend_space_list_entry "$NIX_PROFILES" "$profile_link")
+    export NIX_PROFILES
 
-    # Populate bash completions, .desktop files, etc
     if [ "${XDG_DATA_DIRS-}" = "" ]; then
-        # According to XDG spec the default is /usr/local/share:/usr/share, don't set something that prevents that default
-        export XDG_DATA_DIRS="/usr/local/share:/usr/share:$profile_link/share:$default_profile_path/share"
-    else
-        export XDG_DATA_DIRS="$XDG_DATA_DIRS:$profile_link/share:$default_profile_path/share"
+        # According to the XDG spec, the unset default is /usr/local/share:/usr/share.
+        XDG_DATA_DIRS="/usr/local/share:/usr/share"
     fi
+    XDG_DATA_DIRS=$(_prepend_colon_list_entry "$XDG_DATA_DIRS" "$default_profile_path/share")
+    XDG_DATA_DIRS=$(_prepend_colon_list_entry "$XDG_DATA_DIRS" "$profile_link/share")
+    export XDG_DATA_DIRS
 
-    export PATH="$profile_link/bin:$default_profile_path/bin${PATH:+:$PATH}"
+    PATH=$(_prepend_colon_list_entry "${PATH-}" "$default_profile_path/bin")
+    PATH=$(_prepend_colon_list_entry "$PATH" "$profile_link/bin")
+    export PATH
     unset default_profile_path profile_link
 }
 

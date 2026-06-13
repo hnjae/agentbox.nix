@@ -108,9 +108,18 @@ RUN mkdir -p /workspace
 COPY bootstrap /usr/local/share/libexec/agentbox/bootstrap
 COPY entrypoint /usr/local/share/libexec/agentbox/entrypoint
 COPY lib/runtime-contract.sh /usr/local/share/libexec/agentbox/lib/runtime-contract.sh
+COPY profile.d/agentbox-runtime.sh /etc/profile.d/agentbox-runtime.sh
 COPY runtime-packages.nix /usr/local/share/libexec/agentbox/runtime-packages.nix
 
-RUN ln -s /usr/local/share/libexec/agentbox/entrypoint /entrypoint && chmod +x /usr/local/share/libexec/agentbox/bootstrap /usr/local/share/libexec/agentbox/entrypoint /usr/local/share/libexec/agentbox/lib/runtime-contract.sh
+RUN set -eu; \
+	ln -s /usr/local/share/libexec/agentbox/entrypoint /entrypoint; \
+	chmod +x \
+	/usr/local/share/libexec/agentbox/bootstrap \
+	/usr/local/share/libexec/agentbox/entrypoint \
+	/usr/local/share/libexec/agentbox/lib/runtime-contract.sh; \
+	if ! grep -Fqx '. /etc/profile.d/agentbox-runtime.sh' /etc/zsh/zprofile; then \
+	printf '%s\n' '. /etc/profile.d/agentbox-runtime.sh' >> /etc/zsh/zprofile; \
+	fi
 
 RUN set -eu; \
 	install -d /usr/local/share/agentbox; \
