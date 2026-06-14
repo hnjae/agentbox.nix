@@ -287,9 +287,14 @@ Safety rules:
 - `clean` never stops or removes running or stopped containers. Container lifecycle remains owned by `agentbox stop`.
 - `clean` never deletes a workspace, the Nix store, `~/.codex`, or host OpenCode configuration or state directories.
 
-## `agentbox runtime update <opencode|codex>`
+## `agentbox runtime update <opencode|codex|--all|-a>`
 
-`runtime update <opencode|codex>` refreshes the selected default runtime image.
+`runtime update <opencode|codex>` refreshes the selected default runtime image. `runtime update --all` and `runtime update -a` refresh every supported default runtime image.
+
+Arguments:
+
+- `<opencode|codex>` selects one default runtime image to refresh.
+- `--all` or `-a` selects every supported default runtime image. It is mutually exclusive with a runtime argument.
 
 Expected behavior:
 
@@ -299,6 +304,8 @@ Expected behavior:
 4. If the selected local default image exists and the stored installed version, image reference, and image context hash already match the latest npm version and current embedded context, skip the rebuild and record the latest check time.
 5. Otherwise, rebuild the selected default image with the resolved npm version.
 6. Record the installed version, latest seen version, check time, image build time, npm package name, install source, image reference, and image context hash in agentbox state.
+
+For `--all` or `-a`, `runtime update` applies the same behavior to supported runtimes sequentially in supported-runtime order, currently `opencode` then `codex`. If one runtime update fails, later runtimes are not attempted.
 
 Rules:
 
