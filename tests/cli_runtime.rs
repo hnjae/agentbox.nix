@@ -91,6 +91,72 @@ fn runtime_update_opencode_rebuilds_and_records_state_when_state_is_missing() {
 }
 
 #[test]
+fn runtime_update_all_rebuilds_and_records_state_when_states_are_missing() {
+    let harness = CliHarness::new();
+    let opencode_image = RuntimeKind::Opencode.default_image();
+    let codex_image = RuntimeKind::Codex.default_image();
+    let context_hash = default_image_context_hash();
+
+    let mut command = harness.agentbox_command();
+    command.args(["runtime", "update", "--all"]);
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(
+            predicate::str::contains(format!(
+                "INFO: updated opencode runtime image `{opencode_image}` to 0.99.0"
+            ))
+            .and(predicate::str::contains(format!(
+                "INFO: updated codex runtime image `{codex_image}` to 0.99.0"
+            ))),
+        );
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["image", "build", "image", "build"]);
+    assert!(log[1].contains(&format!("-t {opencode_image}")));
+    assert!(log[1].contains("--build-arg AGENTBOX_RUNTIME=opencode"));
+    assert!(log[3].contains(&format!("-t {codex_image}")));
+    assert!(log[3].contains("--build-arg AGENTBOX_RUNTIME=codex"));
+
+    let opencode_state = fs::read_to_string(opencode_state_path(&harness)).unwrap();
+    assert!(opencode_state.contains("\"runtime\": \"opencode\""));
+    assert!(opencode_state.contains("\"package\": \"opencode-ai\""));
+    assert!(opencode_state.contains(&format!("\"image\": \"{opencode_image}\"")));
+    assert!(opencode_state.contains(&format!("\"image_context_hash\": \"{context_hash}\"")));
+    assert!(opencode_state.contains("\"installed_version\": \"0.99.0\""));
+    assert!(opencode_state.contains("\"latest_seen_version\": \"0.99.0\""));
+
+    let codex_state = fs::read_to_string(codex_state_path(&harness)).unwrap();
+    assert!(codex_state.contains("\"runtime\": \"codex\""));
+    assert!(codex_state.contains("\"package\": \"@openai/codex\""));
+    assert!(codex_state.contains(&format!("\"image\": \"{codex_image}\"")));
+    assert!(codex_state.contains(&format!("\"image_context_hash\": \"{context_hash}\"")));
+    assert!(codex_state.contains("\"installed_version\": \"0.99.0\""));
+    assert!(codex_state.contains("\"latest_seen_version\": \"0.99.0\""));
+}
+
+#[test]
+fn runtime_update_all_stops_before_later_runtimes_when_first_update_fails() {
+    let harness = CliHarness::new();
+    harness.fail_operation("build", "podman build exploded", 125);
+
+    let mut command = harness.agentbox_command();
+    command.args(["runtime", "update", "--all"]);
+    command
+        .assert()
+        .failure()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("podman build exploded"));
+
+    let log = harness.read_log();
+    assert_eq!(operation_names(&log), ["image", "build"]);
+    assert!(log[1].contains("--build-arg AGENTBOX_RUNTIME=opencode"));
+    assert!(!opencode_state_path(&harness).exists());
+    assert!(!codex_state_path(&harness).exists());
+}
+
+#[test]
 fn runtime_update_codex_skips_rebuild_when_image_and_state_are_current() {
     let harness = CliHarness::new();
     let image = RuntimeKind::Codex.default_image();

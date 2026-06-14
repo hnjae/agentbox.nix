@@ -198,7 +198,8 @@ fn core_commands_parse_into_expected_variants() {
         runtime.command,
         Command::Runtime(RuntimeArgs {
             command: RuntimeCommand::Update(RuntimeUpdateArgs {
-                runtime: RuntimeKind::Codex,
+                runtime: Some(RuntimeKind::Codex),
+                all: false,
             }),
         })
     );
@@ -703,6 +704,61 @@ fn run_accepts_runtime_selection() {
             directory: "/tmp/workspace".into(),
             agent_args: Vec::new(),
         })
+    );
+}
+
+#[test]
+fn runtime_update_accepts_runtime_selection() {
+    let cli = Cli::try_parse_from(["agentbox", "runtime", "update", "codex"]).unwrap();
+
+    assert_eq!(
+        cli.command,
+        Command::Runtime(RuntimeArgs {
+            command: RuntimeCommand::Update(RuntimeUpdateArgs {
+                runtime: Some(RuntimeKind::Codex),
+                all: false,
+            }),
+        })
+    );
+}
+
+#[test]
+fn runtime_update_accepts_all_flag() {
+    for flag in ["--all", "-a"] {
+        let cli = Cli::try_parse_from(["agentbox", "runtime", "update", flag]).unwrap();
+
+        assert_eq!(
+            cli.command,
+            Command::Runtime(RuntimeArgs {
+                command: RuntimeCommand::Update(RuntimeUpdateArgs {
+                    runtime: None,
+                    all: true,
+                }),
+            })
+        );
+    }
+}
+
+#[test]
+fn runtime_update_rejects_all_with_runtime_argument() {
+    let error =
+        Cli::try_parse_from(["agentbox", "runtime", "update", "--all", "codex"]).unwrap_err();
+
+    assert_eq!(error.exit_code(), 2);
+    assert!(
+        error.to_string().contains("cannot be used with"),
+        "expected clap to reject combining --all with a runtime argument: {error}"
+    );
+}
+
+#[test]
+fn runtime_update_requires_target() {
+    let error = Cli::try_parse_from(["agentbox", "runtime", "update"]).unwrap_err();
+
+    assert_eq!(error.exit_code(), 2);
+    assert!(
+        error.to_string().contains("required"),
+        "expected clap to require either a runtime argument or --all: {error}"
     );
 }
 
