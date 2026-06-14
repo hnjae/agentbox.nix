@@ -307,6 +307,24 @@ fn completion_scripts_offer_stop_all() {
 }
 
 #[test]
+fn completion_scripts_offer_runtime_update_all() {
+    let bash = capture_completion_script_shell("bash");
+    assert!(!bash.contains("@RUNTIME_VALUES@ --all -a"));
+    assert!(bash.contains("--all -a"));
+
+    let zsh = capture_completion_script_shell("zsh");
+    assert!(zsh.contains("--all[update every supported runtime image]"));
+    assert!(zsh.contains("-a[update every supported runtime image]"));
+
+    let fish = capture_completion_script_shell("fish");
+    assert!(fish.contains("__agentbox_runtime_update_all_seen"));
+    assert!(fish.contains(
+        "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update\" -s a -l all"
+    ));
+    assert!(fish.contains("and not __agentbox_runtime_update_all_seen"));
+}
+
+#[test]
 fn completion_scripts_offer_stop_candidates_at_every_target_position() {
     let bash = capture_completion_script_shell("bash");
     assert!(bash.contains("COMP_WORDS[*]:2:COMP_CWORD-2"));

@@ -120,7 +120,7 @@ _agentbox() {
       if (( CURRENT == 3 )); then
         _values 'runtime command' 'update[Update a default runtime image]'
       elif (( CURRENT == 4 && "$words[3]" == "update" )); then
-        _values 'runtime' @RUNTIME_VALUES@
+        _values 'runtime update target' @RUNTIME_VALUES@ '--all[update every supported runtime image]' '-a[update every supported runtime image]'
       fi
       ;;
     completion)

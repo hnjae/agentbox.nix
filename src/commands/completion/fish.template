@@ -22,6 +22,10 @@ function __agentbox_stop_all_seen
     commandline -opc | contains -- --all
 end
 
+function __agentbox_runtime_update_all_seen
+    commandline -opc | contains -- --all; or commandline -opc | contains -- -a
+end
+
 complete -c agentbox -f -n "not __agentbox_has_subcommand" -a "@SUBCOMMAND_NAMES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from connect" -a "(__agentbox_completion_roots connect)"
 complete -c agentbox -f -n "__fish_seen_subcommand_from restart" -s c -l connect -d "Connect after the restarted session is ready"
@@ -44,5 +48,6 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from start" -l runtime -r -a 
 complete -c agentbox -f -n "__fish_seen_subcommand_from start" -l dev-env -r -a "@DEV_ENV_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from start" -s c -l connect -d "Connect after the new session is ready"
 complete -c agentbox -f -n "__fish_seen_subcommand_from runtime" -a "update"
-complete -c agentbox -f -n "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update" -a "@RUNTIME_VALUES@"
+complete -c agentbox -f -n "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update" -s a -l all -d "Update every supported runtime image"
+complete -c agentbox -f -n "__fish_seen_subcommand_from runtime; and __fish_seen_subcommand_from update; and not __agentbox_runtime_update_all_seen" -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from completion" -a "@SHELL_VALUES@"

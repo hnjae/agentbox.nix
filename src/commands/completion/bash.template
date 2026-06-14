@@ -97,7 +97,7 @@ _agentbox() {
             if [[ "$COMP_CWORD" -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "update" -- "$cur") )
             elif [[ "$COMP_CWORD" -eq 3 && "${COMP_WORDS[2]}" == "update" ]]; then
-                COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@" -- "$cur") )
+                COMPREPLY=( $(compgen -W "@RUNTIME_VALUES@ --all -a" -- "$cur") )
             fi
             ;;
         completion)
