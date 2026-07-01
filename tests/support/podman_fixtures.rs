@@ -414,6 +414,7 @@ fn managed_container_mounts(
 ) -> Vec<PodmanContainerMount> {
     let mut mounts = vec![PodmanContainerMount {
         kind: PodmanContainerMountKind::Bind,
+        name: None,
         source: git_root.to_string(),
         destination: git_root.to_string(),
         rw: true,
@@ -422,7 +423,8 @@ fn managed_container_mounts(
     if include_cache_mount {
         mounts.push(PodmanContainerMount {
             kind: PodmanContainerMountKind::Volume,
-            source: container_name.to_string(),
+            name: Some(container_name.to_string()),
+            source: volume_storage_source(container_name),
             destination: REQUIRED_NIX_CACHE_MOUNT_DESTINATION.to_string(),
             rw: true,
         });
@@ -610,12 +612,17 @@ pub fn opencode_workspace_inspect_fixture_with_cache_bind(workspace: &WorkspaceI
     .build();
     inspect.mounts.push(PodmanContainerMount {
         kind: PodmanContainerMountKind::Bind,
+        name: None,
         source: workspace.container_name.clone(),
         destination: REQUIRED_NIX_CACHE_MOUNT_DESTINATION.to_string(),
         rw: true,
     });
 
     inspect_fixture_json(inspect)
+}
+
+fn volume_storage_source(name: &str) -> String {
+    format!("/home/ops/.local/share/containers/storage/volumes/{name}/_data")
 }
 
 pub fn running_workspace_inspect_fixture(

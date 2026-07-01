@@ -252,6 +252,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, source)| PodmanContainerMount {
                     kind: PodmanContainerMountKind::Volume,
+                    name: None,
                     source: (*source).to_string(),
                     destination: format!("/mount/{index}"),
                     rw: true,

@@ -150,11 +150,27 @@ pub struct PodmanHostConfig {
 pub struct PodmanContainerMount {
     #[serde(rename = "Type")]
     pub kind: PodmanContainerMountKind,
+    #[serde(default)]
+    pub name: Option<String>,
     pub source: String,
     pub destination: String,
     #[serde(default)]
     #[serde(rename = "RW")]
     pub rw: bool,
+}
+
+impl PodmanContainerMount {
+    pub fn named_volume_name(&self) -> Option<&str> {
+        if !self.kind.is_volume() {
+            return None;
+        }
+
+        non_empty(self.name.as_deref()).or_else(|| non_empty(Some(&self.source)))
+    }
+}
+
+fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.filter(|value| !value.is_empty())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

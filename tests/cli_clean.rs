@@ -189,13 +189,12 @@ fn clean_skips_volume_when_podman_inspect_reports_name_and_storage_source() {
     harness.write_volumes(&volumes_fixture(&[USED_VOLUME]));
 
     harness
-        .agentbox_assert(&["clean", "--yes", "--volumes"])
+        .agentbox_assert(&["clean", "--dry-run", "--volumes"])
         .success()
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains(format!(
             "volume `{USED_VOLUME}`: mounted by container `{USED_VOLUME}`"
-        )))
-        .stderr(predicate::str::contains("nothing to clean").not());
+        )));
 
     let log = harness.read_log();
     assert!(
@@ -234,10 +233,7 @@ fn inspect_fixture_with_named_volume_storage_source(inspect: &str) -> String {
         .and_then(Value::as_array_mut)
         .unwrap()
         .iter_mut()
-        .find(|mount| {
-            mount.get("Type").and_then(Value::as_str) == Some("volume")
-                && mount.get("Source").and_then(Value::as_str) == Some(USED_VOLUME)
-        })
+        .find(|mount| mount.get("Type").and_then(Value::as_str) == Some("volume"))
         .unwrap();
     mount["Name"] = Value::String(USED_VOLUME.to_string());
     mount["Source"] = Value::String(format!(

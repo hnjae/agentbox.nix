@@ -20,8 +20,8 @@ impl ResourceUsage {
             usage.mark_image_used(&container.image_name, &container.id);
 
             for mount in &container.mounts {
-                if mount.kind.is_volume() {
-                    usage.mark_volume_used(&mount.source, &container.id);
+                if let Some(volume) = mount.named_volume_name() {
+                    usage.mark_volume_used(volume, &container.id);
                 }
             }
         }
@@ -88,6 +88,7 @@ mod tests {
         let mut container = inspect_container("bind-user", "image", &[]);
         container.mounts.push(PodmanContainerMount {
             kind: PodmanContainerMountKind::Bind,
+            name: None,
             source: USED_VOLUME.to_string(),
             destination: "/workspace".to_string(),
             rw: true,
@@ -96,6 +97,25 @@ mod tests {
         let usage = ResourceUsage::from_containers(&[container]);
 
         assert_eq!(usage.user(&CleanResource::volume(USED_VOLUME)), None);
+    }
+
+    #[test]
+    fn resource_usage_indexes_named_volume_name_before_storage_source() {
+        let mut container = inspect_container("named-volume-user", "image", &[]);
+        container.mounts.push(PodmanContainerMount {
+            kind: PodmanContainerMountKind::Volume,
+            name: Some(USED_VOLUME.to_string()),
+            source: format!("/storage/volumes/{USED_VOLUME}/_data"),
+            destination: "/home/user".to_string(),
+            rw: true,
+        });
+
+        let usage = ResourceUsage::from_containers(&[container]);
+
+        assert_eq!(
+            usage.user(&CleanResource::volume(USED_VOLUME)),
+            Some("named-volume-user")
+        );
     }
 
     fn inspect_container(
@@ -117,6 +137,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, source)| PodmanContainerMount {
                     kind: PodmanContainerMountKind::Volume,
+                    name: None,
                     source: (*source).to_string(),
                     destination: format!("/mount/{index}"),
                     rw: true,
