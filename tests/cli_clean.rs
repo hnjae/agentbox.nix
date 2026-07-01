@@ -7,6 +7,7 @@ use agentbox::prompt;
 use agentbox::runtime::RuntimeKind;
 use agentbox::runtime::default_image::default_image_context_hash;
 use predicates::prelude::*;
+use serde_json::Value;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -162,6 +163,50 @@ fn clean_skips_images_and_volumes_used_by_any_container() {
 }
 
 #[test]
+fn clean_skips_volume_when_podman_inspect_reports_name_and_storage_source() {
+    let fixture = support::temp_workspace("nested");
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    harness.write_ps(&ps_fixture(vec![managed_ps_entry(
+        "used-id",
+        USED_VOLUME,
+        &workspace.hash12,
+    )]));
+    harness.write_inspect(
+        "used-id",
+        &inspect_fixture_with_named_volume_storage_source(&managed_inspect_fixture(
+            USED_VOLUME,
+            workspace.canonical_git_root.as_str(),
+            true,
+            true,
+            managed_labels(
+                workspace.canonical_git_root.as_str(),
+                &workspace.hash12,
+                USED_VOLUME,
+            ),
+        )),
+    );
+    harness.write_volumes(&volumes_fixture(&[USED_VOLUME]));
+
+    harness
+        .agentbox_assert(&["clean", "--yes", "--volumes"])
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
+            "volume `{USED_VOLUME}`: mounted by container `{USED_VOLUME}`"
+        )))
+        .stderr(predicate::str::contains("nothing to clean").not());
+
+    let log = harness.read_log();
+    assert!(
+        !log.iter().any(|line| {
+            line.starts_with("volume ") && line.contains(&format!("args=rm {USED_VOLUME}"))
+        }),
+        "mounted volume must not be removed when inspect Source is the storage path"
+    );
+}
+
+#[test]
 fn clean_only_considers_agentbox_cache_volume_name_shape() {
     let harness = Harness::new();
     harness.write_volumes(&volumes_fixture(&[
@@ -180,6 +225,26 @@ fn clean_only_considers_agentbox_cache_volume_name_shape() {
     assert!(!stderr.contains("agentbox-data"));
     assert!(!stderr.contains("agentbox-short-abc123"));
     assert!(!stderr.contains("other-agentbox-abcdef123456"));
+}
+
+fn inspect_fixture_with_named_volume_storage_source(inspect: &str) -> String {
+    let mut value: Value = serde_json::from_str(inspect).unwrap();
+    let mount = value[0]
+        .get_mut("Mounts")
+        .and_then(Value::as_array_mut)
+        .unwrap()
+        .iter_mut()
+        .find(|mount| {
+            mount.get("Type").and_then(Value::as_str) == Some("volume")
+                && mount.get("Source").and_then(Value::as_str) == Some(USED_VOLUME)
+        })
+        .unwrap();
+    mount["Name"] = Value::String(USED_VOLUME.to_string());
+    mount["Source"] = Value::String(format!(
+        "/home/ops/.local/share/containers/storage/volumes/{USED_VOLUME}/_data"
+    ));
+
+    serde_json::to_string(&value).unwrap()
 }
 
 #[test]
