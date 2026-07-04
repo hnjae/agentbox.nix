@@ -243,7 +243,7 @@ Image rules:
 
 ## `agentbox clean`
 
-`clean` reclaims unused Podman resources owned by `agentbox`. It is a global cleanup command, not a session stop command.
+`clean` reclaims unused Podman resources and lock files owned by `agentbox`. It is a global cleanup command, not a session stop command.
 
 Optional flags:
 
@@ -251,11 +251,12 @@ Optional flags:
 - `--yes`: delete cleanup candidates without prompting
 - `--images`: consider default runtime images only
 - `--volumes`: consider workspace cache volumes only
+- `--locks`: consider workspace lock files only
 
 Selection rules:
 
-- If neither `--images` nor `--volumes` is set, `clean` considers both default runtime images and workspace cache volumes.
-- If exactly one of `--images` or `--volumes` is set, only that resource kind is considered.
+- If none of `--images`, `--volumes`, or `--locks` is set, `clean` considers default runtime images, workspace cache volumes, and workspace lock files.
+- If any of `--images`, `--volumes`, or `--locks` is set, only the selected resource kinds are considered.
 - `--dry-run` and `--yes` cannot be used together.
 
 Image cleanup rules:
@@ -270,6 +271,12 @@ Volume cleanup rules:
 - `clean` only considers named volumes whose names match the current workspace cache volume shape `agentbox-...-<12 hex>`.
 - A candidate volume is skipped when any Podman container, managed or unmanaged, mounts that exact named volume source. Bind mounts whose host source path happens to match the volume name do not count as volume usage.
 - `clean` does not call broad Podman volume pruning such as `podman volume prune --all`.
+
+Lock file cleanup rules:
+
+- `clean` only considers lock files whose paths match the current workspace lock shape `$XDG_STATE_HOME/agentbox/locks/<64 lowercase hex>.lock`.
+- A candidate lock file is skipped when `agentbox` cannot acquire its workspace lock without blocking, which indicates that another process currently holds the lock.
+- Files in the lock directory that do not match the workspace lock file name shape, symlinks, directories, and lock-like files outside the current workspace lock directory are ignored.
 
 Confirmation and output rules:
 
