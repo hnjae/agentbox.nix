@@ -3,9 +3,11 @@
 
 use std::fs;
 
+use agentbox::lock::lock_workspace_in_state_dir;
 use agentbox::prompt;
 use agentbox::runtime::RuntimeKind;
 use agentbox::runtime::default_image::default_image_context_hash;
+use agentbox::workspace::WorkspaceIdentity;
 use predicates::prelude::*;
 use serde_json::Value;
 
@@ -24,6 +26,8 @@ const USED_VOLUME: &str = "agentbox-used-abcdef123456";
 #[test]
 fn clean_dry_run_prints_candidates_without_deleting() {
     let harness = Harness::new();
+    let fixture = support::temp_workspace("nested");
+    let lock_path = write_stale_lock(&harness, &fixture.workspace);
     let opencode_image = RuntimeKind::Opencode.default_image();
     let codex_image = RuntimeKind::Codex.default_image();
     harness.write_volumes(&volumes_fixture(&[UNUSED_VOLUME]));
@@ -35,7 +39,10 @@ fn clean_dry_run_prints_candidates_without_deleting() {
         .stderr(predicate::str::contains("INFO: cleanup candidates:"))
         .stderr(predicate::str::contains(opencode_image.clone()))
         .stderr(predicate::str::contains(codex_image.clone()))
-        .stderr(predicate::str::contains(UNUSED_VOLUME));
+        .stderr(predicate::str::contains(UNUSED_VOLUME))
+        .stderr(predicate::str::contains(lock_path.display().to_string()));
+
+    assert!(lock_path.exists(), "dry-run must not remove lock files");
 
     let log = harness.read_log();
     assert_eq!(operation_names(&log), ["ps", "image", "volume"]);
@@ -73,8 +80,10 @@ fn clean_confirmation_errors_are_stable() {
 }
 
 #[test]
-fn clean_yes_removes_unused_default_images_and_cache_volumes() {
+fn clean_yes_removes_unused_default_images_cache_volumes_and_lock_files() {
     let harness = Harness::new();
+    let fixture = support::temp_workspace("nested");
+    let lock_path = write_stale_lock(&harness, &fixture.workspace);
     let opencode_image = RuntimeKind::Opencode.default_image();
     let codex_image = RuntimeKind::Codex.default_image();
     harness.write_volumes(&volumes_fixture(&[UNUSED_VOLUME]));
@@ -91,7 +100,13 @@ fn clean_yes_removes_unused_default_images_and_cache_volumes() {
         )))
         .stderr(predicate::str::contains(format!(
             "removed volume `{UNUSED_VOLUME}`"
+        )))
+        .stderr(predicate::str::contains(format!(
+            "removed lock file `{}`",
+            lock_path.display()
         )));
+
+    assert!(!lock_path.exists(), "unused lock file should be removed");
 
     let log = harness.read_log();
     assert!(log.iter().any(|line| {
@@ -103,6 +118,74 @@ fn clean_yes_removes_unused_default_images_and_cache_volumes() {
     assert!(log.iter().any(|line| {
         line.starts_with("volume ") && line.contains(&format!("args=rm {UNUSED_VOLUME}"))
     }));
+}
+
+#[test]
+fn clean_locks_scope_removes_only_unused_workspace_lock_files_without_podman() {
+    let harness = Harness::new();
+    let fixture = support::temp_workspace("nested");
+    let lock_path = write_stale_lock(&harness, &fixture.workspace);
+    let invalid_lock = lock_path.parent().unwrap().join("not-a-workspace.lock");
+    fs::write(&invalid_lock, b"ignored").unwrap();
+    harness.write_volumes(&volumes_fixture(&[UNUSED_VOLUME]));
+
+    harness
+        .agentbox_assert(&["clean", "--yes", "--locks"])
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
+            "removed lock file `{}`",
+            lock_path.display()
+        )))
+        .stderr(predicate::str::contains(UNUSED_VOLUME).not())
+        .stderr(predicate::str::contains("not-a-workspace.lock").not());
+
+    assert!(!lock_path.exists(), "unused lock file should be removed");
+    assert!(
+        invalid_lock.exists(),
+        "invalid lock-like file should be ignored"
+    );
+    assert!(
+        harness.read_log().is_empty(),
+        "--locks must not discover or remove Podman resources"
+    );
+}
+
+#[test]
+fn clean_images_scope_does_not_remove_lock_files() {
+    let harness = Harness::new();
+    let fixture = support::temp_workspace("nested");
+    let lock_path = write_stale_lock(&harness, &fixture.workspace);
+
+    harness
+        .agentbox_assert(&["clean", "--yes", "--images"])
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("removed lock file").not());
+
+    assert!(lock_path.exists(), "--images should not remove lock files");
+}
+
+#[test]
+fn clean_skips_lock_files_held_by_another_process() {
+    let harness = Harness::new();
+    let fixture = support::temp_workspace("nested");
+    let mut lock =
+        lock_workspace_in_state_dir(harness.state_home_path(), &fixture.workspace).unwrap();
+    let lock_path = lock.path().to_path_buf();
+    let _guard = lock.guard().unwrap();
+
+    harness
+        .agentbox_assert(&["clean", "--yes", "--locks"])
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
+            "lock file `{}`: locked by another agentbox process",
+            lock_path.display()
+        )))
+        .stderr(predicate::str::contains("removed lock file").not());
+
+    assert!(lock_path.exists(), "held lock file should be skipped");
 }
 
 #[test]
@@ -384,4 +467,11 @@ fn runtime_state(runtime: &str, package: &str, image: &str) -> String {
 "#,
         default_image_context_hash()
     )
+}
+
+fn write_stale_lock(harness: &Harness, workspace: &WorkspaceIdentity) -> std::path::PathBuf {
+    let path = harness.lock_path(workspace);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"stale-lock").unwrap();
+    path
 }

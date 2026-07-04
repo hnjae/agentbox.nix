@@ -192,6 +192,7 @@ fn core_commands_parse_into_expected_variants() {
             yes: false,
             images: false,
             volumes: false,
+            locks: false,
         })
     );
     assert_eq!(
@@ -335,6 +336,7 @@ fn clean_accepts_cleanup_flags() {
                 yes: false,
                 images: false,
                 volumes: false,
+                locks: false,
             },
         ),
         (
@@ -344,6 +346,7 @@ fn clean_accepts_cleanup_flags() {
                 yes: true,
                 images: false,
                 volumes: false,
+                locks: false,
             },
         ),
         (
@@ -353,6 +356,7 @@ fn clean_accepts_cleanup_flags() {
                 yes: false,
                 images: true,
                 volumes: false,
+                locks: false,
             },
         ),
         (
@@ -362,6 +366,17 @@ fn clean_accepts_cleanup_flags() {
                 yes: false,
                 images: false,
                 volumes: true,
+                locks: false,
+            },
+        ),
+        (
+            vec!["agentbox", "clean", "--locks"],
+            CleanArgs {
+                dry_run: false,
+                yes: false,
+                images: false,
+                volumes: false,
+                locks: true,
             },
         ),
     ] {

@@ -345,18 +345,20 @@ fn completion_scripts_offer_stop_candidates_at_every_target_position() {
 fn completion_scripts_offer_clean_flags() {
     let bash = capture_completion_script_shell("bash");
     assert!(bash.contains("clean)"));
-    assert!(bash.contains("--dry-run --yes --images --volumes"));
+    assert!(bash.contains("--dry-run --yes --images --volumes --locks"));
 
     let zsh = capture_completion_script_shell("zsh");
     assert!(zsh.contains("clean)"));
     assert!(zsh.contains("--dry-run[print cleanup candidates without deleting]"));
     assert!(zsh.contains("--images[limit cleanup to default runtime images]"));
     assert!(zsh.contains("--volumes[limit cleanup to workspace cache volumes]"));
+    assert!(zsh.contains("--locks[limit cleanup to workspace lock files]"));
 
     let fish = capture_completion_script_shell("fish");
     assert!(fish.contains("__fish_seen_subcommand_from clean"));
     assert!(fish.contains("-l dry-run"));
     assert!(fish.contains("-l volumes"));
+    assert!(fish.contains("-l locks"));
 }
 
 #[test]
