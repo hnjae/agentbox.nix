@@ -41,6 +41,7 @@ complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l dry-run -d "Pr
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l yes -d "Delete cleanup candidates without prompting"
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l images -d "Limit cleanup to default runtime images"
 complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l volumes -d "Limit cleanup to workspace cache volumes"
+complete -c agentbox -f -n "__fish_seen_subcommand_from clean" -l locks -d "Limit cleanup to workspace lock files"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l runtime -r -a "@RUNTIME_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from run" -l dev-env -r -a "@DEV_ENV_VALUES@"
 complete -c agentbox -f -n "__fish_seen_subcommand_from exec" -l dev-env -r -a "@DEV_ENV_VALUES@"

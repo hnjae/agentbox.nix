@@ -11,6 +11,7 @@ pub(super) struct CleanResource {
 pub(super) enum ResourceKind {
     Image,
     Volume,
+    LockFile,
 }
 
 impl ResourceKind {
@@ -18,6 +19,7 @@ impl ResourceKind {
         match self {
             Self::Image => "image",
             Self::Volume => "volume",
+            Self::LockFile => "lock file",
         }
     }
 }
@@ -29,6 +31,10 @@ impl CleanResource {
 
     pub(super) fn volume(name: impl Into<String>) -> Self {
         Self::new(ResourceKind::Volume, name)
+    }
+
+    pub(super) fn lock_file(name: impl Into<String>) -> Self {
+        Self::new(ResourceKind::LockFile, name)
     }
 
     fn new(kind: ResourceKind, name: impl Into<String>) -> Self {

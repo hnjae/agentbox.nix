@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
+use crate::lock::{WorkspaceLockFile, WorkspaceLockFileStatus};
 use crate::podman::PodmanVolume;
 use crate::runtime::RuntimeKind;
 use crate::workspace::is_agentbox_workspace_resource_name;
@@ -35,6 +37,10 @@ impl CleanPlan {
             add_cache_volume_candidates(&inventory.volumes, &usage, &mut plan);
         }
 
+        if scope.includes(ResourceKind::LockFile) {
+            add_lock_file_candidates(&inventory.lock_files, &mut plan);
+        }
+
         plan
     }
 }
@@ -46,6 +52,10 @@ pub(super) enum CleanCandidate {
         resource: CleanResource,
     },
     CacheVolume {
+        resource: CleanResource,
+    },
+    WorkspaceLockFile {
+        path: PathBuf,
         resource: CleanResource,
     },
 }
@@ -65,9 +75,15 @@ impl CleanCandidate {
         Self::CacheVolume { resource }
     }
 
+    pub(super) fn workspace_lock_file(path: PathBuf, resource: CleanResource) -> Self {
+        Self::WorkspaceLockFile { path, resource }
+    }
+
     pub(super) fn resource(&self) -> &CleanResource {
         match self {
-            Self::DefaultRuntimeImage { resource, .. } | Self::CacheVolume { resource } => resource,
+            Self::DefaultRuntimeImage { resource, .. }
+            | Self::CacheVolume { resource }
+            | Self::WorkspaceLockFile { resource, .. } => resource,
         }
     }
 
@@ -136,6 +152,29 @@ fn add_cache_volume_candidate(name: String, usage: &ResourceUsage, plan: &mut Cl
     );
 }
 
+fn add_lock_file_candidates(candidates: &[WorkspaceLockFileStatus], plan: &mut CleanPlan) {
+    for candidate in candidates {
+        match candidate {
+            WorkspaceLockFileStatus::Available(file) => add_lock_file_candidate(file, plan),
+            WorkspaceLockFileStatus::Locked(file) => plan.skipped.push(SkippedResource {
+                resource: lock_file_resource(file),
+                reason: "locked by another agentbox process".to_string(),
+            }),
+        }
+    }
+}
+
+fn add_lock_file_candidate(file: &WorkspaceLockFile, plan: &mut CleanPlan) {
+    plan.candidates.push(CleanCandidate::workspace_lock_file(
+        file.path().to_path_buf(),
+        lock_file_resource(file),
+    ));
+}
+
+fn lock_file_resource(file: &WorkspaceLockFile) -> CleanResource {
+    CleanResource::lock_file(file.path().display().to_string())
+}
+
 fn add_candidate_or_skip(
     resource: CleanResource,
     usage: &ResourceUsage,
@@ -182,9 +221,11 @@ mod tests {
                 },
             ],
             volumes: vec![volume(USED_VOLUME), volume(UNUSED_VOLUME)],
+            lock_files: Vec::new(),
         };
 
-        let plan = CleanPlan::from_inventory(&CleanScope::from_flags(true, true), &inventory);
+        let plan =
+            CleanPlan::from_inventory(&CleanScope::from_flags(true, true, false), &inventory);
 
         assert_eq!(
             plan.candidates,
@@ -228,7 +269,8 @@ mod tests {
             ..CleanInventory::default()
         };
 
-        let plan = CleanPlan::from_inventory(&CleanScope::from_flags(true, false), &inventory);
+        let plan =
+            CleanPlan::from_inventory(&CleanScope::from_flags(true, false, false), &inventory);
 
         assert_eq!(
             plan.candidates,

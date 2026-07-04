@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::Result;
+use crate::lock::{WorkspaceLockFileStatus, cleanup_lock_files};
 use crate::metadata::{DefaultRuntimeImageMetadata, default_runtime_image_label_filter};
 use crate::podman::{Podman, PodmanContainerInspect, PodmanImage, PodmanVolume};
 use crate::runtime::RuntimeKind;
@@ -15,6 +16,7 @@ pub(super) struct CleanInventory {
     pub(super) containers: Vec<PodmanContainerInspect>,
     pub(super) default_runtime_images: Vec<DefaultRuntimeImageCandidate>,
     pub(super) volumes: Vec<PodmanVolume>,
+    pub(super) lock_files: Vec<WorkspaceLockFileStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +27,12 @@ pub(super) struct DefaultRuntimeImageCandidate {
 
 impl CleanInventory {
     pub(super) fn from_podman(podman: &Podman, scope: &CleanScope) -> Result<Self> {
-        let containers = inspect_all_containers(podman)?;
+        let containers =
+            if scope.includes(ResourceKind::Image) || scope.includes(ResourceKind::Volume) {
+                inspect_all_containers(podman)?
+            } else {
+                Vec::new()
+            };
         let default_runtime_images = if scope.includes(ResourceKind::Image) {
             default_runtime_image_candidates(podman)?
         } else {
@@ -36,11 +43,17 @@ impl CleanInventory {
         } else {
             Vec::new()
         };
+        let lock_files = if scope.includes(ResourceKind::LockFile) {
+            cleanup_lock_files()?
+        } else {
+            Vec::new()
+        };
 
         Ok(Self {
             containers,
             default_runtime_images,
             volumes,
+            lock_files,
         })
     }
 }

@@ -114,7 +114,8 @@ _agentbox() {
         '--dry-run[print cleanup candidates without deleting]' \
         '--yes[delete cleanup candidates without prompting]' \
         '--images[limit cleanup to default runtime images]' \
-        '--volumes[limit cleanup to workspace cache volumes]'
+        '--volumes[limit cleanup to workspace cache volumes]' \
+        '--locks[limit cleanup to workspace lock files]'
       ;;
     runtime)
       if (( CURRENT == 3 )); then

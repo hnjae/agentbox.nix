@@ -38,11 +38,15 @@ pub struct CleanArgs {
     /// Limit cleanup to unused workspace cache volumes.
     #[arg(long)]
     pub volumes: bool,
+
+    /// Limit cleanup to unused workspace lock files.
+    #[arg(long)]
+    pub locks: bool,
 }
 
 pub fn run(args: CleanArgs) -> Result<()> {
     let podman = Podman::new();
-    let scope = CleanScope::from_flags(args.images, args.volumes);
+    let scope = CleanScope::from_flags(args.images, args.volumes, args.locks);
     let plan = build_clean_plan(&podman, scope)?;
 
     if args.dry_run {
@@ -50,12 +54,16 @@ pub fn run(args: CleanArgs) -> Result<()> {
         return Ok(());
     }
 
-    if plan.candidates.is_empty() {
+    if plan.candidates.is_empty() && plan.skipped.is_empty() {
         crate::diagnostic::info("nothing to clean");
         return Ok(());
     }
 
     crate::diagnostic::info(render_plan(&plan));
+    if plan.candidates.is_empty() {
+        return Ok(());
+    }
+
     if !args.yes && !confirm_interactive()? {
         crate::diagnostic::warning("aborted");
         return Ok(());

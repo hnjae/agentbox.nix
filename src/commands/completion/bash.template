@@ -90,7 +90,7 @@ _agentbox() {
             ;;
         clean)
             if [[ "$cur" == --* ]]; then
-                COMPREPLY=( $(compgen -W "--dry-run --yes --images --volumes" -- "$cur") )
+                COMPREPLY=( $(compgen -W "--dry-run --yes --images --volumes --locks" -- "$cur") )
             fi
             ;;
         runtime)

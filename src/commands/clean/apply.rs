@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use crate::lock::{WorkspaceLockFileRemoval, remove_cleanup_lock_file};
 use crate::podman::Podman;
 use crate::{Error, Result};
 
@@ -60,6 +61,14 @@ impl CleanRemoval for PodmanCleanRemoval<'_> {
                 Ok(())
             }
             CleanCandidate::CacheVolume { resource } => self.podman.remove_volume(resource.name()),
+            CleanCandidate::WorkspaceLockFile { path, .. } => {
+                match remove_cleanup_lock_file(path)? {
+                    WorkspaceLockFileRemoval::Removed | WorkspaceLockFileRemoval::Missing => Ok(()),
+                    WorkspaceLockFileRemoval::Locked => {
+                        Err(Error::msg("locked by another agentbox process"))
+                    }
+                }
+            }
         }
     }
 }
