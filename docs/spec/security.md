@@ -2,12 +2,12 @@
 
 ## Security And Isolation
 
-MVP isolation expectations:
+Isolation expectations:
 
 - separate rootless Podman container per transient run, foreground exec, or workspace session
 - explicit workspace mount only for the canonical git root
 - host-provided Nix inputs mounted alongside one Podman-managed cache volume
-- Codex sessions receive the invoking host user's `${HOME}/.codex` directory as a read-write passthrough mount
+- Codex server sessions receive the selected host Codex home as a read-write passthrough mount, and foreground `exec` receives the default host `${HOME}/.codex` passthrough mount
 - OpenCode sessions receive the invoking host user's OpenCode configuration and data directories as read-write passthrough mounts
 - one writable Podman-managed named cache volume at `/home/user`
 - minimal privileges
@@ -23,11 +23,11 @@ Runtime user and bind-mount rules:
 - The Podman-managed runtime cache volume at `/home/user` is writable by the runtime user.
 - Host ownership and permission bits remain authoritative.
 - `agentbox` must not `chown`, `chmod`, remount, or elevate privileges to force access.
-- If the runtime user cannot read or write a required path inside the bind mount, `run`, `start`, `restart`, or `connect` fails clearly with the affected path and the permission problem.
+- If the runtime user cannot read or write a path that `agentbox` requires during container startup, `run`, `exec`, `start`, or `restart` fails clearly with the affected path and the permission problem.
 - `agentbox` must not repair host workspace permissions by mutating the host mount.
 - `agentbox` must not repair host Nix access by mutating host permissions or host configuration.
 
-Out of scope for MVP:
+Unsupported security scope:
 
 - hardened sandbox guarantees beyond normal rootless Podman isolation
 - secret brokering or policy-based filesystem mediation

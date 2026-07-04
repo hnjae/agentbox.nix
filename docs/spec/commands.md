@@ -14,7 +14,7 @@ Global output rules:
 - Clap parse errors and usage text keep Clap's native stderr format. `--help` and `--version` keep Clap's native stdout format.
 - Interactive prompt UI is rendered on stderr without being wrapped as log lines. `connect` runs the runtime host client with inherited stdio and does not wrap the client output as logs.
 
-## `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-client-args>...]`
+## `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-client-args>...]`
 
 `run` launches a transient selected-runtime server container, waits until its local-only attach endpoint is ready, and connects with the selected runtime host client.
 
@@ -37,7 +37,7 @@ Expected behavior:
 7. If more than one matching agentbox container exists, fail as `duplicate` and do not guess which one to use.
 8. If exactly one matching agentbox container exists, fail clearly instead of reusing, replacing, or connecting to it. For a healthy running managed session, suggest `agentbox connect <directory>` or `agentbox stop <directory>`. For a transient `run`, suggest `agentbox stop <id>`.
 9. If none exists, start detached `podman run --detach --rm` with the required mounts, default runtime image, runtime cache volume, canonical target working directory, and local-only published attach endpoint.
-10. Pass `io.agentbox.container_kind=transient-run`, but do not pass the managed-session marker label `io.agentbox.managed=true`.
+10. Pass `io.agentbox.container_kind=transient-run`, but do not pass the managed ownership label `io.agentbox.managed=true`.
 11. Execute the selected runtime server command inside the container: `opencode serve --hostname 0.0.0.0 --port <port>` for OpenCode and `codex --dangerously-bypass-approvals-and-sandbox app-server --listen <endpoint> --ws-auth capability-token --ws-token-sha256 <token-sha256>` for Codex.
 12. With the default `--dev-env auto`, start the runtime server command through the selected development environment wrapper, if one applies. With `--dev-env none`, start the runtime server command directly.
 13. Wait for the published runtime server endpoint to become ready using the selected runtime's health check.
@@ -54,7 +54,7 @@ Progress and diagnostics:
 
 Runtime rules:
 
-- `run` accepts only `opencode` and `codex` in the MVP.
+- `run` accepts only `opencode` and `codex`.
 - `--runtime` selects the runtime for the transient server container and host client when it is present.
 - `--dev-env auto` is the default and enables automatic development environment loading for the runtime server command.
 - `--dev-env none` disables automatic development environment loading for the runtime server command.
@@ -104,7 +104,7 @@ Progress and diagnostics:
 
 Runtime rules:
 
-- `exec` is Codex-only in the MVP and does not accept `--runtime`.
+- `exec` is Codex-only and does not accept `--runtime`.
 - `--dev-env auto` is the default and enables automatic development environment loading for the Codex exec command.
 - `--dev-env none` disables automatic development environment loading for the Codex exec command.
 - `exec` does not accept `--connect` or `-c`; clap rejects those options.
@@ -113,7 +113,7 @@ Runtime rules:
 - `agentbox exec [directory]` with no Codex arguments is valid; Codex owns the resulting no-argument `codex exec` behavior.
 - Codex passthrough options such as `--model` are accepted only after the `--` delimiter. Without the delimiter, clap rejects them as `agentbox exec` options.
 
-## `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [directory] [-- <agent-server-args>...]`
+## `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-server-args>...]`
 
 `start` launches a new workspace session as a detached runtime server.
 
@@ -136,7 +136,7 @@ Expected behavior:
 6. Discover existing managed sessions and transient `run` containers for that canonical git root.
 7. If more than one matching agentbox container exists, fail as `duplicate` and do not guess which one to use.
 8. If exactly one matching agentbox container exists, fail clearly instead of reusing or replacing it. For a healthy running managed session, suggest `agentbox connect <directory>` or `agentbox stop <directory>`. For a transient `run`, suggest `agentbox stop <id>`.
-9. If none exists, record the canonical target directory as the session launch directory and start detached `podman run --rm` with the required labels, including `io.agentbox.container_kind=managed-session`, mounts, default runtime image, local-only published attach endpoint, and launch-directory working directory.
+9. If none exists, record the canonical target directory as the session launch directory and start detached `podman run --detach --rm` with the required labels, including `io.agentbox.managed=true` and `io.agentbox.container_kind=managed-session`, mounts, default runtime image, local-only published attach endpoint, and launch-directory working directory.
 10. Start the selected runtime server for the session, followed by any `<agent-server-args>`, and record those arguments in managed-session metadata. With the default `--dev-env auto`, the server starts through the selected development environment wrapper, if one applies. With `--dev-env none`, the server command starts directly.
 11. Wait until the runtime server endpoint is ready for connection or the container exits.
 12. If `--connect` is absent, report that the discovered attach endpoint is ready and suggest `agentbox connect <directory>`.
@@ -155,7 +155,7 @@ Runtime image wrapper output:
 
 Runtime rules:
 
-- `start` accepts only `opencode` and `codex` in the MVP.
+- `start` accepts only `opencode` and `codex`.
 - `--runtime` selects the runtime for the new session when it is present.
 - `--dev-env auto` is the default and enables automatic development environment loading for the server command.
 - `--dev-env none` disables automatic development environment loading for the server command.
@@ -175,9 +175,9 @@ Runtime rules:
 - `--runtime` does not change session identity.
 - If the host client launched by `start --connect` exits unsuccessfully or cannot be started, `start --connect` exits non-zero and reports that the managed session remains running so the user can retry `agentbox connect <directory>` or stop it with `agentbox stop <directory>`.
 
-## `agentbox restart [--connect|-c] [--dev-env <auto|none>] [target]`
+## `agentbox restart [--connect|-c] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [target]`
 
-`restart` replaces one running managed workspace session for the same canonical git root. It preserves the selected runtime, deterministic container name, stored launch directory, stored agent server arguments, and named runtime cache volume, while re-evaluating the server command's development environment.
+`restart` replaces one running managed workspace session for the same canonical git root. It preserves the selected runtime, deterministic container name, stored launch directory, stored agent server arguments, stored resource limits, and named runtime cache volume, while re-evaluating the server command's development environment.
 
 Optional flags and arguments:
 
@@ -196,7 +196,7 @@ Expected behavior:
 5. If `[target]` is not resolved as a path, treat it as a case-insensitive stable id prefix.
 6. Select exactly one running managed session. A transient `run` container, stopped session, orphaned session, failed session, duplicate session, malformed runtime or launch-directory label, or missing target match is a clear failure and is not restarted.
 7. Lock the selected canonical git root and re-discover the target before any lifecycle mutation. If the selected target is no longer exactly one running managed session, fail before stopping anything.
-8. Read the runtime, stored launch directory, and stored agent server arguments from the existing managed session. The requested target identifies the session only; it does not update the launch directory.
+8. Read the runtime, stored launch directory, stored agent server arguments, and stored resource limits from the existing managed session. The requested target identifies the session only; it does not update the launch directory or stored defaults unless a new resource-limit flag is supplied.
 9. Validate Podman, the recovered runtime, and host-attached Nix prerequisites.
 10. Resolve the development environment from the stored launch directory.
 11. If `--connect` is present, verify that the recovered runtime's host client command is available before stopping the existing container.
@@ -218,7 +218,7 @@ Runtime rules:
 
 - `restart` does not accept `--runtime`; the runtime is recovered from the existing session metadata.
 - `restart` does not accept new agent passthrough arguments. It reuses the stored server arguments from the managed session being replaced.
-- If stored agent server argument metadata is malformed, `restart` fails before stopping the existing session.
+- If stored agent server argument or resource-limit metadata is malformed, `restart` fails before stopping the existing session.
 - `restart` does not accept `--all` or `--force`.
 - `--dev-env auto` is the default and re-evaluates automatic development environment loading for the replacement server command from the stored launch directory.
 - `--dev-env none` disables automatic development environment loading for the replacement server command.
@@ -233,11 +233,11 @@ Image rules:
 - `run`, `start`, and `restart` always use the selected runtime's current default image reference.
 - The default image may be built or reused by `agentbox`; users do not need to supply a build context.
 - The selected runtime's current default image reference is `localhost/agentbox-<runtime>:ctx-<16-hex>`, where `<runtime>` is `opencode` or `codex` and `<16-hex>` is the first 16 lowercase hexadecimal characters of the SHA-256 digest over agentbox's embedded runtime image build context.
-- The default image context hash is deterministic over these embedded image input paths and file contents: `Containerfile`, `bootstrap`, `entrypoint`, `lib/runtime-contract.sh`, and `runtime-packages.nix`. Documentation, developer tooling, and image tests such as `README.md`, `justfile`, and `tests/**` are not image inputs and do not affect the default image reference.
+- The default image context hash is deterministic over agentbox's embedded runtime image build inputs and their contents. Documentation, developer tooling, and image tests are not image inputs and do not affect the default image reference.
 - If the selected runtime is `codex` and the current default image is missing, `run`, `start`, or `restart` resolves the latest `@openai/codex` npm version, builds the Codex default image with that version, and records the version metadata, image reference, and image context hash in agentbox state.
 - If the selected runtime is `opencode` and the current default image is missing, `run`, `start`, or `restart` resolves the latest `opencode-ai` npm version, builds the OpenCode default image with that version, and records the version metadata, image reference, and image context hash in agentbox state.
 - If the selected runtime's default image already exists, `run`, `start`, or `restart` reuses it without checking the npm registry.
-- Existing legacy `localhost/agentbox-opencode:local` and `localhost/agentbox-codex:local` images are not current default image references and do not prevent `run`, `start`, or `restart` from building the current content-hash-tagged image.
+- Image references that do not match the selected runtime's current default image reference do not satisfy the default image contract and do not prevent `run`, `start`, or `restart` from building the current content-hash-tagged image.
 - `agentbox` records the exact default image reference on a running managed `start` or `restart` container so live discovery can report it while the container exists.
 - Default runtime images are not removed by `stop`; image cleanup and image updates are explicit operator actions.
 
@@ -260,7 +260,7 @@ Selection rules:
 
 Image cleanup rules:
 
-- `clean` considers agentbox-owned default runtime images discovered from image labels, including old content-hash-tagged default image references. Legacy pre-release exact image references such as `localhost/agentbox-opencode:local` and `localhost/agentbox-codex:local` are not current default image references and are not selected by `clean` unless they carry the current default-runtime-image labels.
+- `clean` considers agentbox-owned default runtime images discovered from image labels, including old content-hash-tagged default image references. Image names or references alone do not make an image eligible for cleanup unless the image also carries agentbox default-runtime-image ownership labels.
 - A default runtime image candidate is skipped when any Podman container, managed or unmanaged, currently uses that exact image reference.
 - When the current state file for a runtime points to an image that was deleted successfully, the corresponding runtime image metadata file under `$XDG_STATE_HOME/agentbox/runtime` is removed. If state points to a different image that is still present or in use, it is preserved.
 - `clean` does not remove image names by prefix and does not call `podman system prune` or Podman build-cache cleanup.
@@ -305,12 +305,12 @@ Expected behavior:
 5. Otherwise, rebuild the selected default image with the resolved npm version.
 6. Record the installed version, latest seen version, check time, image build time, npm package name, install source, image reference, and image context hash in agentbox state.
 
-For `--all` or `-a`, `runtime update` applies the same behavior to supported runtimes sequentially in supported-runtime order, currently `opencode` then `codex`. If one runtime update fails, later runtimes are not attempted.
+For `--all` or `-a`, `runtime update` applies the same behavior to supported runtimes sequentially in supported-runtime order: `opencode`, then `codex`. If one runtime update fails, later runtimes are not attempted.
 
 Rules:
 
 - The update command does not stop, replace, or mutate running sessions.
-- Runtime image metadata files must include an image context hash; older pre-release state files missing that field are invalid runtime image metadata and are not migrated.
+- Runtime image metadata files must include an image context hash; files missing required fields are invalid runtime image metadata and are replaced only by successful image setup or runtime update.
 - The update command does not write metadata under runtime host state directories such as `~/.codex`, `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`, or `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`.
 - Progress and result messages from `runtime update` are `INFO` logs on stderr. Successful `runtime update` does not write to stdout.
 
@@ -351,7 +351,7 @@ Rules:
 - `connect` does not accept or interpret `--image`.
 - Runtime client passthrough options such as `--no-alt-screen` are accepted only after the `--` delimiter. Without the delimiter, clap rejects them as `agentbox connect` options.
 - `connect` may prompt for a target while still accepting `<agent-client-args>` after `--`.
-- `connect` does not use `podman attach` as the user transport in the MVP.
+- `connect` does not use `podman attach` as the user transport.
 - `connect` does not open a raw shell through `podman exec`.
 - The host client process current working directory is the running session's stored launch directory.
 - The host client process uses the host environment of the `agentbox connect` invocation; `connect` does not re-evaluate `.envrc`, `devenv.nix`, or `flake.nix` from the requested directory or stored launch directory.
@@ -469,7 +469,7 @@ Expected behavior:
 13. Rely on Podman's `--rm` cleanup for container removal after the stop.
 14. Leave the runtime cache volume unmanaged by `stop` so it can be reclaimed later by explicit Podman volume cleanup.
 15. If no `<target>` is present and `--all` is not set, discover stop candidates and prompt on stderr with a fuzzy multi-select list.
-16. The no-target selector includes running, orphaned, duplicate, and failed sessions when a stable id is known, matching stop completion eligibility.
+16. The no-target selector includes running, orphaned, duplicate, and failed managed sessions and transient `run` containers when a stable id is known, matching stop completion eligibility.
 17. If the no-target selector is canceled with Escape, exit non-zero with `selection canceled`.
 18. If the no-target selector is interrupted with Ctrl-C, exit non-zero with `selection interrupted`.
 19. If no `<target>` is present and either stdin or stderr is not a terminal, fail with a clear error that a stop target or `--all` is required in non-interactive use.
@@ -492,7 +492,7 @@ Safety rules:
 - With `--force`, `stop` stops all live agentbox containers that exactly claim the resolved canonical git root, exact stored git-root path, or selected stable id. It still does not stop containers that cannot be matched to that identity.
 - With multiple explicit targets, `stop` may stop sessions for successful targets even when other targets fail.
 - `--force` is not required with `--all`; `--all` already selects every running managed or transient `run` agentbox container.
-- Stable id matching includes failed sessions, but `stop` only locks and stops a matched session when its git-root label is recoverable.
+- Stable id matching includes failed sessions. When a matched session has a recoverable git-root label, `stop` uses that git root for locking; when only a stable id is recoverable, `stop` may stop only exact live matches for that id and must not expand the selection to unrelated containers.
 - `stop` never deletes the user workspace.
 - `stop` never directly removes images or named cache volumes.
 - Stop status and no-op messages are stderr logs. Successful `stop` does not write to stdout.

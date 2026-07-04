@@ -56,7 +56,7 @@ Rules:
 - The mounted runtime cache volume stores Nix cache, evaluation artifacts, the active runtime profile, and other runtime home state that should survive later one-shot runs or detached sessions for the same canonical git root.
 - A bind mount at `/home/user` does not satisfy the runtime cache volume requirement; the mount must be a Podman-managed named volume.
 - The mounted runtime cache volume is owned or remapped so the runtime user can create home and cache files in it, including when a prior session created the volume under a different rootless Podman user namespace mapping.
-- Existing named volumes are reused as-is. `agentbox` does not migrate or restructure volumes created by older releases that mounted only `/home/user/.cache/nix`.
+- Existing named volumes are reused as-is when they satisfy the required `/home/user` named-volume mount contract.
 - The runtime profile default path is `$XDG_STATE_HOME/nix/profile`.
 - If `XDG_STATE_HOME` is unset and `HOME` is set, the runtime falls back to `$HOME/.local/state/nix/profile`.
 - If both `XDG_STATE_HOME` and `HOME` are unavailable, the runtime falls back to `/home/user/.local/state/nix/profile`.
@@ -64,7 +64,7 @@ Rules:
 - Login shells restore the active runtime profile environment without materializing the profile or performing bootstrap validation.
 - After runtime profile activation, `PATH` includes `$XDG_STATE_HOME/nix/profile/bin` and `/nix/var/nix/profiles/default/bin`, `NIX_PROFILES` includes `/nix/var/nix/profiles/default` and `$XDG_STATE_HOME/nix/profile`, and `XDG_DATA_DIRS` includes the matching `share` directories while preserving `/usr/local/share:/usr/share`.
 - Runtime profile activation is idempotent. Re-entering `/entrypoint` or repeatedly sourcing login-shell startup files does not duplicate runtime profile entries in `PATH`, `NIX_PROFILES`, or `XDG_DATA_DIRS`.
-- No other subpath under `/home/user` is required to persist in the MVP unless it is named by a runtime-specific passthrough rule.
+- No other subpath under `/home/user` is required to persist unless it is named by a runtime-specific passthrough rule.
 - `agentbox stop <directory>` does not explicitly delete the runtime cache volume.
 - `agentbox restart <target>` preserves and reuses the named runtime cache volume for the selected managed session.
 - Once no container uses the cache volume, it remains available for explicit reclamation, for example with `podman volume rm <container-name>` or `podman volume prune --all`.
@@ -72,14 +72,16 @@ Rules:
 
 ### Host Git Identity Passthrough
 
-For `run`, `start`, and `restart`, `agentbox` passes the invoking repository's effective host Git identity into the runtime container so Git operations inside the agent environment use the same default author identity as the host repository. `agentbox exec` is a Codex-only one-shot mode and uses a fixed Codex author identity instead.
+For host passthrough rules, the launch repository is the resolved canonical git root for `run`, `start`, and `exec`, and the selected managed session's stored canonical git root for `restart`.
+
+For `run`, `start`, and `restart`, `agentbox` passes the launch repository's effective host Git identity into the runtime container so Git operations inside the agent environment use the same default author identity as the host repository. `agentbox exec` is a Codex-only one-shot mode and uses a fixed Codex author identity instead.
 
 Rules:
 
-- For `run`, `start`, and `restart`, `agentbox` reads only the effective `user.name` and `user.email` Git config values from the host repository during launch preparation.
+- For `run`, `start`, and `restart`, `agentbox` reads only the effective `user.name` and `user.email` Git config values from the launch repository during launch preparation.
 - For `run`, `start`, and `restart`, if either value is unset, that value is not injected.
 - For `run`, `start`, and `restart`, if reading either value fails unexpectedly, `agentbox` prints a warning and continues launching without that value.
-- For `exec`, `agentbox` injects `user.name=Codex` and `user.email=noreply@openai.com` instead of reading those values from the host repository.
+- For `exec`, `agentbox` injects `user.name=Codex` and `user.email=noreply@openai.com` instead of reading those values from the launch repository.
 - Present values are injected with Git's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment variables.
 - For `run`, `start`, `restart`, and `exec`, present Git identity values are also materialized during runtime startup into the runtime home's Git config at `$XDG_CONFIG_HOME/git/config`, falling back to `$HOME/.config/git/config` when `XDG_CONFIG_HOME` is unset or empty.
 - Runtime Git identity materialization uses an `agentbox`-managed include file under the runtime Git config directory. `agentbox` refreshes the managed identity file when an identity is present and removes it when no identity is present, so persisted runtime home volumes do not retain stale managed identity values.
@@ -90,11 +92,11 @@ Rules:
 
 ### Host Git Excludes File Passthrough
 
-For `run`, `start`, `restart`, and `exec`, `agentbox` passes the invoking repository's effective host Git excludes file into the runtime container when that file exists. This makes container Git commands honor the same host ignore patterns without mounting host Git configuration files.
+For `run`, `start`, `restart`, and `exec`, `agentbox` passes the launch repository's effective host Git excludes file into the runtime container when that file exists. This makes container Git commands honor the same host ignore patterns without mounting host Git configuration files.
 
 Rules:
 
-- `agentbox` first reads the repository's effective `core.excludesFile` value with `git -C <git-root> config --path --get core.excludesFile`.
+- `agentbox` first reads the launch repository's effective `core.excludesFile` value with `git -C <git-root> config --path --get core.excludesFile`.
 - If `core.excludesFile` is unset, `agentbox` uses Git's default excludes file path: `${XDG_CONFIG_HOME}/git/ignore` when `XDG_CONFIG_HOME` is set and non-empty, otherwise `${HOME}/.config/git/ignore`.
 - If no source path can be determined, or if the source file does not exist, container launch behavior is unchanged.
 - If the source path exists and is a readable regular file, `agentbox` bind-mounts it read-only at `/run/agentbox/git-ignore` and injects `core.excludesFile=/run/agentbox/git-ignore` with Git's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment variables.
@@ -113,7 +115,7 @@ Rules:
 - If `SSH_AUTH_SOCK` is unset, container launch behavior is unchanged.
 - If `SSH_AUTH_SOCK` is set but does not point to an accessible Unix socket, `agentbox` prints a warning, does not mount it, and continues launching the container.
 - If `SSH_AUTH_SOCK` points to an accessible Unix socket, `agentbox` bind-mounts that socket at `/run/agentbox/ssh-agent.sock` and sets `SSH_AUTH_SOCK=/run/agentbox/ssh-agent.sock` inside the container.
-- `agentbox` reads only the additional effective Git config values needed for SSH commit signing from the host repository: `gpg.format`, `user.signingkey`, and `commit.gpgsign`.
+- `agentbox` reads only the additional effective Git config values needed for SSH commit signing from the launch repository: `gpg.format`, `user.signingkey`, and `commit.gpgsign`.
 - Those Git config values are injected alongside host Git identity passthrough values with Git's `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, and `GIT_CONFIG_VALUE_*` environment variables.
 - Signing-specific Git config values `gpg.format`, `user.signingkey`, and `commit.gpgsign` are injected only when the effective host `gpg.format` is `ssh`; GPG signing configuration is not passed through.
 - `agentbox` does not mount the host Git config files, credential helpers, `~/.ssh`, private keys, or GPG agent sockets for commit signing passthrough.
@@ -121,13 +123,13 @@ Rules:
 - If `user.signingkey` is a public key file path, `agentbox` reads the public key file and passes the key literal instead of the path.
 - If `user.signingkey` is a private key path, `agentbox` does not read the private key. If a sibling `<path>.pub` file exists and is readable, `agentbox` reads that public key and passes the key literal instead.
 - `agentbox` does not verify that the configured signing key is currently loaded in the SSH agent. Git and ssh-agent own the final signing error if the agent cannot sign.
-- GPG commit signing passthrough is outside the MVP scope.
+- GPG commit signing passthrough is unsupported.
 
 ### Git SSH Remote Host Verification
 
-When `run`, `start`, `restart`, or `exec` launches a container with a usable host SSH agent socket, `agentbox` also prepares SSH host-key verification for Git SSH remotes in the current repository. This supports SSH remote authentication without mounting the host user's SSH directory, private keys, full Git configuration, or complete known_hosts files into the container.
+When `run`, `start`, `restart`, or `exec` launches a container with a usable host SSH agent socket, `agentbox` also prepares SSH host-key verification for Git SSH remotes in the launch repository. This supports SSH remote authentication without mounting the host user's SSH directory, private keys, full Git configuration, or complete known_hosts files into the container.
 
-The user may provide additional trusted host-key lines in strict JSON at `${XDG_CONFIG_HOME}/agentbox/config.json`, or at `${HOME}/.config/agentbox/config.json` when `XDG_CONFIG_HOME` is unset. The repository root `config.sample.json`, also installed at `share/doc/agentbox/config.sample.json`, shows the supported configuration fields.
+The user may provide additional trusted host-key lines in strict JSON at `${XDG_CONFIG_HOME}/agentbox/config.json`, or at `${HOME}/.config/agentbox/config.json` when `XDG_CONFIG_HOME` is unset. The sample installed at `share/doc/agentbox/config.sample.json` shows the supported configuration fields.
 
 ``` json
 {
@@ -148,14 +150,14 @@ Rules:
 - If the config path cannot be determined, `agentbox` prints a warning and continues with an empty config.
 - Config JSON is strict. Parse errors, unknown top-level fields, a non-`knownHosts` or non-`defaultResourceLimits` schema, non-string `knownHosts` entries, blank entries, multiline entries, or invalid resource limits make the config incompatible.
 - When config is incompatible, `agentbox` renames it to `config.json.bak.YYYYMMDDTHHMMSSZ` using UTC. If that backup path already exists, `agentbox` appends `.1`, `.2`, and so on until it finds an unused name. The incompatible config is then ignored for the launch.
-- `agentbox` detects SSH Git remote hosts from the current repository's configured remotes. SCP-like URLs such as `git@github.com:owner/repo.git`, `ssh://` URLs, and `git+ssh://` URLs are considered SSH remotes. HTTPS remotes and local paths are ignored.
+- `agentbox` detects SSH Git remote hosts from the launch repository's configured remotes. SCP-like URLs such as `git@github.com:owner/repo.git`, `ssh://` URLs, and `git+ssh://` URLs are considered SSH remotes. HTTPS remotes and local paths are ignored.
 - For each detected SSH remote host, `agentbox` runs `ssh -G <host>` to resolve the host's OpenSSH configuration. Host known_hosts lookup uses the resolved `hostname`, `port`, `hostkeyalias`, `userknownhostsfile`, and `globalknownhostsfile` values.
 - If `ssh -G <host>` is unavailable or fails, host known_hosts lookup falls back to the detected SSH remote host and the invoking user's `$HOME/.ssh/known_hosts` and `$HOME/.ssh/known_hosts2` files.
 - Host known_hosts lookup uses `ssh-keygen -F <host> -f <file>` so hashed known_hosts entries can match. Missing `ssh-keygen`, missing known_hosts files, no match, or unexpected lookup failures are non-fatal.
 - If no known_hosts entry is found for a detected SSH remote host, `agentbox` prints a warning naming that host and continues launching.
 - `agentbox` combines exact lines returned from matching host known_hosts lookups with config `knownHosts` entries, deduplicates exact duplicate lines, and writes the result to a temporary host file for the launch.
 - If there is at least one known_hosts line, that temporary file is bind-mounted read-only at `/run/agentbox/known_hosts`, and the container receives `GIT_SSH_COMMAND=ssh -o UserKnownHostsFile=/run/agentbox/known_hosts -o StrictHostKeyChecking=yes`.
-- The temporary known_hosts file remains alive until the corresponding Podman `run` invocation has completed.
+- The mounted `/run/agentbox/known_hosts` file contains the combined known_hosts lines for the lifetime of the container process that receives `GIT_SSH_COMMAND`.
 - `agentbox` does not embed public keys for hosted Git providers, run `ssh-keyscan`, automatically trust remote hosts on first use, write known_hosts data to agentbox state, write known_hosts data under `/home/user`, modify the host user's known_hosts files, or mount the host user's `~/.ssh` directory by default.
 
 ### Codex Host Configuration Passthrough
@@ -206,8 +208,8 @@ Rules:
 - When `start` launches a session, the server environment is fixed by the launch directory and development environment selection used for that `start`.
 - When `restart` replaces a session, the server environment is recomputed from the stored launch directory and selected `--dev-env` mode.
 - `connect` to an already-running session does not reevaluate or replace the server environment.
-- The MVP does not persist development environment selection or state for running-session compatibility checks.
-- The MVP does not compare a different requested connect directory against the earlier `start` development environment context for that running session.
+- `agentbox` does not persist development environment selection or state for running-session compatibility checks.
+- `agentbox` does not compare a different requested connect directory against the earlier `start` development environment context for that running session.
 
 `direnv` selection:
 
@@ -264,20 +266,20 @@ Endpoint rules:
 
 ### Host-Attached Nix Model
 
-The OpenCode and Codex runtimes in the MVP use host-attached Nix support inside the container alongside a Podman-managed named Nix cache volume.
+The OpenCode and Codex runtimes use host-attached Nix support inside the container alongside a Podman-managed named Nix cache volume.
 
 Rules:
 
 - `/nix` is mounted into the container so the host Nix store and nix-daemon socket are available.
 - `NIX_REMOTE=daemon` and the daemon socket at `/nix/var/nix/daemon-socket/socket` are part of the runtime contract.
-- A host `nix` client is available in `PATH`, commonly mounted at `/usr/local/bin/nix`.
+- A host-compatible `nix` client is available in `PATH` inside the runtime.
 - `/etc/nix` is mounted so host configuration and registry inheritance are visible inside the container.
 - `/etc/static/nix` is mounted only when needed because `/etc/nix` resolves there on the host model.
 - If a file under `/etc/nix`, such as `/etc/nix/nix.custom.conf`, points into `/etc/static/nix`, `run`, `start`, or `restart` treats `/etc/static/nix` as needed even when that static file ultimately resolves into `/nix/store`.
 - Runtime profile state lives under `$XDG_STATE_HOME/nix/profile`, with fallback to `$HOME/.local/state/nix/profile` or `/home/user/.local/state/nix/profile` when needed.
 - The Codex default image installs Codex from npm package `@openai/codex` at the version resolved by `agentbox` for that image build.
 - The OpenCode default image installs OpenCode from npm package `opencode-ai` at the version resolved by `agentbox` for that image build.
-- The runtime image provides its own CA bundle. Host SSL trust-store mounts are out of scope for the MVP.
+- The runtime image provides its own CA bundle. Host SSL trust-store mounts are unsupported.
 - If a host-attached Nix prerequisite is missing, `run`, `start`, or `restart` fails clearly and does not attempt to synthesize a bundled Nix installation.
 - If the selected runtime host client command is missing, `run` fails clearly before starting a transient container.
 - If `restart --connect` is selected and the selected runtime host client command is missing, `restart` fails before stopping the old container.

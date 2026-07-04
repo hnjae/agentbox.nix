@@ -15,7 +15,7 @@ Required behavior:
 - `stop` and `health` candidate values are stable ids.
 - `stop` completion includes running, orphaned, duplicate, and failed sessions and transient `run` containers when a stable id is known.
 - `stop` completion offers stable id candidates at every target position, not only the first target position.
-- `health` completion includes sessions when a stable id is known.
+- `health` completion includes running managed sessions when a stable id is known.
 - Candidate descriptions include root, runtime, and status when the shell supports descriptions.
 - Eligible live sessions are reflected immediately at tab completion time.
 - `fzf-tab`-style frontends work automatically because they consume normal shell completion results.
@@ -28,6 +28,6 @@ Required package output paths:
 - `share/zsh/site-functions/_agentbox`
 - `share/fish/vendor_completions.d/agentbox.fish`
 - `share/doc/agentbox/config.sample.json`
-- `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`, `share/man/man1/agentbox-start.1`, `share/man/man1/agentbox-restart.1`, `share/man/man1/agentbox-connect.1`, `share/man/man1/agentbox-ps.1`, `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`, `share/man/man1/agentbox-clean.1`, `share/man/man1/agentbox-runtime.1`, and `share/man/man1/agentbox-completion.1`, or matching `.gz` files when the Nix fixup phase compresses manual pages
+- `share/man/man1/agentbox.1`, `share/man/man1/agentbox-run.1`, `share/man/man1/agentbox-exec.1`, `share/man/man1/agentbox-start.1`, `share/man/man1/agentbox-restart.1`, `share/man/man1/agentbox-connect.1`, `share/man/man1/agentbox-ps.1`, `share/man/man1/agentbox-health.1`, `share/man/man1/agentbox-stop.1`, `share/man/man1/agentbox-clean.1`, `share/man/man1/agentbox-runtime.1`, and `share/man/man1/agentbox-completion.1`, or matching `.gz` manual pages when the package output compresses manual pages
 
 `nix build '.#default'` must produce those files in its result path.

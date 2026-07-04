@@ -2,7 +2,7 @@
 
 This directory contains user-visible CLI behavior and operator-visible runtime state for the `agentbox` CLI, installed package, managed Podman objects, and filesystem effects. It excludes Rust module structure and private implementation details.
 
-- [Overview](overview.md): product summary, supported environments, required tools, configuration, resource limits, and MVP scope.
+- [Overview](overview.md): product summary, supported environments, required tools, configuration, resource limits, and supported or unsupported scope.
 - [Workspace Identity](workspace-identity.md): git-root resolution, session identity, deterministic naming, visible Podman state, and ownership labels.
 - [Commands](commands.md): global CLI rules and command behavior for `run`, `exec`, `start`, `restart`, `clean`, `runtime update`, `connect`, `ps`, `health`, and `stop`.
 - [Installed Assets](installed-assets.md): shell completion behavior and installed manual/completion asset paths.

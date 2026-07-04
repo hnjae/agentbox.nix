@@ -6,12 +6,13 @@ This document specifies user-visible CLI behavior and operator-visible runtime s
 
 `agentbox` is a Rust CLI for running code agents inside isolated Podman containers.
 
-The MVP is workspace-centric:
+The supported command surface is workspace-centric:
 
 - `agentbox run [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-client-args>...]`
 - `agentbox exec [--dev-env <auto|none>] [directory] [-- <codex-exec-args>...]`
 - `agentbox start [--connect|-c] [--runtime <opencode|codex>] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [directory] [-- <agent-server-args>...]`
-- `agentbox runtime update <opencode|codex>`
+- `agentbox restart [--connect|-c] [--dev-env <auto|none>] [--cpus <cpus>] [--memory <memory>] [target]`
+- `agentbox runtime update <opencode|codex|--all|-a>`
 - `agentbox connect [directory] [-- <agent-client-args>...]`
 - `agentbox ps`
 - `agentbox health`
@@ -32,7 +33,7 @@ Foreground `exec`, transient `run`, and managed containers use Podman's `--rm` c
 
 If a matching managed session exists, `run`, `exec`, and `start` fail instead of reusing, replacing, or mutating it. If a matching transient `run` exists, `run` and `start` fail before creating another container and suggest `agentbox stop <id>`.
 
-MVP runtime support includes OpenCode and Codex.
+Supported runtimes are OpenCode and Codex.
 
 ## Supported Environment And Limits
 
@@ -49,16 +50,16 @@ Always-required host tools:
 
 Conditionally required host tools:
 
-- the selected runtime host client command for `run`, and the running session's runtime host client command for `connect` and `start --connect`
-- `npm` when `agentbox` must resolve the latest runtime npm package version for initial default image creation, a default runtime image rebuild after the embedded image build context changes, or `agentbox runtime update <runtime>`
+- the selected runtime host client command for `run` and `start --connect`, and the recovered runtime host client command for `connect` and `restart --connect`
+- `npm` when `agentbox` must resolve the latest runtime npm package version for initial default image creation, a default runtime image rebuild after the embedded image build context changes, or `agentbox runtime update`
 
-User configuration is read from `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json` as strict JSON. Supported top-level fields are `knownHosts` and `defaultResourceLimits`; both fields are optional and unknown fields are incompatible. The repository root `config.sample.json`, also installed at `share/doc/agentbox/config.sample.json`, is the reference sample for supported fields. `knownHosts` is an array of single-line SSH known-host entries. `defaultResourceLimits` may contain `cpus` and `memory` defaults for server containers launched by `run`, `start`, and `restart`. Invalid config is warned about, moved aside to a timestamped `config.json.bak...` path when possible, and ignored for the current invocation.
+User configuration is read from `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json` as strict JSON. Supported top-level fields are `knownHosts` and `defaultResourceLimits`; both fields are optional and unknown fields are incompatible. The sample installed at `share/doc/agentbox/config.sample.json` is the reference sample for supported fields. `knownHosts` is an array of single-line SSH known-host entries. `defaultResourceLimits` may contain `cpus` and `memory` defaults for server containers launched by `run`, `start`, and `restart`. Invalid config is warned about, moved aside to a timestamped `config.json.bak...` path when possible, and ignored for the current invocation.
 
-Server container CPU and memory limits use Podman's `--cpus` and `--memory` options. `cpus` is a non-negative decimal CPU count, and `0` means unlimited. `memory` uses Podman's `<number>[b|k|m|g]` memory format, and `0` means unlimited. Limits resolve independently. For `run` and `start`, each CLI limit overrides the corresponding config default, then falls back to unlimited. For `restart`, each CLI limit overrides the corresponding stored managed-session limit, then the config default for older unlabeled sessions, then unlimited.
+Server container CPU and memory limits use Podman's `--cpus` and `--memory` options. `cpus` is a non-negative decimal CPU count, and `0` means unlimited. `memory` uses Podman's `<number>[b|k|m|g]` memory format, and `0` means unlimited. Limits resolve independently. For `run` and `start`, each CLI limit overrides the corresponding config default, then falls back to unlimited. For `restart`, each CLI limit overrides the corresponding stored managed-session limit; missing or malformed stored resource-limit metadata is invalid managed-session metadata.
 
-For `run`, `exec`, `start`, and `connect`, a provided directory must resolve to an existing directory inside a git repository. For `run`, `exec`, and `start`, omitting the directory is equivalent to passing `.`. A non-git target fails clearly; the MVP does not create ad-hoc non-git sessions. `stop` normally follows the same resolution rules, but it may also accept an exact stored git-root absolute path string for a recoverable session whose stored path no longer exists.
+For `run`, `exec`, `start`, and `connect`, a provided directory must resolve to an existing directory inside a git repository. For `run`, `exec`, and `start`, omitting the directory is equivalent to passing `.`. A non-git target fails clearly; `agentbox` does not create ad-hoc non-git sessions. `stop` normally follows the same resolution rules, but it may also accept an exact stored git-root absolute path string for a recoverable session whose stored path no longer exists.
 
-Out of scope for the MVP:
+Unsupported scope:
 
 - macOS or Windows support
 - more than one valid managed session for the same canonical git root

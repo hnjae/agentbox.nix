@@ -52,8 +52,8 @@ Example shape:
 
 Managed containers are visible through Podman while they are running. They carry Podman labels that identify at least:
 
-- that the container is managed by `agentbox`
-- that the container kind is `managed-session`
+- `io.agentbox.managed=true`
+- `io.agentbox.container_kind=managed-session`
 - the metadata schema version
 - the canonical git root
 - a stable git-root identity token
@@ -69,7 +69,7 @@ Managed containers are visible through Podman while they are running. They carry
 
 `agentbox` discovers sessions from live Podman state. It does not require a separate host-side session database.
 
-Transient `run` containers are not managed containers. They use the workspace's deterministic runtime cache volume name and publish a local-only attach endpoint for the matching host client. They omit the managed-session marker label, but carry `io.agentbox.container_kind=transient-run` plus canonical git root, stable git-root identity token, selected runtime, default runtime image reference, launch directory, logical name, attach endpoint scheme, and runtime server port/listen address. `run` client arguments are not recorded on transient containers. `ps` and `stop` discover transient `run` containers; `connect` and `health` do not.
+Transient `run` containers are not managed containers. They use the workspace's deterministic runtime cache volume name and publish a local-only attach endpoint for the matching host client. They omit the managed ownership label `io.agentbox.managed=true`, but carry `io.agentbox.container_kind=transient-run` plus canonical git root, stable git-root identity token, selected runtime, default runtime image reference, launch directory, logical name, attach endpoint scheme, and runtime server port/listen address. `run` client arguments are not recorded on transient containers. `ps` and `stop` discover transient `run` containers; `connect` and `health` do not.
 
 `agentbox` treats a live container as agentbox-owned only when it carries either `io.agentbox.managed=true` or `io.agentbox.container_kind=transient-run`. Image labels, image references, and container name patterns alone do not prove ownership.
 
