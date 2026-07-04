@@ -365,6 +365,7 @@ impl RuntimeAttachSpec {
 }
 
 impl RuntimeKind {
+    #[allow(clippy::too_many_arguments)]
     pub fn run_spec(
         self,
         mode: RuntimeRunMode,
@@ -390,6 +391,7 @@ impl RuntimeKind {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_spec(
         self,
         mode: RuntimeRunMode,
