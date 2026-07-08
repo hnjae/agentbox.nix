@@ -62,7 +62,9 @@ fn clean_requires_confirmation_when_stdin_is_not_a_tty() {
         .failure()
         .stderr(predicate::str::contains(
             "agentbox clean requires --yes or --dry-run when stdin or stderr is not a TTY",
-        ));
+        ))
+        .stderr(predicate::str::contains("cleanup candidates").not())
+        .stderr(predicate::str::contains(UNUSED_VOLUME).not());
 
     let log = harness.read_log();
     assert!(
