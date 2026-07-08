@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use clap::Args;
+use std::io::{self, Write};
 
 use crate::Result;
 use crate::podman::Podman;
@@ -20,6 +21,9 @@ mod render;
 mod resource;
 mod scope;
 mod usage;
+
+const NON_TTY_ERROR: &str =
+    "agentbox clean requires --yes or --dry-run when stdin or stderr is not a TTY";
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct CleanArgs {
@@ -59,12 +63,21 @@ pub fn run(args: CleanArgs) -> Result<()> {
         return Ok(());
     }
 
-    crate::diagnostic::info(render_plan(&plan));
+    if args.yes || plan.candidates.is_empty() {
+        crate::diagnostic::info(render_plan(&plan));
+    }
+
     if plan.candidates.is_empty() {
         return Ok(());
     }
 
-    if !args.yes && !confirm_interactive()? {
+    if args.yes {
+        return apply_clean_plan(&podman, &plan);
+    }
+
+    prompt::require_interactive_terminal(NON_TTY_ERROR)?;
+    render_prompt_context(&plan)?;
+    if !confirm_interactive()? {
         crate::diagnostic::warning("aborted");
         return Ok(());
     }
@@ -78,10 +91,13 @@ fn build_clean_plan(podman: &Podman, scope: CleanScope) -> Result<CleanPlan> {
     Ok(CleanPlan::from_inventory(&scope, &inventory))
 }
 
+fn render_prompt_context(plan: &CleanPlan) -> Result<()> {
+    let mut stderr = io::stderr().lock();
+    stderr.write_all(render_plan(plan).as_bytes())?;
+    stderr.flush()?;
+    Ok(())
+}
+
 fn confirm_interactive() -> Result<bool> {
-    prompt::confirm(
-        "Proceed?",
-        false,
-        "agentbox clean requires --yes or --dry-run when stdin or stderr is not a TTY",
-    )
+    prompt::confirm("Proceed?", false, NON_TTY_ERROR)
 }
