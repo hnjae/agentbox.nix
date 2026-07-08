@@ -41,11 +41,11 @@ Confirmation and output rules:
 - If resources are skipped but no resources are cleanup candidates, `clean` emits the skip reasons on stderr and exits successfully without prompting.
 - With `--dry-run`, `clean` emits cleanup candidates and skip reasons as `INFO` logs on stderr, deletes nothing, and exits successfully.
 - With `--yes`, `clean` deletes cleanup candidates without prompting.
-- Without `--dry-run` or `--yes`, `clean` renders an interactive confirmation prompt on stderr only when stdin and stderr are terminals. The default answer is No. Case-insensitive `y` or `yes` approves cleanup; `n`, `no`, an empty response, or prompt cancellation emits a `WARNING` log `aborted` on stderr and exits successfully.
+- Without `--dry-run` or `--yes`, `clean` renders cleanup candidates and skip reasons as prompt context followed by an interactive confirmation prompt on stderr only when stdin and stderr are terminals. The prompt context is not wrapped as log lines. The default answer is No. Case-insensitive `y` or `yes` approves cleanup; `n`, `no`, an empty response, or prompt cancellation emits a `WARNING` log `aborted` on stderr and exits successfully.
 - Interrupting the confirmation prompt with Ctrl-C exits non-zero with `confirmation interrupted`.
 - When stdin or stderr is not a TTY, `clean` fails unless `--yes` or `--dry-run` is set.
 - If deletion of one candidate fails, `clean` continues deleting the remaining candidates, then exits non-zero with a summary of failed resources.
-- Cleanup candidate, skip, deletion, abort, and no-op messages are stderr logs. Successful `clean` does not write to stdout.
+- Cleanup candidate and skip messages are stderr logs for `--dry-run`, `--yes`, skipped-only, and no-op reporting paths; in the interactive confirmation path, cleanup candidates and skip reasons are prompt context instead. Deletion, abort, and no-op messages are stderr logs. Successful `clean` does not write to stdout.
 
 Safety rules:
 

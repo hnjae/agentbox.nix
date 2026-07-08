@@ -12,4 +12,4 @@ Global output rules:
 - Log severities are `ERR`, `WARNING`, `INFO`, and `DEBUG`.
 - ANSI color is used only when stderr is a TTY and `NO_COLOR` is not set. Timestamps and `DEBUG` labels are bright black, `ERR` labels are red, `WARNING` labels are yellow, and `INFO` labels are blue. In the `selected development environment` info log, the selected provider name or `none` is bold bright cyan.
 - Clap parse errors and usage text keep Clap's native stderr format. `--help` and `--version` keep Clap's native stdout format.
-- Interactive prompt UI is rendered on stderr without being wrapped as log lines. `connect` runs the runtime host client with inherited stdio and does not wrap the client output as logs.
+- Interactive prompt UI, including context text rendered specifically for a prompt, is rendered on stderr without being wrapped as log lines. `connect` runs the runtime host client with inherited stdio and does not wrap the client output as logs.
