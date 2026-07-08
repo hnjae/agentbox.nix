@@ -12,13 +12,13 @@ Valid lifecycle behavior:
 - `stop` stops the container and relies on the container's `--rm` run option for container cleanup.
 - Concurrent lifecycle operations for the same canonical git root do not leave more than one valid agentbox runtime-server container or ambiguous cleanup outcome.
 
-Default runtime image lifecycle is separate from managed sessions. When a foreground `exec` exits, when a transient `run` container is stopped, when a managed runtime server exits, when `agentbox stop` stops a managed session or transient `run` container, or when `agentbox restart` stops the old managed session, Podman removes the container but keeps the default runtime image. Current default runtime images are tagged by embedded build-context content hash. Runtime image package updates happen through `agentbox runtime update <opencode|codex|--all|-a>`, and unused agentbox-owned default runtime images can be removed through `agentbox clean`; `stop` does not remove or rebuild images.
+Default runtime image lifecycle is separate from managed sessions. When a foreground `exec` exits, when a transient `run` container is stopped, when a managed runtime server exits, when `agentbox stop` stops a managed session or transient `run` container, or when `agentbox restart` stops the old managed session, Podman removes the container but keeps the default runtime image. Default runtime images are tagged by embedded build-context content hash. Runtime image package updates happen through `agentbox runtime update <opencode|codex|--all|-a>`, and unused agentbox-owned default runtime images can be removed through `agentbox clean`; `stop` does not remove or rebuild images.
 
 Named runtime cache volume lifecycle remains separate. Transient `run`, foreground `exec`, `agentbox stop`, and `agentbox restart` leave the workspace cache volume intact so later one-shot runs or detached sessions can reuse it. Volume reclamation is explicit through `agentbox clean` or direct Podman commands.
 
 Required drift behavior:
 
-- Duplicate agentbox containers for one git root: mark the resources as `duplicate`, fail `run`, `start`, and `restart`, fail `connect` when duplicate managed sessions exist, and do not guess which container to use. `stop --force` may stop all duplicate agentbox containers that exactly claim the resolved canonical git root, exact stored git-root path, or selected stable id.
+- Duplicate agentbox containers for one git root: mark the resources as `duplicate`, fail `run`, `start`, `restart`, and `connect`, and do not guess which container to use. Duplicate detection includes managed sessions and transient `run` containers that claim the same git-root identity. `stop --force` may stop all duplicate agentbox containers that exactly claim the resolved canonical git root, exact stored git-root path, or selected stable id.
 - Missing or malformed agentbox-container metadata: mark the resource as `failed` and require explicit cleanup or recreation before it can be used again.
 - Missing runtime cache volume mount for an existing session, including a bind mount where the named volume is expected: fail clearly and require explicit container recreation.
 - Missing or inconsistent attach endpoint metadata or published port data: mark the session as `failed` and require explicit cleanup or recreation before the session can be connected.
@@ -53,8 +53,8 @@ Required error cases:
 - connect failed
 - missing or inconsistent attach endpoint metadata
 - missing published attach port
-- duplicate managed containers for one git root
-- `run` or `start` called for a git root that already has a managed session
+- duplicate agentbox containers for one git root
+- `run` or `start` called for a git root that already has a managed session or transient `run` container
 - `restart` target does not resolve to exactly one running managed session
 - `restart` target resolves to a transient `run`, stopped session, failed session, orphaned session, duplicate session, malformed runtime label, or malformed launch-directory label
 - name conflict with a non-matching Podman object

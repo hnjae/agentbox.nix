@@ -34,6 +34,7 @@ Name contract:
 
 - Container names use the prefix `agentbox-`.
 - The final name includes a readable suffix derived from the canonical git root.
+- The final name ends with `-<12 hex>`, where `<12 hex>` is the public stable id derived from the canonical git root.
 - Overlong paths preserve the rightmost path segment characters, not the leftmost prefix characters.
 - The same canonical git-root path always yields the same container name.
 - Runtime is not part of identity because only one session per repository is allowed.
@@ -56,7 +57,7 @@ Managed containers are visible through Podman while they are running. They carry
 - `io.agentbox.container_kind=managed-session`
 - the metadata schema version
 - the canonical git root
-- a stable git-root identity token
+- `io.agentbox.git_root_hash`, a stable 12-lowercase-hex git-root identity token used as the public session id
 - the selected runtime
 - the default runtime image reference used for the session
 - the canonical session launch directory
@@ -69,7 +70,7 @@ Managed containers are visible through Podman while they are running. They carry
 
 `agentbox` discovers sessions from live Podman state. It does not require a separate host-side session database.
 
-Transient `run` containers are not managed containers. They use the workspace's deterministic runtime cache volume name and publish a local-only attach endpoint for the matching host client. They omit the managed ownership label `io.agentbox.managed=true`, but carry `io.agentbox.container_kind=transient-run` plus canonical git root, stable git-root identity token, selected runtime, default runtime image reference, launch directory, logical name, attach endpoint scheme, and runtime server port/listen address. `run` client arguments are not recorded on transient containers. `ps` and `stop` discover transient `run` containers; `connect` and `health` do not.
+Transient `run` containers are not managed containers. They use the workspace's deterministic runtime cache volume name and publish a local-only attach endpoint for the matching host client. They omit the managed ownership label `io.agentbox.managed=true`, but carry `io.agentbox.container_kind=transient-run` plus canonical git root, stable git-root identity token, selected runtime, default runtime image reference, launch directory, logical name, attach endpoint scheme, and runtime server port/listen address. `run` client arguments are not recorded on transient containers. `ps` and `stop` discover transient `run` containers; `connect` and `health` do not. A transient `run` container still participates in duplicate detection for its git-root identity.
 
 `agentbox` treats a live container as agentbox-owned only when it carries either `io.agentbox.managed=true` or `io.agentbox.container_kind=transient-run`. Image labels, image references, and container name patterns alone do not prove ownership.
 

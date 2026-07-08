@@ -31,7 +31,7 @@ The supported command surface is workspace-centric:
 
 Foreground `exec`, transient `run`, and managed containers use Podman's `--rm` cleanup flag. Podman removes stopped containers after foreground exit, transient stop, managed server exit, `agentbox stop`, or the stop phase of `agentbox restart`. Default runtime images and named runtime cache volumes remain for explicit cleanup or update.
 
-If a matching managed session exists, `run`, `exec`, and `start` fail instead of reusing, replacing, or mutating it. If a matching transient `run` exists, `run` and `start` fail before creating another container and suggest `agentbox stop <id>`.
+If a matching managed session exists, `run`, `exec`, and `start` fail instead of reusing, replacing, or mutating it. If a matching transient `run` exists, `run` and `start` fail before creating another container and suggest `agentbox stop <id>`. A managed session and a transient `run` that claim the same workspace create duplicate runtime-server state; commands that require a single managed session fail until the duplicate state is cleaned up.
 
 Supported runtimes are OpenCode and Codex.
 
@@ -46,14 +46,14 @@ Always-required host tools:
 
 - Podman
 - Git
-- a host `nix` client and nix-daemon socket compatible with the host-attached Nix model described below
+- a host `nix` client and nix-daemon socket compatible with the host-attached Nix model in [Host-Attached Nix](host-attached-nix.md)
 
 Conditionally required host tools:
 
 - the selected runtime host client command for `run` and `start --connect`, and the recovered runtime host client command for `connect` and `restart --connect`
 - `npm` when `agentbox` must resolve the latest runtime npm package version for initial default image creation, a default runtime image rebuild after the embedded image build context changes, or `agentbox runtime update`
 
-User configuration is read from `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json` as strict JSON. Supported top-level fields are `knownHosts` and `defaultResourceLimits`; both fields are optional and unknown fields are incompatible. The sample installed at `share/doc/agentbox/config.sample.json` is the reference sample for supported fields. `knownHosts` is an array of single-line SSH known-host entries. `defaultResourceLimits` may contain `cpus` and `memory` defaults for server containers launched by `run`, `start`, and `restart`. Invalid config is warned about, moved aside to a timestamped `config.json.bak...` path when possible, and ignored for the current invocation.
+User configuration is read from `${XDG_CONFIG_HOME:-$HOME/.config}/agentbox/config.json` as strict JSON. If the config file is missing, it is treated as empty. If the config path cannot be determined, `agentbox` warns and continues with empty config. Supported top-level fields are `knownHosts` and `defaultResourceLimits`; both fields are optional and unknown fields are incompatible. The sample installed at `share/doc/agentbox/config.sample.json` is the reference sample for supported fields. `knownHosts` is an array of nonblank single-line SSH known-host entries. `defaultResourceLimits` may contain `cpus` and `memory` defaults for server containers launched by `run`, `start`, and `restart`. Parse errors, wrong field types, blank or multiline `knownHosts` entries, invalid resource limits, and unknown fields make the config incompatible. Incompatible config is warned about, moved aside to `config.json.bak.YYYYMMDDTHHMMSSZ` using UTC when possible, with `.1`, `.2`, and later suffixes used to avoid backup-name collisions, and ignored for the current invocation.
 
 Server container CPU and memory limits use Podman's `--cpus` and `--memory` options. `cpus` is a non-negative decimal CPU count, and `0` means unlimited. `memory` uses Podman's `<number>[b|k|m|g]` memory format, and `0` means unlimited. Limits resolve independently. For `run` and `start`, each CLI limit overrides the corresponding config default, then falls back to unlimited. For `restart`, each CLI limit overrides the corresponding stored managed-session limit; missing or malformed stored resource-limit metadata is invalid managed-session metadata.
 
