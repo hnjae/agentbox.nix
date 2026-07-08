@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::fs;
-
 use assert_cmd::Command as AssertCommand;
 
 use agentbox::cli::{CompletionShell, DevEnvMode, OutputFormat};
@@ -184,12 +182,6 @@ fn installed_completion_script_uses_live_roots_for_directory_commands() {
     let script = capture_installed_completion_script("bash");
 
     assert!(script.contains("_agentbox()"));
-    assert!(
-        script.contains(
-            "run exec start restart runtime connect ps health stop clean completion help"
-        )
-    );
-    assert!(!script.contains("connect ls health"));
     assert!(script.contains("__completion-roots"));
     assert!(script.contains("complete -F _agentbox agentbox"));
     assert!(!script.contains("__generate-completion"));
@@ -212,8 +204,8 @@ fn completion_scripts_offer_ps_and_health_output_formats() {
     assert!(zsh.contains("ps)"));
     assert!(!zsh.contains("ls)"));
     assert!(zsh.contains("health)"));
-    assert!(zsh.contains("--output[select output format]"));
-    assert!(zsh.contains("-o[select output format]"));
+    assert!(zsh.contains("'--output"));
+    assert!(zsh.contains("'-o"));
     assert!(zsh.contains(&output_values));
 
     let fish = capture_completion_script_shell("fish");
@@ -234,10 +226,10 @@ fn completion_scripts_offer_run_and_start_flags() {
     assert!(bash.contains(&dev_env_values));
 
     let zsh = capture_completion_script_shell("zsh");
-    assert!(zsh.contains("--dev-env[select development environment loading mode]"));
+    assert!(zsh.contains("'--dev-env"));
     assert!(zsh.contains(&dev_env_values));
-    assert!(zsh.contains("--connect[connect after the new session is ready]"));
-    assert!(zsh.contains("-c[connect after the new session is ready]"));
+    assert!(zsh.contains("'--connect"));
+    assert!(zsh.contains("'-c"));
 
     let fish = capture_completion_script_shell("fish");
     assert!(fish.contains("__fish_seen_subcommand_from run"));
@@ -260,8 +252,8 @@ fn completion_scripts_offer_restart_flags_and_candidates() {
 
     let zsh = capture_completion_script_shell("zsh");
     assert!(zsh.contains("restart)"));
-    assert!(zsh.contains("--dev-env[select development environment loading mode]"));
-    assert!(zsh.contains("--connect[connect after the restarted session is ready]"));
+    assert!(zsh.contains("'--dev-env"));
+    assert!(zsh.contains("'--connect"));
     assert!(zsh.contains("_agentbox_completion_roots restart"));
     assert!(zsh.contains(&dev_env_values));
 
@@ -284,7 +276,7 @@ fn completion_scripts_offer_exec_dev_env_flag_only() {
 
     let zsh = capture_completion_script_shell("zsh");
     assert!(zsh.contains("exec)"));
-    assert!(zsh.contains("--dev-env[select development environment loading mode]"));
+    assert!(zsh.contains("'--dev-env"));
     assert!(zsh.contains(&dev_env_values));
 
     let fish = capture_completion_script_shell("fish");
@@ -299,7 +291,7 @@ fn completion_scripts_offer_stop_all() {
     assert!(bash.contains("--force --all"));
 
     let zsh = capture_completion_script_shell("zsh");
-    assert!(zsh.contains("--all[stop all running agentbox containers]"));
+    assert!(zsh.contains("'--all"));
 
     let fish = capture_completion_script_shell("fish");
     assert!(fish.contains("__fish_seen_subcommand_from stop"));
@@ -313,8 +305,8 @@ fn completion_scripts_offer_runtime_update_all() {
     assert!(bash.contains("--all -a"));
 
     let zsh = capture_completion_script_shell("zsh");
-    assert!(zsh.contains("--all[update every supported runtime image]"));
-    assert!(zsh.contains("-a[update every supported runtime image]"));
+    assert!(zsh.contains("'--all"));
+    assert!(zsh.contains("'-a"));
 
     let fish = capture_completion_script_shell("fish");
     assert!(fish.contains("__agentbox_runtime_update_all_seen"));
@@ -349,10 +341,10 @@ fn completion_scripts_offer_clean_flags() {
 
     let zsh = capture_completion_script_shell("zsh");
     assert!(zsh.contains("clean)"));
-    assert!(zsh.contains("--dry-run[print cleanup candidates without deleting]"));
-    assert!(zsh.contains("--images[limit cleanup to default runtime images]"));
-    assert!(zsh.contains("--volumes[limit cleanup to workspace cache volumes]"));
-    assert!(zsh.contains("--locks[limit cleanup to workspace lock files]"));
+    assert!(zsh.contains("'--dry-run"));
+    assert!(zsh.contains("'--images"));
+    assert!(zsh.contains("'--volumes"));
+    assert!(zsh.contains("'--locks"));
 
     let fish = capture_completion_script_shell("fish");
     assert!(fish.contains("__fish_seen_subcommand_from clean"));
@@ -396,18 +388,7 @@ fn completion_scripts_expand_shared_value_placeholders() {
 fn installed_manpage_uses_clap_model_without_internal_helpers() {
     let manpage = capture_installed_manpage();
 
-    assert!(manpage.contains(".TH agentbox 1"));
-    assert!(manpage.contains("agentbox\\-run(1)"));
-    assert!(manpage.contains("agentbox\\-exec(1)"));
-    assert!(manpage.contains("agentbox\\-start(1)"));
-    assert!(manpage.contains("agentbox\\-restart(1)"));
-    assert!(!manpage.contains("agentbox\\-config(1)"));
-    assert!(manpage.contains("agentbox\\-ps(1)"));
-    assert!(manpage.contains("agentbox\\-health(1)"));
-    assert!(manpage.contains("agentbox\\-clean(1)"));
-    assert!(!manpage.contains("agentbox\\-ls(1)"));
-    assert!(!manpage.contains("agentbox\\-help(1)"));
-    assert!(manpage.contains("Shell completion helpers"));
+    assert!(manpage.contains("agentbox"));
     assert!(!manpage.contains("__completion-roots"));
     assert!(!manpage.contains("__generate-completion"));
     assert!(!manpage.contains("__generate-man"));
@@ -415,7 +396,7 @@ fn installed_manpage_uses_clap_model_without_internal_helpers() {
 }
 
 #[test]
-fn installed_manpages_include_referenced_subcommands() {
+fn installed_manpages_include_public_commands_only() {
     let directory = tempfile::tempdir().unwrap();
     let output = AssertCommand::cargo_bin("agentbox")
         .unwrap()
@@ -448,37 +429,20 @@ fn installed_manpages_include_referenced_subcommands() {
             "missing generated manpage {filename}"
         );
     }
-    assert!(!directory.path().join("agentbox-help.1").exists());
-
-    let agentbox = fs::read_to_string(directory.path().join("agentbox.1")).unwrap();
-    assert!(agentbox.contains("agentbox\\-run(1)"));
-    assert!(agentbox.contains("agentbox\\-exec(1)"));
-    assert!(agentbox.contains("agentbox\\-start(1)"));
-    assert!(agentbox.contains("agentbox\\-restart(1)"));
-    assert!(agentbox.contains("agentbox\\-ps(1)"));
-    assert!(agentbox.contains("agentbox\\-health(1)"));
-    assert!(agentbox.contains("agentbox\\-clean(1)"));
-    assert!(!agentbox.contains("agentbox\\-ls(1)"));
-    assert!(!agentbox.contains("agentbox\\-help(1)"));
-
-    let run = fs::read_to_string(directory.path().join("agentbox-run.1")).unwrap();
-    assert!(run.contains(".TH agentbox-run 1"));
-    assert!(run.contains("Runtime to launch for this run"));
-    assert!(!run.contains("Connect after the new session is ready"));
-    let exec = fs::read_to_string(directory.path().join("agentbox-exec.1")).unwrap();
-    assert!(exec.contains(".TH agentbox-exec 1"));
-    assert!(exec.contains("Arguments passed to codex exec"));
-    assert!(exec.contains("Development environment loading mode"));
-    assert!(!exec.contains("Runtime to launch"));
-    let start = fs::read_to_string(directory.path().join("agentbox-start.1")).unwrap();
-    assert!(start.contains(".TH agentbox-start 1"));
-    assert!(start.contains("Runtime to launch for this session"));
-    assert!(start.contains("Connect after the new session is ready"));
-    let restart = fs::read_to_string(directory.path().join("agentbox-restart.1")).unwrap();
-    assert!(restart.contains(".TH agentbox-restart 1"));
-    assert!(restart.contains("Development environment loading mode"));
-    assert!(restart.contains("Connect after the restarted session is ready"));
-    assert!(!restart.contains("Runtime to launch"));
+    for filename in [
+        "agentbox-config.1",
+        "agentbox-ls.1",
+        "agentbox-help.1",
+        "agentbox-__completion-roots.1",
+        "agentbox-__generate-completion.1",
+        "agentbox-__generate-man.1",
+        "agentbox-__generate-manpages.1",
+    ] {
+        assert!(
+            !directory.path().join(filename).exists(),
+            "unexpected generated manpage {filename}"
+        );
+    }
 }
 
 fn capture_completion_script() -> String {

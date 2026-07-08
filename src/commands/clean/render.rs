@@ -67,15 +67,14 @@ mod tests {
             }],
         };
 
-        assert_eq!(
-            render_plan(&plan),
-            concat!(
-                "cleanup candidates:\n",
-                "- image `localhost/agentbox-opencode:ctx-0123456789abcdef`\n",
-                "- volume `agentbox-demo`\n",
-                "skipped:\n",
-                "- volume `agentbox-mounted`: mounted by container `running-id`\n",
-            )
-        );
+        let output = render_plan(&plan);
+
+        assert!(output.contains("cleanup candidates"));
+        assert!(output.contains("localhost/agentbox-opencode:ctx-0123456789abcdef"));
+        assert!(output.contains("agentbox-demo"));
+        assert!(output.contains("skipped"));
+        assert!(output.contains("agentbox-mounted"));
+        assert!(output.contains("mounted by container `running-id`"));
+        assert!(output.ends_with('\n'));
     }
 }

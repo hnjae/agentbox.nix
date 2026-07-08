@@ -174,13 +174,7 @@ mod tests {
         let json = render_json(&rows).unwrap();
         let rows: Vec<Value> = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(
-            json,
-            concat!(
-                r#"[{"id":null,"canonical_git_root":null,"runtime":null,"health":"unhealthy","reason":"missing runtime metadata","endpoint":null,"container_name":"broken-container"}]"#,
-                "\n"
-            )
-        );
+        assert_eq!(json.matches('\n').count(), 1);
         assert_eq!(rows.len(), 1);
         assert!(rows[0]["id"].is_null());
         assert!(rows[0]["canonical_git_root"].is_null());

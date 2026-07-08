@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 KIM Hyunjae
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::BTreeSet;
+
 use agentbox::cli::{
     CleanArgs, Cli, Command, CompletionArgs, CompletionShell, ConnectArgs, DevEnvMode, ExecArgs,
     HealthArgs, OutputFormat, PsArgs, RestartArgs, RunArgs, RuntimeArgs, RuntimeCommand,
@@ -12,26 +14,29 @@ use clap::{CommandFactory, Parser};
 use predicates::prelude::*;
 
 #[test]
-fn help_lists_core_commands() {
-    let mut command = AssertCommand::cargo_bin("agentbox").unwrap();
+fn command_model_exposes_public_commands_only() {
+    let command = Cli::command();
+    let visible_commands = command
+        .get_subcommands()
+        .filter(|command| !command.is_hide_set())
+        .map(clap::Command::get_name)
+        .collect::<BTreeSet<_>>();
 
-    command.arg("--help");
-
-    command.assert().success().stdout(
-        predicate::str::contains("run")
-            .and(predicate::str::contains("exec"))
-            .and(predicate::str::contains("start"))
-            .and(predicate::str::contains("restart"))
-            .and(predicate::str::contains("runtime"))
-            .and(predicate::str::contains("config").not())
-            .and(predicate::str::contains("connect"))
-            .and(predicate::str::contains("attach").not())
-            .and(predicate::str::contains("ps"))
-            .and(predicate::str::contains("health"))
-            .and(predicate::str::contains("stop"))
-            .and(predicate::str::contains("clean"))
-            .and(predicate::str::contains("completion"))
-            .and(predicate::str::contains("detached runtime server")),
+    assert_eq!(
+        visible_commands,
+        BTreeSet::from([
+            "clean",
+            "completion",
+            "connect",
+            "exec",
+            "health",
+            "ps",
+            "restart",
+            "run",
+            "runtime",
+            "start",
+            "stop",
+        ])
     );
 }
 
