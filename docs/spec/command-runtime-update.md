@@ -23,4 +23,7 @@ Rules:
 - The update command does not stop, replace, or mutate running sessions.
 - Runtime image metadata files must include an image context hash; files missing required fields are invalid runtime image metadata and are replaced only by successful image setup or runtime update.
 - The update command does not write metadata under runtime host state directories such as `~/.codex`, `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`, or `${XDG_DATA_HOME:-$HOME/.local/share}/opencode`.
-- Progress and result messages from `runtime update` are `INFO` logs on stderr. Successful `runtime update` does not write to stdout.
+- When stderr is an interactive terminal and `TERM` is not `dumb`, normal-mode version resolution and image building use automatically refreshed progress that identifies the image, runtime package version when known, current stage, and elapsed time without claiming a percentage completion. `NO_COLOR` disables progress color without disabling interactive progress.
+- When stderr is not an interactive terminal or `TERM=dumb`, progress and results are stable line-oriented `INFO` logs on stderr without ANSI sequences or carriage returns.
+- With `--verbose`, `runtime update` uses static stage logs instead of interactive progress and forwards both Podman stdout and stderr as line-oriented `DEBUG` logs to stderr while the build is running. Forwarded output remains captured for build-failure diagnostics.
+- Progress is cleared before result or failure diagnostics are written. Successful `runtime update` does not write to stdout.
