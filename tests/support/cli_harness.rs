@@ -5,6 +5,8 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use agentbox::lock::lock_path_in_state_dir;
 use agentbox::runtime::RuntimeKind;
@@ -121,6 +123,28 @@ impl CliHarness {
             format!("{exit_code}\n"),
         )
         .unwrap();
+    }
+
+    pub fn hold_build_with_output(&self, stdout: &str, stderr: &str) {
+        fs::write(self.fixtures.path().join("build.hold"), "hold\n").unwrap();
+        fs::write(self.fixtures.path().join("build-live.stdout"), stdout).unwrap();
+        fs::write(self.fixtures.path().join("build-live.stderr"), stderr).unwrap();
+    }
+
+    pub fn wait_for_build_output(&self) {
+        let ready = self.fixtures.path().join("build-live.ready");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !ready.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for held build output"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    pub fn release_build(&self) {
+        fs::write(self.fixtures.path().join("build.release"), "release\n").unwrap();
     }
 
     pub fn write_failure(&self, kind: &str, stderr: &str, exit_code: i32) {

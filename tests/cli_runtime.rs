@@ -2,6 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::fs;
+use std::io::{BufRead, BufReader, Read};
+use std::process::Stdio;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use agentbox::runtime::RuntimeKind;
 use agentbox::runtime::default_image::default_image_context_hash;
@@ -154,6 +159,93 @@ fn runtime_update_all_stops_before_later_runtimes_when_first_update_fails() {
     assert!(log[1].contains("--build-arg AGENTBOX_RUNTIME=opencode"));
     assert!(!opencode_state_path(&harness).exists());
     assert!(!codex_state_path(&harness).exists());
+}
+
+#[test]
+fn runtime_update_non_tty_uses_stable_stderr_logs_and_preserves_stdout() {
+    let harness = CliHarness::new();
+    let mut command = harness.agentbox_command();
+    command.args(["runtime", "update", "codex"]);
+
+    let output = command.output().unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!output.stderr.contains(&b'\r'));
+    assert!(!output.stderr.contains(&0x1b));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr
+            .lines()
+            .any(|line| line.contains("INFO:") && line.contains("resolving"))
+    );
+    assert!(
+        stderr
+            .lines()
+            .any(|line| line.contains("INFO:") && line.contains("building"))
+    );
+}
+
+#[test]
+fn runtime_update_verbose_streams_both_build_streams_before_exit_and_retains_failure() {
+    let harness = CliHarness::new();
+    harness.hold_build_with_output("stdout-before-release\n", "stderr-before-release\n");
+    harness.fail_operation("build", "captured-build-failure\n", 125);
+    let mut command = harness.agentbox_process_command();
+    command
+        .args(["--verbose", "runtime", "update", "codex"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let (lines_tx, lines_rx) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        let mut lines = Vec::new();
+        for line in BufReader::new(stderr).lines() {
+            let line = line.unwrap();
+            lines_tx.send(line.clone()).unwrap();
+            lines.push(line);
+        }
+        lines
+    });
+
+    harness.wait_for_build_output();
+    let mut saw_stdout = false;
+    let mut saw_stderr = false;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !(saw_stdout && saw_stderr) && Instant::now() < deadline {
+        match lines_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(line) => {
+                saw_stdout |= line.contains("DEBUG:") && line.contains("stdout-before-release");
+                saw_stderr |= line.contains("DEBUG:") && line.contains("stderr-before-release");
+            }
+            Err(_) => break,
+        }
+    }
+    let still_running = child.try_wait().unwrap().is_none();
+    harness.release_build();
+    let status = child.wait().unwrap();
+    let mut stdout = String::new();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
+    let stderr = reader.join().unwrap().join("\n");
+
+    assert!(
+        saw_stdout,
+        "stdout was not forwarded before release; stderr:\n{stderr}"
+    );
+    assert!(
+        saw_stderr,
+        "stderr was not forwarded before release; stderr:\n{stderr}"
+    );
+    assert!(still_running, "build exited before the release signal");
+    assert!(!status.success());
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("captured-build-failure"));
 }
 
 #[test]

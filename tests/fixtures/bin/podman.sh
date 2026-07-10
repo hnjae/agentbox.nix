@@ -214,6 +214,18 @@ container)
 build)
     validate_build_context "$@"
     record build "$@"
+    if [ -f "$fixtures/build.hold" ]; then
+        if [ -f "$fixtures/build-live.stdout" ]; then
+            cat "$fixtures/build-live.stdout"
+        fi
+        if [ -f "$fixtures/build-live.stderr" ]; then
+            cat "$fixtures/build-live.stderr" >&2
+        fi
+        touch "$fixtures/build-live.ready"
+        while [ ! -f "$fixtures/build.release" ]; do
+            sleep 0.01
+        done
+    fi
     maybe_fail build
     printf 'built\n'
     ;;
