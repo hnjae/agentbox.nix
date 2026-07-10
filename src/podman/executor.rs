@@ -42,6 +42,10 @@ impl PodmanExecutor {
         self
     }
 
+    pub(super) fn is_verbose(&self) -> bool {
+        self.verbose
+    }
+
     pub(super) fn run_quiet(&self, configure: impl FnOnce(&mut Command)) -> Result<ProcessOutput> {
         let command = self.podman_command(configure)?;
         self.capture(command)
@@ -61,12 +65,14 @@ impl PodmanExecutor {
         &self,
         configure: impl FnOnce(&mut Command),
     ) -> Result<ProcessOutput> {
-        let output = self.run_quiet(configure)?;
+        let command = self.podman_command(configure)?;
+        self.trace(&command);
         if self.verbose {
-            emit_output(&output);
+            command
+                .capture_streaming(|_, text| diagnostic::debug(text.trim_end_matches(['\r', '\n'])))
+        } else {
+            command.capture()
         }
-
-        Ok(output)
     }
 
     pub(super) fn status(&self, configure: impl FnOnce(&mut Command)) -> Result<PodmanStatus> {
@@ -95,17 +101,4 @@ impl PodmanExecutor {
             diagnostic::debug(format!("running {}", command.description()));
         }
     }
-}
-
-fn emit_output(output: &ProcessOutput) {
-    emit_stream(&output.stdout);
-    emit_stream(&output.stderr);
-}
-
-fn emit_stream(text: &str) {
-    if text.is_empty() {
-        return;
-    }
-
-    diagnostic::debug(text);
 }

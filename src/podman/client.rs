@@ -38,6 +38,10 @@ impl Podman {
         self
     }
 
+    pub(crate) fn is_verbose(&self) -> bool {
+        self.executor.is_verbose()
+    }
+
     pub fn ps(&self) -> Result<Vec<PodmanPsContainer>> {
         self.run_podman_json(|command| {
             command.args(["ps", "--all", "--filter"]);

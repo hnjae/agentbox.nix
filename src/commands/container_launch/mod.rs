@@ -138,12 +138,8 @@ fn prepare_container_launch_for_workspace(
         ensure_host_runtime_client_available(runtime)?;
     }
 
-    let runtime_image_version = ensure_default_runtime_image(
-        podman,
-        runtime,
-        workspace.canonical_git_root.as_ref(),
-        diagnostic::info,
-    )?;
+    let runtime_image_version =
+        ensure_default_runtime_image(podman, runtime, workspace.canonical_git_root.as_ref())?;
 
     Ok(ContainerLaunchPreparation {
         preflight,

@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::ffi::OsStr;
-use std::io::ErrorKind;
+use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus};
+use std::process::{Command, ExitStatus, Stdio};
+use std::sync::mpsc;
+use std::thread;
 
 use crate::{Error, Result};
 
@@ -12,6 +14,12 @@ use crate::{Error, Result};
 pub struct ProcessOutput {
     pub stdout: String,
     pub stderr: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProcessStream {
+    Stdout,
+    Stderr,
 }
 
 #[derive(Debug)]
@@ -48,6 +56,11 @@ pub(crate) enum ProcessCaptureError {
         source: std::io::Error,
     },
     Utf8(std::string::FromUtf8Error),
+    Read {
+        context: CommandContext,
+        stream: ProcessStream,
+        source: std::io::Error,
+    },
 }
 
 impl ProcessCaptureError {
@@ -66,6 +79,15 @@ impl ProcessCaptureError {
             Self::Setup(error) => error,
             Self::Spawn { context, source } => context.spawn_error(source),
             Self::Utf8(error) => error.into(),
+            Self::Read {
+                context,
+                stream,
+                source,
+            } => Error::msg(format!(
+                "failed to read {} from `{}`: {source}",
+                stream.as_str(),
+                context.description,
+            )),
         }
     }
 }
@@ -158,6 +180,13 @@ impl ProcessCommand {
         run_command(&mut self.command)
     }
 
+    pub(crate) fn capture_streaming(
+        mut self,
+        on_output: impl FnMut(ProcessStream, &str),
+    ) -> Result<ProcessOutput> {
+        run_command_streaming(&mut self.command, on_output)
+    }
+
     pub(crate) fn try_capture_status(
         mut self,
     ) -> std::result::Result<ProcessStatusOutput, ProcessCaptureError> {
@@ -185,6 +214,25 @@ fn run_command(command: &mut Command) -> Result<ProcessOutput> {
     Ok(ProcessOutput { stdout, stderr })
 }
 
+fn run_command_streaming(
+    command: &mut Command,
+    on_output: impl FnMut(ProcessStream, &str),
+) -> Result<ProcessOutput> {
+    let output = try_run_command_capture_status_streaming(command, on_output)
+        .map_err(ProcessCaptureError::into_error)?;
+    let ProcessStatusOutput {
+        status,
+        stdout,
+        stderr,
+    } = output;
+
+    if !status.success() {
+        return Err(CommandContext::from_command(command).exit_error(status, &stdout, &stderr));
+    }
+
+    Ok(ProcessOutput { stdout, stderr })
+}
+
 fn run_command_capture_status(command: &mut Command) -> Result<ProcessStatusOutput> {
     try_run_command_capture_status(command).map_err(ProcessCaptureError::into_error)
 }
@@ -205,6 +253,94 @@ fn try_run_command_capture_status(
         stdout,
         stderr,
     })
+}
+
+fn try_run_command_capture_status_streaming(
+    command: &mut Command,
+    mut on_output: impl FnMut(ProcessStream, &str),
+) -> std::result::Result<ProcessStatusOutput, ProcessCaptureError> {
+    let context = CommandContext::from_command(command);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|source| ProcessCaptureError::Spawn {
+            context: context.clone(),
+            source,
+        })?;
+    let stdout = child.stdout.take().expect("piped child stdout must exist");
+    let stderr = child.stderr.take().expect("piped child stderr must exist");
+    let (sender, receiver) = mpsc::channel();
+
+    thread::scope(|scope| {
+        spawn_stream_reader(scope, sender.clone(), ProcessStream::Stdout, stdout);
+        spawn_stream_reader(scope, sender.clone(), ProcessStream::Stderr, stderr);
+        drop(sender);
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut read_error = None;
+        for event in receiver {
+            match event {
+                Ok((stream, bytes)) => {
+                    on_output(stream, &String::from_utf8_lossy(&bytes));
+                    match stream {
+                        ProcessStream::Stdout => stdout.extend_from_slice(&bytes),
+                        ProcessStream::Stderr => stderr.extend_from_slice(&bytes),
+                    }
+                }
+                Err((stream, source)) if read_error.is_none() => {
+                    read_error = Some(ProcessCaptureError::Read {
+                        context: context.clone(),
+                        stream,
+                        source,
+                    });
+                }
+                Err(_) => {}
+            }
+        }
+
+        let status = child.wait().map_err(|source| ProcessCaptureError::Spawn {
+            context: context.clone(),
+            source,
+        })?;
+        if let Some(error) = read_error {
+            return Err(error);
+        }
+
+        Ok(ProcessStatusOutput {
+            status,
+            stdout: String::from_utf8(stdout).map_err(ProcessCaptureError::Utf8)?,
+            stderr: String::from_utf8(stderr).map_err(ProcessCaptureError::Utf8)?,
+        })
+    })
+}
+
+type StreamEvent = std::result::Result<(ProcessStream, Vec<u8>), (ProcessStream, std::io::Error)>;
+
+fn spawn_stream_reader<'scope, R: std::io::Read + Send + 'scope>(
+    scope: &'scope thread::Scope<'scope, '_>,
+    sender: mpsc::Sender<StreamEvent>,
+    stream: ProcessStream,
+    reader: R,
+) {
+    scope.spawn(move || {
+        let mut reader = BufReader::new(reader);
+        loop {
+            let mut bytes = Vec::new();
+            match reader.read_until(b'\n', &mut bytes) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if sender.send(Ok((stream, bytes))).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = sender.send(Err((stream, error)));
+                    break;
+                }
+            }
+        }
+    });
 }
 
 fn run_command_status(command: &mut Command) -> Result<ExitStatus> {
@@ -244,6 +380,15 @@ impl CommandContext {
             format_status(status),
             detail = output_detail(stdout, stderr),
         ))
+    }
+}
+
+impl ProcessStream {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Stdout => "stdout",
+            Self::Stderr => "stderr",
+        }
     }
 }
 

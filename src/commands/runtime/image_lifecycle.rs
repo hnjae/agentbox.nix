@@ -5,6 +5,7 @@ use camino::Utf8Path;
 
 use crate::diagnostic;
 use crate::podman::Podman;
+use crate::progress::ProgressTask;
 use crate::runtime::RuntimeKind;
 use crate::{Error, Result};
 
@@ -15,8 +16,13 @@ use super::image_state::{RuntimeImageState, RuntimeImageStateStore};
 pub(super) fn update_default_runtime_image(runtime: RuntimeKind, verbose: bool) -> Result<()> {
     let podman = Podman::new().with_verbose(verbose);
     let mut environment = ProductionRuntimeImageEnvironment::new(&podman)?;
+    let mut progress = None;
+    let outcome = update_default_runtime_image_with(runtime, &mut environment, |feedback| {
+        render_image_feedback(&mut progress, feedback, verbose);
+    });
+    clear_progress(&mut progress);
 
-    match update_default_runtime_image_with(runtime, &mut environment)? {
+    match outcome? {
         RuntimeImageUpdateOutcome::AlreadyUpToDate { image, version } => {
             diagnostic::info(format!(
                 "{runtime} runtime image `{image}` is already up to date at {version}"
@@ -36,17 +42,19 @@ pub(crate) fn ensure_default_runtime_image(
     podman: &Podman,
     runtime: RuntimeKind,
     workspace_root: &Utf8Path,
-    phase: impl FnMut(String),
 ) -> Result<Option<String>> {
     let default_image = runtime.default_image();
     let mut environment = ProductionRuntimeImageEnvironment::new(podman)?;
-    ensure_default_runtime_image_with(
+    let mut progress = None;
+    let result = ensure_default_runtime_image_with(
         &mut environment,
         runtime,
         workspace_root,
-        phase,
+        |feedback| render_image_feedback(&mut progress, feedback, podman.is_verbose()),
         &default_image,
-    )
+    );
+    clear_progress(&mut progress);
+    result
 }
 
 pub(crate) fn remove_default_runtime_image_state_if_image(
@@ -62,14 +70,24 @@ enum RuntimeImageUpdateOutcome {
     Rebuilt { image: String, version: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RuntimeImageFeedback {
+    Info(String),
+    Progress(String),
+}
+
 fn update_default_runtime_image_with(
     runtime: RuntimeKind,
     environment: &mut impl RuntimeImageEnvironment,
+    mut feedback: impl FnMut(RuntimeImageFeedback),
 ) -> Result<RuntimeImageUpdateOutcome> {
     let package = runtime.package_spec();
-    diagnostic::info(format!("resolving latest `{}` version", package.name));
-    let latest_version = environment.resolve_latest_version(package.name)?;
     let image = runtime.default_image();
+    feedback(RuntimeImageFeedback::Progress(format!(
+        "resolving latest `{}` version for runtime image `{image}`",
+        package.name
+    )));
+    let latest_version = environment.resolve_latest_version(package.name)?;
     let image_exists = environment.image_exists(&image)?;
     let prior_state = environment.read_state(runtime)?;
 
@@ -87,10 +105,10 @@ fn update_default_runtime_image_with(
             })
         }
         RuntimeImageUpdatePlan::Rebuild { version } => {
-            diagnostic::info(format!(
+            feedback(RuntimeImageFeedback::Progress(format!(
                 "building runtime image `{image}` with `{}@{version}`",
                 package.name
-            ));
+            )));
             build_runtime_image_and_record_state(environment, runtime, &version)?;
             Ok(RuntimeImageUpdateOutcome::Rebuilt { image, version })
         }
@@ -101,31 +119,73 @@ fn ensure_default_runtime_image_with(
     environment: &mut impl RuntimeImageEnvironment,
     runtime: RuntimeKind,
     workspace_root: &Utf8Path,
-    mut phase: impl FnMut(String),
+    mut feedback: impl FnMut(RuntimeImageFeedback),
     default_image: &str,
 ) -> Result<Option<String>> {
     if environment.image_exists(default_image)? {
-        phase(format!("using runtime image `{default_image}`"));
+        feedback(RuntimeImageFeedback::Info(format!(
+            "using runtime image `{default_image}`"
+        )));
         return installed_version_if_known(environment, runtime, default_image);
     }
 
-    phase(format!("building runtime image `{default_image}`"));
-    build_default_runtime_image(environment, runtime).map_err(|error| {
+    let package = runtime.package_spec();
+    feedback(RuntimeImageFeedback::Progress(format!(
+        "resolving latest `{}` version for runtime image `{default_image}`",
+        package.name
+    )));
+    let result = build_default_runtime_image(environment, runtime, |version| {
+        feedback(RuntimeImageFeedback::Progress(format!(
+            "building runtime image `{default_image}` with `{}@{version}`",
+            package.name
+        )));
+    });
+    let version = result.map_err(|error| {
         Error::msg(format!(
             "failed to build default runtime image `{default_image}` for `{}`: {error}",
             workspace_root,
         ))
-    })
+    })?;
+    feedback(RuntimeImageFeedback::Info(format!(
+        "built runtime image `{default_image}` with `{}@{version}`",
+        package.name
+    )));
+    Ok(Some(version))
 }
 
 fn build_default_runtime_image(
     environment: &mut impl RuntimeImageEnvironment,
     runtime: RuntimeKind,
-) -> Result<Option<String>> {
+    mut resolved: impl FnMut(&str),
+) -> Result<String> {
     let package = runtime.package_spec();
     let latest_version = environment.resolve_latest_version(package.name)?;
+    resolved(&latest_version);
     build_runtime_image_and_record_state(environment, runtime, &latest_version)?;
-    Ok(Some(latest_version))
+    Ok(latest_version)
+}
+
+fn render_image_feedback(
+    progress: &mut Option<ProgressTask>,
+    feedback: RuntimeImageFeedback,
+    verbose: bool,
+) {
+    match feedback {
+        RuntimeImageFeedback::Progress(message) => match progress {
+            Some(progress) => progress.set_stage(message),
+            None => *progress = Some(ProgressTask::start(message, verbose)),
+        },
+        RuntimeImageFeedback::Info(message) => {
+            clear_progress(progress);
+            diagnostic::info(message);
+        }
+    }
+}
+
+fn clear_progress(progress: &mut Option<ProgressTask>) {
+    if let Some(mut progress) = progress.take() {
+        progress.clear();
+    }
 }
 
 fn build_runtime_image_and_record_state(
@@ -172,7 +232,7 @@ mod tests {
             )))
             .with_now(42);
 
-        let outcome = update_default_runtime_image_with(runtime, &mut environment).unwrap();
+        let outcome = update_default_runtime_image_with(runtime, &mut environment, |_| {}).unwrap();
 
         assert_eq!(
             outcome,
@@ -205,7 +265,7 @@ mod tests {
             )))
             .with_now(55);
 
-        let outcome = update_default_runtime_image_with(runtime, &mut environment).unwrap();
+        let outcome = update_default_runtime_image_with(runtime, &mut environment, |_| {}).unwrap();
 
         assert_eq!(
             outcome,
@@ -234,21 +294,24 @@ mod tests {
                 10,
                 9,
             )));
-        let mut phases = Vec::new();
+        let mut feedback = Vec::new();
 
         let version = ensure_default_runtime_image_with(
             &mut environment,
             runtime,
             Utf8Path::new("/workspace/demo"),
-            |phase| phases.push(phase),
+            |item| feedback.push(item),
             &runtime.default_image(),
         )
         .unwrap();
 
         assert_eq!(version, Some("1.2.3".to_string()));
         assert_eq!(
-            phases,
-            vec![format!("using runtime image `{}`", runtime.default_image())]
+            feedback,
+            vec![RuntimeImageFeedback::Info(format!(
+                "using runtime image `{}`",
+                runtime.default_image()
+            ))]
         );
         assert!(environment.resolved_packages.is_empty());
         assert!(environment.builds.is_empty());
@@ -262,24 +325,34 @@ mod tests {
             .with_image_exists(false)
             .with_latest_version("1.2.4")
             .with_now(88);
-        let mut phases = Vec::new();
+        let mut feedback = Vec::new();
 
         let version = ensure_default_runtime_image_with(
             &mut environment,
             runtime,
             Utf8Path::new("/workspace/demo"),
-            |phase| phases.push(phase),
+            |item| feedback.push(item),
             &runtime.default_image(),
         )
         .unwrap();
 
         assert_eq!(version, Some("1.2.4".to_string()));
         assert_eq!(
-            phases,
-            vec![format!(
-                "building runtime image `{}`",
-                runtime.default_image()
-            )]
+            feedback,
+            vec![
+                RuntimeImageFeedback::Progress(format!(
+                    "resolving latest `@openai/codex` version for runtime image `{}`",
+                    runtime.default_image()
+                )),
+                RuntimeImageFeedback::Progress(format!(
+                    "building runtime image `{}` with `@openai/codex@1.2.4`",
+                    runtime.default_image()
+                )),
+                RuntimeImageFeedback::Info(format!(
+                    "built runtime image `{}` with `@openai/codex@1.2.4`",
+                    runtime.default_image()
+                )),
+            ]
         );
         assert_eq!(environment.builds, vec![(runtime, "1.2.4".to_string())]);
         assert_eq!(environment.writes.len(), 1);
