@@ -12,6 +12,8 @@ The image manager owns content-hash-tagged default image references, runtime pac
 - Image build inputs, image labels, runtime package metadata, and runtime image metadata must be consistent enough for `run`, `start`, `restart`, `runtime update`, and `clean` to make the same ownership and reuse decisions.
 - Default image creation and `runtime update` may mutate runtime image metadata; session lifecycle commands may read it but must not depend on it to discover live sessions.
 - `clean` must discover image cleanup candidates from agentbox image ownership labels, volume cleanup candidates from workspace cache volume naming rules, and lock file cleanup candidates from workspace lock path rules.
+- `clean` must preserve each runtime's current default image by comparing its validated runtime and content-hash-tagged reference with the default reference computed from the executing binary's embedded image inputs. This protection must not depend on the agentbox package version, runtime package version, runtime image state, or network version resolution.
+- Runtime package freshness belongs exclusively to `runtime update`; cleanup must not turn package refresh into an implicit consequence of reclaiming unused resources.
 - Workspace lock cleanup must coordinate with workspace lock acquisition so cleanup does not unlink a lock path that a lifecycle command can continue using as an unlinked lock file.
 - Cleanup must skip resources used by any Podman container, must continue after per-resource deletion failures, and must never call broad Podman prune operations.
 - `stop` and `restart` must never delete default runtime images or named runtime cache volumes.
