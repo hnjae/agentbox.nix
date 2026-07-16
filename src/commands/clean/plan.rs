@@ -121,13 +121,22 @@ fn add_default_runtime_image_candidate(
     usage: &ResourceUsage,
     plan: &mut CleanPlan,
 ) {
-    add_candidate_or_skip(
-        CleanResource::image(image),
-        usage,
-        "used",
-        |resource| CleanCandidate::default_runtime_image(runtime, resource),
-        plan,
-    );
+    let resource = CleanResource::image(image);
+
+    if let Some(container_id) = usage.user(&resource) {
+        plan.skipped.push(SkippedResource {
+            resource,
+            reason: format!("used by container `{container_id}`"),
+        });
+    } else if resource.name() == runtime.default_image() {
+        plan.skipped.push(SkippedResource {
+            resource,
+            reason: "current default image".to_string(),
+        });
+    } else {
+        plan.candidates
+            .push(CleanCandidate::default_runtime_image(runtime, resource));
+    }
 }
 
 fn add_cache_volume_candidates(
@@ -229,13 +238,9 @@ mod tests {
 
         assert_eq!(
             plan.candidates,
-            vec![
-                CleanCandidate::default_runtime_image(
-                    RuntimeKind::Codex,
-                    CleanResource::image(codex_image),
-                ),
-                CleanCandidate::cache_volume(CleanResource::volume(UNUSED_VOLUME)),
-            ]
+            vec![CleanCandidate::cache_volume(CleanResource::volume(
+                UNUSED_VOLUME
+            ))]
         );
         assert_eq!(
             plan.skipped,
@@ -243,6 +248,10 @@ mod tests {
                 SkippedResource {
                     resource: CleanResource::image(opencode_image),
                     reason: "used by container `running-opencode`".to_string(),
+                },
+                SkippedResource {
+                    resource: CleanResource::image(codex_image),
+                    reason: "current default image".to_string(),
                 },
                 SkippedResource {
                     resource: CleanResource::volume(USED_VOLUME),
@@ -254,7 +263,7 @@ mod tests {
 
     #[test]
     fn clean_plan_deduplicates_duplicate_image_references() {
-        let image = RuntimeKind::Opencode.default_image();
+        let image = "localhost/agentbox-opencode:ctx-0000000000000000".to_string();
         let inventory = CleanInventory {
             default_runtime_images: vec![
                 DefaultRuntimeImageCandidate {

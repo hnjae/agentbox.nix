@@ -82,7 +82,7 @@ fn clean_confirmation_errors_are_stable() {
 }
 
 #[test]
-fn clean_yes_removes_unused_default_images_cache_volumes_and_lock_files() {
+fn clean_yes_preserves_current_default_images_and_removes_other_unused_resources() {
     let harness = Harness::new();
     let fixture = support::temp_workspace("nested");
     let lock_path = write_stale_lock(&harness, &fixture.workspace);
@@ -95,10 +95,10 @@ fn clean_yes_removes_unused_default_images_cache_volumes_and_lock_files() {
         .success()
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains(format!(
-            "removed image `{opencode_image}`"
+            "image `{opencode_image}`: current default image"
         )))
         .stderr(predicate::str::contains(format!(
-            "removed image `{codex_image}`"
+            "image `{codex_image}`: current default image"
         )))
         .stderr(predicate::str::contains(format!(
             "removed volume `{UNUSED_VOLUME}`"
@@ -111,10 +111,10 @@ fn clean_yes_removes_unused_default_images_cache_volumes_and_lock_files() {
     assert!(!lock_path.exists(), "unused lock file should be removed");
 
     let log = harness.read_log();
-    assert!(log.iter().any(|line| {
+    assert!(!log.iter().any(|line| {
         line.starts_with("image ") && line.contains(&format!("args=rm {opencode_image}"))
     }));
-    assert!(log.iter().any(|line| {
+    assert!(!log.iter().any(|line| {
         line.starts_with("image ") && line.contains(&format!("args=rm {codex_image}"))
     }));
     assert!(log.iter().any(|line| {
@@ -229,7 +229,7 @@ fn clean_skips_images_and_volumes_used_by_any_container() {
             "volume `{USED_VOLUME}`: mounted by container `{USED_VOLUME}`"
         )))
         .stderr(predicate::str::contains(format!(
-            "removed image `{codex_image}`"
+            "image `{codex_image}`: current default image"
         )));
 
     let log = harness.read_log();
@@ -329,7 +329,32 @@ fn inspect_fixture_with_named_volume_storage_source(inspect: &str) -> String {
 }
 
 #[test]
-fn clean_removes_runtime_image_state_after_image_delete() {
+fn clean_removes_runtime_image_state_after_old_image_delete() {
+    let harness = Harness::new();
+    let image = "localhost/agentbox-opencode:ctx-0000000000000000";
+    harness.write_images(&podman_images_fixture(&[runtime_image_fixture(
+        RuntimeKind::Opencode,
+        image,
+        "0000000000000000",
+    )]));
+    let state_path = harness
+        .state_home_path()
+        .join("agentbox/runtime/opencode.json");
+    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+    fs::write(&state_path, runtime_state("opencode", "opencode-ai", image)).unwrap();
+
+    harness
+        .agentbox_assert(&["clean", "--yes", "--images"])
+        .success();
+
+    assert!(
+        !state_path.exists(),
+        "opencode runtime image state should be removed after image deletion"
+    );
+}
+
+#[test]
+fn clean_preserves_unused_current_default_image_and_its_runtime_state() {
     let harness = Harness::new();
     let image = RuntimeKind::Opencode.default_image();
     let state_path = harness
@@ -344,11 +369,21 @@ fn clean_removes_runtime_image_state_after_image_delete() {
 
     harness
         .agentbox_assert(&["clean", "--yes", "--images"])
-        .success();
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(format!(
+            "image `{image}`: current default image"
+        )));
 
     assert!(
-        !state_path.exists(),
-        "opencode runtime image state should be removed after image deletion"
+        state_path.exists(),
+        "current runtime image state should remain"
+    );
+    assert!(
+        !harness.read_log().iter().any(|line| {
+            line.starts_with("image ") && line.contains(&format!("args=rm {image}"))
+        }),
+        "current default image must not be removed"
     );
 }
 
@@ -434,6 +469,12 @@ fn clean_preserves_runtime_image_state_when_active_image_is_still_in_use() {
 #[test]
 fn clean_continues_after_delete_failures_and_exits_nonzero() {
     let harness = Harness::new();
+    let old_image = "localhost/agentbox-opencode:ctx-0000000000000000";
+    harness.write_images(&podman_images_fixture(&[runtime_image_fixture(
+        RuntimeKind::Opencode,
+        old_image,
+        "0000000000000000",
+    )]));
     harness.write_volumes(&volumes_fixture(&[UNUSED_VOLUME]));
     harness.fail_operation("image-rm", "image is busy\n", 125);
 
