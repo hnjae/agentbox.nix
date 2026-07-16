@@ -20,6 +20,8 @@ Image cleanup rules:
 
 - `clean` considers agentbox-owned default runtime images discovered from image labels, including old content-hash-tagged default image references. Image names or references alone do not make an image eligible for cleanup unless the image also carries agentbox default-runtime-image ownership labels.
 - A default runtime image candidate is skipped when any Podman container, managed or unmanaged, currently uses that exact image reference.
+- The current default image for each supported runtime is skipped even when no container uses it. The current default image is the agentbox-owned image whose runtime and content-hash-tagged reference match the default image reference computed by the executing agentbox binary.
+- `clean` does not resolve npm package versions or use runtime image state to decide whether an image is current. Package-version refresh remains the responsibility of `runtime update`.
 - When the current state file for a runtime points to an image that was deleted successfully, the corresponding runtime image metadata file under `$XDG_STATE_HOME/agentbox/runtime` is removed. If state points to a different image that is still present or in use, it is preserved.
 - `clean` does not remove image names by prefix and does not call `podman system prune` or Podman build-cache cleanup.
 
