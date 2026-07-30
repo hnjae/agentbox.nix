@@ -11,6 +11,7 @@ use crate::metadata::{
 use crate::preflight::{PreflightReport, check_host_prerequisites_for_runtime_mode};
 use crate::runtime::{RuntimeKind, RuntimeRunSpec};
 use crate::ssh_signing::{SshPassthroughGuard, apply_git_and_ssh_passthrough};
+use crate::wayland::apply_wayland_passthrough;
 use crate::workspace::WorkspaceIdentity;
 
 use super::codex_attach_auth::{CodexAttachToken, prepare_codex_attach_token};
@@ -84,6 +85,7 @@ pub(super) fn prepare_runtime_launch(
         resource_limits.clone(),
     );
     run_spec.extend_create_default_env(preparation.preflight.runtime_environment.clone());
+    apply_wayland_passthrough(&mut run_spec);
     let ssh_passthrough = apply_git_and_ssh_passthrough(
         &mut run_spec,
         workspace.canonical_git_root.as_ref(),

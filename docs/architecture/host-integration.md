@@ -1,13 +1,14 @@
 # Host Integration Boundary
 
-The host integration layer owns host Git identity lookup, Git excludes lookup, SSH signing passthrough, SSH known-host discovery, user config loading, resource-limit default resolution, host-attached Nix validation, runtime host-client lookup, and development-environment wrapper selection.
+The host integration layer owns host Git identity lookup, Git excludes lookup, SSH signing passthrough, SSH known-host discovery, Wayland display passthrough, user config loading, resource-limit default resolution, host-attached Nix validation, runtime host-client lookup, and development-environment wrapper selection.
 
 ## Contracts
 
 - User config is a strict input contract. Invalid config is isolated by moving it aside when possible and is ignored for the current invocation.
 - User config loading must produce a single validated config result per command invocation so known-host passthrough and resource-limit defaults cannot interpret the same file differently.
 - Resource-limit default resolution is owned by host integration. For `run` and `start`, each CLI limit overrides the corresponding config default and otherwise resolves to unlimited; for `restart`, each CLI limit overrides the stored managed-session value and config defaults are not re-applied.
-- Host state passthroughs for Codex, OpenCode, Git identity, Git excludes, SSH signing, known_hosts, and host-attached Nix must be assembled during launch preparation and passed into container construction as explicit mount and environment contracts.
+- Host state passthroughs for Codex, OpenCode, Git identity, Git excludes, SSH signing, known_hosts, Wayland, and host-attached Nix must be assembled during launch preparation and passed into container construction as explicit mount and environment contracts.
+- Optional desktop-session passthrough must expose only the selected resource required by its declared contract; Wayland passthrough must not widen into whole-runtime-directory or unrelated desktop-service exposure.
 - Host passthrough lookups must use an explicit launch repository: the resolved canonical git root for new container launches, and the recovered managed-session git root for `restart`.
 - Temporary host files used as mount sources must live at least until the corresponding container mount is established and must not become durable agentbox state.
 - Agentbox must not repair host permissions, mutate workspace ownership, create runtime host state directories, or synthesize missing host-attached Nix prerequisites.

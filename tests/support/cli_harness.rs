@@ -399,6 +399,7 @@ impl CliHarness {
         }
         command.remove_env("CODEX_HOME");
         command.remove_env("SSH_AUTH_SOCK");
+        command.remove_env("WAYLAND_DISPLAY");
     }
 
     fn configure_lock_probe_env(

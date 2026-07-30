@@ -16,6 +16,7 @@ pub mod diagnostic;
 mod digest;
 pub mod error;
 pub mod git;
+mod host_socket;
 pub mod lock;
 pub mod metadata;
 mod paths;
@@ -28,6 +29,7 @@ pub mod runtime;
 pub mod session;
 mod ssh_signing;
 mod state;
+mod wayland;
 pub mod workspace;
 
 use cli::Cli;

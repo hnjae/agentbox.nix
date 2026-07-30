@@ -2,6 +2,21 @@
 
 For host passthrough rules, the launch repository is the resolved canonical git root for `run`, `start`, and `exec`, and the selected managed session's stored canonical git root for `restart`.
 
+## Host Wayland Passthrough
+
+For `run`, `start`, `restart`, and `exec`, `agentbox` automatically makes the invoking host session's Wayland display available inside a newly launched runtime container when the host environment identifies a usable Wayland socket.
+
+Rules:
+
+- If host `WAYLAND_DISPLAY` is unset or empty, container launch behavior is unchanged.
+- If host `WAYLAND_DISPLAY` is an absolute path, `agentbox` uses it as the host socket path without requiring `XDG_RUNTIME_DIR`.
+- If host `WAYLAND_DISPLAY` is relative, `agentbox` resolves it below a non-empty, absolute host `XDG_RUNTIME_DIR`.
+- If a required value is not UTF-8, a relative display cannot be resolved from `XDG_RUNTIME_DIR`, or the resolved path is not a connectable Unix socket, `agentbox` prints a warning, skips Wayland passthrough, and continues launching.
+- If the resolved path is a connectable Unix socket, `agentbox` bind-mounts only that socket at `/run/agentbox/wayland.sock` and sets `WAYLAND_DISPLAY=/run/agentbox/wayland.sock` inside the container.
+- `agentbox` does not pass through host `XDG_RUNTIME_DIR`, `XDG_SESSION_TYPE`, or `DISPLAY`, and does not mount the host runtime directory, D-Bus sockets, PipeWire sockets, X11 sockets, portals, or GPU devices as part of Wayland passthrough.
+- Wayland passthrough exposes the compositor protocols available to the invoking host user; compositor protocol availability and authorization remain authoritative.
+- Passthrough is resolved when a container is launched. Existing containers are unchanged, and a container must be relaunched after the host Wayland socket is replaced.
+
 ## Host Git Identity Passthrough
 
 For `run`, `start`, and `restart`, `agentbox` passes the launch repository's effective host Git identity into the runtime container so Git operations inside the agent environment use the same default author identity as the host repository. `agentbox exec` is a Codex-only one-shot mode and uses a fixed Codex author identity instead.

@@ -500,6 +500,48 @@ fn exec_mounts_host_git_excludes_file_with_codex_identity() {
 
 #[cfg(unix)]
 #[test]
+fn run_mounts_wayland_display_socket_when_available() {
+    let fixture = support::temp_workspace("nested");
+    let target = fixture.target.as_path();
+    let workspace = &fixture.workspace;
+    let harness = Harness::new();
+    let (socket_dir, socket_path, _listener) = bind_test_socket();
+    let endpoint = ReadyEndpoint::start(RuntimeKind::Opencode);
+    harness.write_inspect(
+        &workspace.container_name,
+        &running_workspace_inspect_fixture_with_host_port(
+            workspace,
+            &RuntimeKind::Opencode.default_image(),
+            RuntimeKind::Opencode,
+            endpoint.port(),
+        ),
+    );
+
+    let mut command = harness.locked_agentbox_command(workspace);
+    command
+        .env("XDG_RUNTIME_DIR", socket_dir.path())
+        .env("WAYLAND_DISPLAY", socket_path.file_name().unwrap())
+        .args(["run", "--runtime", "opencode"])
+        .arg(target);
+
+    command.assert().success();
+    endpoint.wait();
+
+    let run = harness.command_log().first("run").clone();
+    run.assert_args_contain(&format!(
+        "type=bind,src={},dst=/run/agentbox/wayland.sock",
+        socket_path
+    ));
+    run.assert_args_contain("--env WAYLAND_DISPLAY=/run/agentbox/wayland.sock");
+    run.assert_args_do_not_contain("--env XDG_RUNTIME_DIR=");
+    run.assert_args_do_not_contain(&format!(
+        "type=bind,src={},dst=",
+        socket_dir.path().display()
+    ));
+}
+
+#[cfg(unix)]
+#[test]
 fn run_mounts_ssh_agent_socket_git_excludes_and_minimal_git_signing_config() {
     let fixture = support::temp_workspace("nested");
     let target = fixture.target.as_path();
